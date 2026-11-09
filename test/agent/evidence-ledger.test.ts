@@ -35,6 +35,23 @@ describe("EvidenceLedger", () => {
 		expect(again).toBe("e1");
 	});
 
+	it("reports each tool's ranked result list, with the query it answered, to the observer", () => {
+		const ledger = new EvidenceLedger();
+		const seen: { tool: string; query: string; sources: string[] }[] = [];
+		ledger.observeResults((tool, query, results) =>
+			seen.push({ tool, query, sources: results.map((entry) => entry.source) }),
+		);
+		const ids = ledger.registerResults("search_all_documents", "budget", [
+			result("/a.txt", "alpha"),
+			result("/b.txt", "beta"),
+		]);
+		ledger.observeResults(undefined);
+		ledger.registerResults("search_all_documents", "later", [result("/c.txt", "gamma")]);
+
+		expect(ids).toEqual(["e1", "e2"]);
+		expect(seen).toEqual([{ tool: "search_all_documents", query: "budget", sources: ["/a.txt", "/b.txt"] }]);
+	});
+
 	it("resolves ids (bare or bracketed) to harness-held evidence, never model text", () => {
 		const ledger = new EvidenceLedger();
 		const id = ledger.registerResult(

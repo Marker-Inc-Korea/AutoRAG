@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -31,7 +31,9 @@ import type { SearchProgressTracker } from "../../src/agent/search-progress.ts";
 import type { WebSearchToolOptions } from "../../src/agent/web-search-tool.ts";
 import type { DatasourceIndexResult, DatasourceSkill, PollingMetadata } from "../../src/datasource/types.ts";
 import type { JudgedEvidenceRecord } from "../../src/memory/judged-evidence.ts";
+import { buildLtrDataset, LTR_FEATURE_NAMES } from "../../src/memory/ltr-export.ts";
 import { RetrievalMemory } from "../../src/memory/memory.ts";
+import { RankingLogStore, type RankingRunRecord, rankingLogPath } from "../../src/memory/ranking-log.ts";
 import type { RetrievalOptions, RetrievalResult } from "../../src/retrieval/types.ts";
 import { clearRegisteredSearchProviders, registerSearchProvider } from "../../src/web/search/provider.ts";
 import { SEARCH_PROVIDER_ORDER, type SearchSource } from "../../src/web/search/types.ts";
@@ -1520,6 +1522,217 @@ describe("Jev query pipeline before the fast answer", () => {
 				method: "search_datasource_slack",
 			});
 			expect(judge.calls[0]?.questions[0]).toContain("office move date");
+		});
+	});
+
+	describe("learning-to-rank log", () => {
+		/** Answers each citation question by `relevance`, each evidence question by `support`, the rest by `inner`. */
+		function labellingJudge(
+			inner: JevBackend,
+			relevance: (questionText: string) => number,
+			support: (questionText: string) => number,
+		): JevBackend {
+			return {
+				name: inner.name,
+				async judge(request) {
+					const own = (id: string): boolean =>
+						id.startsWith(CITATION_QUESTION_ID_PREFIX) || id.startsWith(EVIDENCE_QUESTION_ID_PREFIX);
+					const rest = await inner.judge({ ...request, questions: request.questions.filter((q) => !own(q.id)) });
+					let next = 0;
+					return {
+						...rest,
+						answers: request.questions.map((question) => {
+							if (question.id.startsWith(CITATION_QUESTION_ID_PREFIX))
+								return { answer: relevance(question.question) };
+							if (question.id.startsWith(EVIDENCE_QUESTION_ID_PREFIX))
+								return { answer: support(question.question) };
+							return rest.answers[next++] ?? { answer: 0 };
+						}),
+					};
+				},
+			};
+		}
+
+		function loggedRuns(): RankingRunRecord[] {
+			const store = new RankingLogStore(rankingLogPath(join(root, "memory.json")));
+			try {
+				return [...store.list().runs];
+			} finally {
+				store.close();
+			}
+		}
+
+		it("logs the whole reranked pool with serve-time channel ranks, exposure, and graded outcome labels", async () => {
+			const rerankServer = await startRerankServer();
+			try {
+				const prompts: string[] = [];
+				const budget = "/slack/default/budget";
+				const office = "/slack/default/office";
+				// The draft cites the office chunk; the final answer cites the budget chunk and the office chunk again.
+				const model = fauxModel(
+					citeBaselineEvidence(prompts, office, (id) => `The office moved in May [${id}].`),
+					(context) => {
+						const prompt = context.messages
+							.flatMap((message) =>
+								message.role === "user" && typeof message.content !== "string"
+									? message.content.map((part) => (part.type === "text" ? part.text : ""))
+									: [],
+							)
+							.join("\n");
+						const budgetId = baselineEvidenceId(prompts[0] ?? prompt, budget) ?? "e1";
+						const officeId = baselineEvidenceId(prompts[0] ?? prompt, office) ?? "e2";
+						return fauxAssistantMessage(
+							`Mina Park approved the Q3 budget [${budgetId}]. Moved in May [${officeId}].`,
+							{
+								stopReason: "stop",
+							},
+						) as AssistantMessage;
+					},
+				);
+				const judge = labellingJudge(
+					jevRouting("local", 0.1, 0.9, { slack: 0.9 }),
+					(text) => (text.includes("Moved in May") ? 0.1 : 0.9),
+					() => 0.85,
+				);
+				const agent = agentWith({
+					model,
+					jev: { backend: judge },
+					datasourceSkills: [evidenceDatasource()],
+					rerank: rerankServer.rerank,
+				});
+				injectMinSync(agent, recordingMinSync().method);
+
+				const response = await agent.searchDocuments("who approved the Q3 budget?");
+				expect(response.diagnostics?.map((diagnostic) => diagnostic.code)).not.toContain("ranking-log-failed");
+
+				const [run] = loggedRuns();
+				expect(run).toMatchObject({
+					runId: response.sessionId,
+					question: "who approved the Q3 budget?",
+					datasources: ["slack"],
+					reranker: { provider: "openrouter", model: "test-rerank" },
+					judgments: { citationRelevance: "judged", support: "judged" },
+				});
+				const bySource = new Map(run?.candidates.map((candidate) => [candidate.source, candidate]));
+				// Every pool member is logged, cited or not: the negatives are what a ranker learns from.
+				expect([...bySource.keys()].sort()).toEqual(
+					[join(docs, "who-approved-the-Q3-budget-.txt"), budget, office].sort(),
+				);
+				const budgetRow = bySource.get(budget);
+				expect(budgetRow?.observations[0]).toMatchObject({
+					stage: "prefetch",
+					surface: "datasource:slack",
+					method: "search_datasource_slack",
+					rank: 1,
+					score: 1,
+				});
+				expect(budgetRow?.rerank?.rank).toBeGreaterThan(0);
+				expect(budgetRow?.exposures[0]?.surface).toBe("baseline");
+				expect(budgetRow?.origin).toBe("slack");
+				expect(budgetRow?.labels).toEqual({ citedFinal: true, modelCited: true, relevance: 0.9, support: 0.85 });
+				// Cited twice, found unrelated both times, so the final answer dropped it: a labelled negative.
+				expect(bySource.get(office)?.labels).toMatchObject({ citedFinal: false, modelCited: true, relevance: 0.1 });
+				expect(bySource.get(join(docs, "who-approved-the-Q3-budget-.txt"))?.labels).toEqual({
+					citedFinal: false,
+					modelCited: false,
+				});
+
+				const dataset = buildLtrDataset(loggedRuns(), { validFraction: 0 });
+				expect(dataset.manifest.vocabularies.origin).toEqual({ "local files": 0, slack: 1 });
+				const rowBySource = new Map(dataset.train.rows.map((row) => [row.source, row]));
+				expect(dataset.train.groups).toEqual([3]);
+				expect([rowBySource.get(budget)?.label, rowBySource.get(office)?.label]).toEqual([3, 0]);
+				expect(rowBySource.get(budget)?.features[LTR_FEATURE_NAMES.indexOf("origin_id")]).toBe(1);
+				expect(rowBySource.get(budget)?.features[LTR_FEATURE_NAMES.indexOf("primary_norm_score")]).toBe(1);
+				expect(rowBySource.get(office)?.features[LTR_FEATURE_NAMES.indexOf("primary_norm_score")]).toBe(0);
+			} finally {
+				rerankServer.close();
+			}
+		});
+
+		it("logs what a retrieval tool showed the model during verification as a tool observation and exposure", async () => {
+			const model = fauxModel(
+				fastAnswer("Not sure."),
+				fauxAssistantMessage([fauxToolCall("search_datasource_slack", { query: "budget approver" })], {
+					stopReason: "toolUse",
+				}),
+				(context) => {
+					const text = context.messages
+						.flatMap((message) =>
+							message.role === "toolResult"
+								? message.content.map((part) => (part.type === "text" ? part.text : ""))
+								: [],
+						)
+						.join("\n");
+					const id = /\[(e\d+)\] \/slack\/default\/budget/u.exec(text)?.[1] ?? "e1";
+					return fauxAssistantMessage(`Mina Park approved the Q3 budget [${id}].`, {
+						stopReason: "stop",
+					}) as AssistantMessage;
+				},
+			);
+			const agent = agentWith({
+				model,
+				jev: {
+					backend: labellingJudge(
+						jevRouting("local", 0.1),
+						() => 0.9,
+						() => 0.9,
+					),
+				},
+				datasourceSkills: [evidenceDatasource()],
+			});
+			injectMinSync(agent, recordingMinSync().method);
+
+			await agent.searchDocuments("who approved the Q3 budget?");
+
+			const [run] = loggedRuns();
+			const budget = run?.candidates.find((candidate) => candidate.source === "/slack/default/budget");
+			expect(budget?.observations).toEqual([
+				expect.objectContaining({
+					stage: "tool",
+					surface: "search_datasource_slack",
+					query: "budget approver",
+					rank: 1,
+				}),
+			]);
+			expect(budget?.exposures).toEqual([
+				{ surface: "search_datasource_slack", query: "budget approver", position: 1 },
+			]);
+			expect(budget?.labels.citedFinal).toBe(true);
+			expect(
+				run?.candidates.find((candidate) => candidate.source === "/slack/default/office")?.labels.citedFinal,
+			).toBe(false);
+		});
+
+		it("logs nothing when the ranking log is turned off", async () => {
+			const model = fauxModel(fastAnswer("Not sure."), finalAnswer("Verified."));
+			const agent = agentWith({ model, rankingLog: false });
+			injectMinSync(agent, recordingMinSync().method);
+
+			await agent.searchDocuments("who approved the Q3 budget?");
+
+			expect(existsSync(rankingLogPath(join(root, "memory.json")))).toBe(false);
+		});
+
+		it("attributes a local file to local files when the search path is reached through a symlink", async () => {
+			// MinSync reports real paths (macOS: /var -> /private/var), the configured search path may be a link.
+			const linked = join(root, "linked-docs");
+			symlinkSync(docs, linked);
+			const realSource = join(realpathSync(docs), "budget.txt");
+			const model = fauxModel(fastAnswer("Not sure."), finalAnswer("Verified."));
+			const agent = agentWith({ model, searchPaths: [linked] });
+			injectMinSync(agent, {
+				...recordingMinSync().method,
+				retrieve: async (): Promise<RetrievalResult[]> => [
+					{ id: "a", source: realSource, content: "Mina approved.", score: 1, metadata: {} },
+					{ id: "b", source: join(realpathSync(docs), "x.txt"), content: "Other.", score: 0.5, metadata: {} },
+				],
+			});
+
+			await agent.searchDocuments("who approved the Q3 budget?");
+
+			const [run] = loggedRuns();
+			expect(run?.candidates.map((candidate) => candidate.origin)).toEqual(["local files", "local files"]);
 		});
 	});
 

@@ -3,11 +3,12 @@ import { closeSync, openSync, readSync, statSync } from "node:fs";
 import { isAbsolute } from "node:path";
 import { type Static, Type } from "typebox";
 import { Value } from "typebox/value";
+import { EVIDENCE_CONTENT_CHARS } from "../retrieval/evidence-id.ts";
 import type { RetrievalResult } from "../retrieval/types.ts";
 import type { AutoRAGEvidenceRef } from "./results.ts";
 
-/** Stored content per evidence entry; a huge chunk must not bloat the run or the memory file. */
-const MAX_CONTENT_CHARS = 2_000;
+/** Stored content per evidence entry (shared with citation keys); a huge chunk must not bloat the run or the memory file. */
+const MAX_CONTENT_CHARS = EVIDENCE_CONTENT_CHARS;
 
 export interface LedgerEvidenceInput {
 	readonly method: string;
@@ -126,6 +127,9 @@ function toEvidenceRef(entry: LedgerEntry): AutoRAGEvidenceRef {
 	};
 }
 
+/** Receives one retrieval tool's ranked result list and the query it answered. */
+export type EvidenceResultsObserver = (tool: string, query: string, results: readonly RetrievalResult[]) => void;
+
 /**
  * Record of every piece of evidence the retrieval tools returned in one
  * conversation.
@@ -153,6 +157,23 @@ export class EvidenceLedger {
 	 * at e1 would let a stale id silently resolve to a different chunk.
 	 */
 	private lastOrdinal = 0;
+	/** Sees every ranked list a retrieval tool records; the agent feeds its learning-to-rank log from it. */
+	private resultsObserver: EvidenceResultsObserver | undefined;
+
+	/** Observe every ranked list {@link registerResults} records; `undefined` stops observing. */
+	observeResults(observer: EvidenceResultsObserver | undefined): void {
+		this.resultsObserver = observer;
+	}
+
+	/**
+	 * Record a retrieval tool's ranked result list for `query` and return the ids, in order. The observer sees the
+	 * list exactly as the tool returned it, so ranks and scores are the ones the model was shown.
+	 */
+	registerResults(tool: string, query: string, results: readonly RetrievalResult[]): string[] {
+		const ids = results.map((result) => this.registerResult(tool, result));
+		this.resultsObserver?.(tool, query, results);
+		return ids;
+	}
 
 	/** Record evidence and return its id. The same chunk always gets the same id. */
 	register(input: LedgerEvidenceInput): string {

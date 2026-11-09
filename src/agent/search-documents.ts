@@ -84,6 +84,7 @@ export type SearchDocumentDiagnosticCode =
 	| "evidence-judged"
 	| "evidence-judgment-fallback"
 	| "memory-search-fallback"
+	| "ranking-log-failed"
 	| "self-config-unavailable"
 	| "self-config-rolled-back"
 	| "organize-skill-unavailable"

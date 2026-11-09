@@ -81,6 +81,7 @@ import { createCheckMemoryTool } from "../memory/check-memory-tool.ts";
 import { loadMemoryContext, type MemoryContext, type MemoryContextOptions } from "../memory/context.ts";
 import { EVIDENCE_SUPPORT_THRESHOLD, type JudgedEvidenceRecord } from "../memory/judged-evidence.ts";
 import { RetrievalMemory } from "../memory/memory.ts";
+import { RankingLogStore, RankingRunRecorder, rankingLogPath } from "../memory/ranking-log.ts";
 import { memoryVectorStorePath } from "../memory/similar-queries.ts";
 import { resolveMinSyncBinary } from "../minsync/binary.ts";
 import { MinSyncRequiredError, minSyncBinaryMissingError } from "../minsync/errors.ts";
@@ -126,7 +127,7 @@ import type { DatasourceCatalogEntry } from "../retrieval/selection.ts";
 import type { RetrievalDiagnostic, RetrievalOptions, RetrievalResult } from "../retrieval/types.ts";
 import { executeWebSearch } from "../web/search/index.ts";
 import { type ModelNativeSearchAuth, modelNativeAuthFromAgentModel } from "../web/search/model-auth.ts";
-import { citedChunks, deriveResultsFromAnswer } from "./answer-citations.ts";
+import { citedChunkKey, citedChunks, deriveResultsFromAnswer } from "./answer-citations.ts";
 import {
 	ANSWER_BULLET_RULE,
 	ANSWER_CITATION_RULE,
@@ -808,6 +809,12 @@ export interface AutoRAGAgentOptions {
 	 */
 	memoryEmbedder?: Embedder | false;
 	/**
+	 * Learning-to-rank training log beside the memory file (`<memoryPath>.ranking.db`): every finished search run's
+	 * candidate pool, serve-time per-channel ranks and scores, what the model was shown, and the outcome labels.
+	 * Local only; chunk text is never stored. Default on; `false` stops logging. See docs/learning-to-rank.md.
+	 */
+	rankingLog?: boolean;
+	/**
 	 * Agent self-configuration. When set, Jev gains a `config` branch for
 	 * questions about AutoRAG's own settings: the turn skips the fast answer,
 	 * receives the full `autorag-setup` skill, edits `configPath` with the pi
@@ -1125,6 +1132,10 @@ export class AutoRAGAgent {
 	private readonly embedder: ManagedEmbedder;
 	private readonly memoryEmbedder: Embedder | undefined;
 	private readonly memoryVectorPath: string;
+	/** Where finished runs are logged for learning to rank; undefined when `rankingLog: false`. */
+	private readonly rankingLogPath: string | undefined;
+	/** Collects the in-flight run's ranking candidates and labels; undefined between runs. */
+	private rankingRun: RankingRunRecorder | undefined;
 	/** Every retrieval result of the in-flight run with the query/method that surfaced it. */
 	private readonly evidenceOrigins = new EvidenceOriginIndex();
 	/**
@@ -1280,6 +1291,11 @@ export class AutoRAGAgent {
 		this.memory = new RetrievalMemory({ storagePath: memPath });
 		this.memory.load();
 		this.memoryVectorPath = memoryVectorStorePath(memPath);
+		this.rankingLogPath = options.rankingLog === false ? undefined : rankingLogPath(memPath);
+		// Every retrieval tool funnels its ranked list through the ledger, so this one hook sees what the model was shown.
+		this.evidenceLedger.observeResults((tool, query, results) =>
+			this.rankingRun?.tool({ surface: tool, query, results }),
+		);
 		this.minSyncEmbedderConfig = options.minSync?.embedder;
 		this.minSyncBinaryPath = options.minSync?.binaryPath;
 		this.embedder = options.embedder ?? createEmbedderFromConfig({ embedder: options.minSync?.embedder });
@@ -1554,13 +1570,26 @@ export class AutoRAGAgent {
 		);
 		const methodToken = (value: string): string => `_${value.toLowerCase().replace(/[^a-z0-9]+/gu, "_")}_`;
 		const idsLongestFirst = catalog.map((entry) => entry.datasourceId).sort((a, b) => b.length - a.length);
+		// Retrieval reports real paths (MinSync resolves symlinks; macOS /var is /private/var), so a root matches by its
+		// configured spelling and by its real path.
+		const localRoots = [
+			...new Set(
+				this.configuredSearchPaths.flatMap((configuredRoot) => {
+					let real = configuredRoot;
+					try {
+						real = realpathSync(configuredRoot);
+					} catch {
+						// A missing root keeps only its configured spelling.
+					}
+					return [configuredRoot, real].map((path) => path.replaceAll("\\", "/").replace(/\/+$/u, ""));
+				}),
+			),
+		];
 		return ({ source, method }) => {
 			if (/^https?:\/\//u.test(source)) return "web";
 			const normalizedSource = source.replaceAll("\\", "/");
-			for (const configuredRoot of this.configuredSearchPaths) {
-				const normalizedRoot = configuredRoot.replaceAll("\\", "/").replace(/\/+$/u, "");
-				if (normalizedSource === normalizedRoot || normalizedSource.startsWith(`${normalizedRoot}/`))
-					return "local files";
+			for (const localRoot of localRoots) {
+				if (normalizedSource === localRoot || normalizedSource.startsWith(`${localRoot}/`)) return "local files";
 			}
 			const root = normalizedSource.startsWith("/") ? (normalizedSource.split("/")[1] ?? "") : "";
 			if (nonDatasourceRoots.has(root)) return undefined;
@@ -1617,6 +1646,7 @@ export class AutoRAGAgent {
 		if (details.mapping.length === 0) return undefined;
 		const resultByNumber = new Map(details.results.map((result) => [result.number, result]));
 		const units: (EvidenceJudgmentUnit & {
+			readonly chunkKey: string;
 			readonly record: Omit<JudgedEvidenceRecord, "probability" | "createdAt">;
 		})[] = [];
 		for (const entry of details.mapping) {
@@ -1632,6 +1662,7 @@ export class AutoRAGAgent {
 				const id = `${entry.number}:${ref.stableEvidenceId}`;
 				units.push({
 					id,
+					chunkKey: citedChunkKey(ref),
 					resultNumber: entry.number,
 					title: result.title,
 					summary: result.summary,
@@ -1656,6 +1687,17 @@ export class AutoRAGAgent {
 		}
 		if (units.length === 0) return undefined;
 		const judgment = await judgeEvidence(this.jevJudge, { question, answer: details.answer, units });
+		if (judgment.fallbackReason !== undefined) this.rankingRun?.supported(undefined);
+		else {
+			const support = new Map<string, number>();
+			for (const unit of units) {
+				const probability = judgment.probabilities[unit.id];
+				// One chunk can back several results; its label is the best support Jev gave it.
+				if (probability !== undefined)
+					support.set(unit.chunkKey, Math.max(support.get(unit.chunkKey) ?? 0, probability));
+			}
+			this.rankingRun?.supported(support);
+		}
 		const diagnostic: SearchDocumentDiagnostic =
 			judgment.fallbackReason !== undefined
 				? {
@@ -1680,6 +1722,47 @@ export class AutoRAGAgent {
 		);
 		this.memory.save();
 		return diagnostic;
+	}
+
+	/**
+	 * Freeze the run's ranking candidates and labels and append them to the learning-to-rank log. Features are taken
+	 * as they are now, at serve time: the memory prior counts only evidence judged before the run started, and the
+	 * similar-question prior is the one this run's memory context actually found (missing when it was never loaded,
+	 * so logging never triggers an extra embedding call). A failed write is reported and never fails the search.
+	 */
+	private async persistRankingRun(details: AutoRAGResultsDetails): Promise<SearchDocumentDiagnostic | undefined> {
+		const run = this.rankingRun;
+		const path = this.rankingLogPath;
+		this.rankingRun = undefined;
+		if (run === undefined || path === undefined) return undefined;
+		const cachedContext = this.memoryContextCache?.query === this.lastQuery ? this.memoryContextCache : undefined;
+		const similarQuestions = cachedContext === undefined ? undefined : (await cachedContext.context).related;
+		const record = run.finish({
+			finalCitationKeys: details.mapping.flatMap((entry) =>
+				(entry.evidenceRefs.length > 0 ? entry.evidenceRefs : [entry]).map((ref) => citedChunkKey(ref)),
+			),
+			finishedAt: Date.now(),
+			priorEvidence: this.memory.getJudgedEvidence(),
+			...(similarQuestions !== undefined ? { similarQuestions } : {}),
+			origin: this.evidenceAttribution(this.listDatasources()),
+		});
+		if (record.candidates.length === 0) return undefined;
+		try {
+			const store = new RankingLogStore(path);
+			try {
+				store.append(record);
+			} finally {
+				store.close();
+			}
+			return undefined;
+		} catch (error) {
+			return {
+				code: "ranking-log-failed",
+				severity: "warning",
+				message: `The learning-to-rank log could not record this search; the answer is unaffected. ${error instanceof Error ? error.message : String(error)}`,
+				source: "memory",
+			};
+		}
 	}
 
 	private async resolveSessionModel(): Promise<{
@@ -2010,6 +2093,10 @@ export class AutoRAGAgent {
 			userMessages: this.conversationQueries.all(),
 			chunks,
 		});
+		this.rankingRun?.cited(
+			chunks.map((chunk) => chunk.key),
+			relevance.fallbackReason === undefined ? relevance.probabilities : undefined,
+		);
 		if (relevance.fallbackReason !== undefined) {
 			this.routingDiagnostics.push({
 				code: "citation-relevance-fallback",
@@ -2357,6 +2444,15 @@ export class AutoRAGAgent {
 		}
 		this.conversationQueries.add(trimmedQuery);
 		this.lastSessionId = sessionId;
+		this.rankingRun =
+			this.rankingLogPath === undefined
+				? undefined
+				: new RankingRunRecorder({
+						runId: sessionId,
+						conversationId: this.conversationId,
+						question: trimmedQuery,
+						startedAt: Date.now(),
+					});
 		let captured: AutoRAGResultsDetails | undefined;
 		let fastCaptured: AutoRAGResultsDetails | undefined;
 		/** True when this run took a Jev branch whose report is not retrieved evidence (`config`, `organize`, or an `extra` turn that cited nothing); it never feeds retrieval memory. */
@@ -2544,6 +2640,7 @@ export class AutoRAGAgent {
 				// Esc aborted the phase that just ran: the user stopped the search.
 				const stopped = (): boolean => this.interactive.userAborted;
 				if (stopped()) return;
+				this.rankingRun?.plan({ searchQueries: plan.queries, datasources: plan.datasources, web: plan.web });
 				// Only `local` reaches here: `config`, `organize`, and `extra` ended
 				// the run in their own single turn above.
 				const baseline = await this.prefetchInitialRetrievalContext(
@@ -2682,10 +2779,14 @@ export class AutoRAGAgent {
 			const memoryDiagnostic = isolatedRun
 				? undefined
 				: await this.recordJudgedEvidence(sessionId, trimmedQuery, captured);
+			const rankingDiagnostic = isolatedRun ? undefined : await this.persistRankingRun(captured);
+			const extraDiagnostics = [memoryDiagnostic, rankingDiagnostic].filter(
+				(diagnostic): diagnostic is SearchDocumentDiagnostic => diagnostic !== undefined,
+			);
 			const response: SearchDocumentsResponse =
-				memoryDiagnostic === undefined
+				extraDiagnostics.length === 0
 					? recorded
-					: { ...recorded, diagnostics: [...(recorded.diagnostics ?? []), memoryDiagnostic] };
+					: { ...recorded, diagnostics: [...(recorded.diagnostics ?? []), ...extraDiagnostics] };
 			this.runLogger.write({
 				event: "search_completed",
 				timestamp: new Date().toISOString(),
@@ -3357,6 +3458,16 @@ export class AutoRAGAgent {
 				const method = typeof result.metadata.method === "string" ? result.metadata.method : fallback;
 				this.evidenceOrigins.add({ query: searchQuery, method, source: result.source, content: result.content });
 			}
+			// Each surface's own ranked list, before interleaving, dedup, rerank, or cut: the raw features a ranker learns from.
+			this.rankingRun?.retrieved({ surface: "minsync", query: searchQuery, results: vector });
+			for (const [datasourceIndex, results] of perDatasource.entries()) {
+				this.rankingRun?.retrieved({
+					surface: `datasource:${datasources[datasourceIndex] ?? ""}`,
+					query: searchQuery,
+					results,
+				});
+			}
+			this.rankingRun?.retrieved({ surface: "web", query: searchQuery, results: webSearch.results });
 		}
 		if (webFailures.length > 0) {
 			this.routingDiagnostics.push({
@@ -3402,6 +3513,13 @@ export class AutoRAGAgent {
 			if (!signal.aborted) this.reportRerankFailure(error);
 		}
 		if (reranked !== undefined) {
+			const descriptor = this.reranker?.describe();
+			this.rankingRun?.reranked({
+				provider: descriptor?.provider ?? "unknown",
+				model: descriptor?.model ?? "unknown",
+				results: reranked,
+			});
+			this.rankingRun?.exposed({ surface: "baseline", query, results: reranked });
 			const baseline = formatRerankedBaseline(
 				reranked,
 				reranked.map((result) => this.evidenceLedger.registerResult("baseline", result)),
@@ -3437,6 +3555,12 @@ export class AutoRAGAgent {
 			shownDatasource = shownDatasource.slice(0, quota[1]);
 			shownWeb = shownWeb.slice(0, quota[2]);
 		}
+		// The sections below are shown in this order, so this is the order the model reads the candidates in.
+		this.rankingRun?.exposed({
+			surface: "baseline",
+			query,
+			results: [...shownMinSync, ...shownDatasource, ...shownWeb],
+		});
 		if (shownMinSync.length > 0) {
 			sections.push(
 				`MinSync semantic initial candidates:\n${shownMinSync

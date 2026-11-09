@@ -126,6 +126,8 @@ describe("judgeCitationRelevance", () => {
 
 		expect(result.fallbackReason).toBeUndefined();
 		expect([...result.rejected]).toEqual([toc.key]);
+		// The probability of every judged chunk is kept, not only the verdict: it is a ranking label.
+		expect(Object.fromEntries(result.probabilities)).toEqual({ [lease.key]: 0.95, [toc.key]: 0.05 });
 	});
 
 	it("keeps a chunk exactly at the relevance floor and rejects one just below it", async () => {

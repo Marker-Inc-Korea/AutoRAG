@@ -102,12 +102,16 @@ export function createWebSearchTool(
 					...(options.exclude !== undefined ? { exclude: options.exclude } : {}),
 					...(options.modelAuth?.() !== undefined ? { modelAuth: options.modelAuth() } : {}),
 					labelSources: (found) =>
-						found.map((source) =>
-							ledger.register({
-								method: WEB_SEARCH_TOOL_NAME,
+						ledger.registerResults(
+							WEB_SEARCH_TOOL_NAME,
+							params.query,
+							found.map((source, index) => ({
+								id: `web:${index}:${source.url}`,
 								source: source.url,
 								content: source.snippet ? `${source.title} — ${source.snippet}` : source.title,
-							}),
+								score: 1 - index / Math.max(found.length, 1),
+								metadata: { method: WEB_SEARCH_TOOL_NAME },
+							})),
 						),
 				},
 			);
