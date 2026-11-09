@@ -153,6 +153,28 @@ export class EvidenceLedger {
 	 * at e1 would let a stale id silently resolve to a different chunk.
 	 */
 	private lastOrdinal = 0;
+	/** Ids whose text a search tool already put in front of the model during the current run. */
+	private readonly shown = new Set<string>();
+
+	/** Whether a search already showed this evidence's text in the current run. */
+	hasShown(id: string): boolean {
+		return this.shown.has(id);
+	}
+
+	/** Record that this evidence's text reached the model; returns whether it had already. */
+	markShown(id: string): boolean {
+		const had = this.shown.has(id);
+		this.shown.add(id);
+		return had;
+	}
+
+	/**
+	 * Start a run: nothing has been shown yet. A new question may follow a compaction that dropped the
+	 * earlier tool output, so a repeat is only ever "already shown" within one run.
+	 */
+	beginRun(): void {
+		this.shown.clear();
+	}
 
 	/** Record evidence and return its id. The same chunk always gets the same id. */
 	register(input: LedgerEvidenceInput): string {
@@ -237,6 +259,7 @@ export class EvidenceLedger {
 		this.byKey.clear();
 		this.byId.clear();
 		this.unsaved.clear();
+		this.shown.clear();
 	}
 
 	/** Entries recorded or changed since the last call, for the hosting session to persist. */

@@ -3,6 +3,7 @@ import { Type } from "typebox";
 import { locationSuffix } from "../retrieval/chunk-location.ts";
 import type { RetrievalDiagnostic, RetrievalResult } from "../retrieval/types.ts";
 import { EvidenceLedger } from "./evidence-ledger.ts";
+import { type RecordCutToolOptions, registerAndRender } from "./result-render.ts";
 import { type SearchDocumentRetrievalTraceResult, toRetrievalTraceResults } from "./search-documents.ts";
 
 export const SEARCH_ALL_DOCUMENTS_TOOL_NAME = "search_all_documents";
@@ -50,6 +51,7 @@ export interface SearchAllDocumentsDetails {
 export function createSearchAllDocumentsTool(
 	provider: SearchAllDocumentsProvider,
 	ledger: EvidenceLedger = new EvidenceLedger(),
+	options: RecordCutToolOptions = {},
 ): AgentTool<typeof searchAllSchema, SearchAllDocumentsDetails> {
 	return {
 		name: SEARCH_ALL_DOCUMENTS_TOOL_NAME,
@@ -71,9 +73,15 @@ export function createSearchAllDocumentsTool(
 				scope: params.scope,
 				...(signal === undefined ? {} : { signal }),
 			});
-			const evidenceIds = results.map((result) => ledger.registerResult(SEARCH_ALL_DOCUMENTS_TOOL_NAME, result));
+			const { text } = registerAndRender(
+				ledger,
+				SEARCH_ALL_DOCUMENTS_TOOL_NAME,
+				results,
+				(result) => `${result.source} score=${result.score.toFixed(4)}${locationSuffix(result.metadata)}`,
+				options.recordCut,
+			);
 			return {
-				content: [{ type: "text", text: formatResults(results, diagnostics, evidenceIds) }],
+				content: [{ type: "text", text: withDiagnostics(text, results.length, diagnostics) }],
 				details: {
 					method: "search_all_documents",
 					resultCount: results.length,
@@ -87,19 +95,11 @@ export function createSearchAllDocumentsTool(
 	};
 }
 
-function formatResults(
-	results: readonly RetrievalResult[],
-	diagnostics: readonly RetrievalDiagnostic[],
-	evidenceIds: readonly string[],
-): string {
+function withDiagnostics(rows: string, resultCount: number, diagnostics: readonly RetrievalDiagnostic[]): string {
 	const diagnosticSummary =
 		diagnostics.length > 0
 			? `\n\nDiagnostics: ${diagnostics.map((d) => `${d.source ?? "all"}:${d.code}`).join(", ")}`
 			: "";
-	if (results.length === 0) return `No results.${diagnosticSummary}`;
-	const rows = results.map((result, index) => {
-		const line = result.content.replace(/\s+/gu, " ");
-		return `[${evidenceIds[index]}] ${result.source} score=${result.score.toFixed(4)}${locationSuffix(result.metadata)}\n${line}`;
-	});
-	return `Merged results (cite evidence by its [eN] id):\n\n${rows.join("\n\n")}${diagnosticSummary}`;
+	if (resultCount === 0) return `No results.${diagnosticSummary}`;
+	return `Merged results (cite evidence by its [eN] id):\n\n${rows}${diagnosticSummary}`;
 }

@@ -2,6 +2,7 @@ import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { basename, join, normalize } from "node:path";
 import { abortReason } from "../process/abort-reason.ts";
 import { type ChunkLocation, locateChunk } from "../retrieval/chunk-location.ts";
+import { OVERFETCH_ABSOLUTE_CAP, type RecordCut } from "../retrieval/record-cut.ts";
 import { matchesVirtualPathScope } from "../retrieval/scope.ts";
 import { describeRetrievalError } from "../retrieval/skip.ts";
 import type {
@@ -34,6 +35,11 @@ export interface MinSyncVectorMethodOptions {
 	readonly defaultTopK?: number;
 	/** Fetch cap applied when a scope narrows the query. Default 100. */
 	readonly scopedTopK?: number;
+	/**
+	 * Fuse deeper and cut the hits by document, so one long document cannot take every one of `topK` slots
+	 * (see {@link RecordCut}). Unset asks MinSync for `topK` and cuts by chunk.
+	 */
+	readonly recordCut?: RecordCut;
 }
 
 export type MinSyncHybridMethodOptions = Omit<MinSyncVectorMethodOptions, "mode">;
@@ -49,6 +55,7 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 	private readonly mode: MinSyncQueryMode;
 	private readonly defaultTopK: number;
 	private readonly scopedTopK: number;
+	private readonly recordCut: RecordCut | undefined;
 
 	constructor(options: MinSyncVectorMethodOptions) {
 		this.root = options.root;
@@ -60,6 +67,7 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 		this.maxChunkSize = options.maxChunkSize;
 		this.defaultTopK = options.defaultTopK ?? 50;
 		this.scopedTopK = options.scopedTopK ?? 100;
+		this.recordCut = options.recordCut;
 		// A sparse-only index has no dense vectors, so MinSync answers only `--mode sparse` for it.
 		this.mode = isSparseOnlyEmbedder(options.embedder) ? "sparse" : (options.mode ?? "vector");
 	}
@@ -135,7 +143,10 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 
 	private async retrieveUnlocked(query: string, options: RetrievalOptions): Promise<RetrievalResult[]> {
 		const topK = options.topK ?? this.defaultTopK;
-		const queryK = options.scope ? Math.min(Math.max(topK * 5, topK + 20), this.scopedTopK) : topK;
+		const scopedK = options.scope ? Math.min(Math.max(topK * 5, topK + 20), this.scopedTopK) : topK;
+		// The deeper fusion widens whatever the scope already asked for; the cap bounds only the extra depth.
+		const queryK =
+			this.recordCut === undefined ? scopedK : this.recordCut.fusedLimit(scopedK, OVERFETCH_ABSOLUTE_CAP);
 		const binaryPath = await this.resolveBinary({ install: false });
 		const byPath = buildMinSyncPathMap(this.root, this.workspacePath, binaryPath);
 		// Queries never install: they use an existing binary or fail loudly.
@@ -190,9 +201,10 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 						: {}),
 				},
 			});
-			if (results.length >= topK) break;
+			// With a record cut the whole in-scope pool is collected, then cut by document below.
+			if (this.recordCut === undefined && results.length >= topK) break;
 		}
-		return results;
+		return this.recordCut === undefined ? results : this.recordCut.cut(results, topK, (result) => result.source);
 	}
 
 	/**

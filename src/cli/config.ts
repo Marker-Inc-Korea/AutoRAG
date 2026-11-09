@@ -38,6 +38,7 @@ import { acquireFileLock, type FileLockHandle } from "../filesystem/file-lock.ts
 import { LanguageError, type LanguageTag, normalizeLanguages } from "../language.ts";
 import type { EnsureMinSyncBinaryOptions, MinSyncEmbedderConfig } from "../minsync/index.ts";
 import { renameWithRetry } from "../mirror/atomic-write.ts";
+import { MAX_FUSION_DEPTH, MAX_PER_RECORD, type RecordCutOptions } from "../retrieval/record-cut.ts";
 import {
 	DEFAULT_RERANK_PROVIDER,
 	DEFAULT_RERANK_TOP_N,
@@ -803,6 +804,17 @@ const LIMITS_ALLOWLIST: Record<string, true> = {
 	minSyncScopedQueryTopK: true,
 	toolDescriptionInstanceScopes: true,
 	prefetch: true,
+	recordCut: true,
+};
+
+const LIMITS_RECORD_CUT_ALLOWLIST: Record<string, true> = {
+	enabled: true,
+	depth: true,
+	newRecordShare: true,
+	perRecordFloor: true,
+	perRecordDivisor: true,
+	resultChars: true,
+	minReadChars: true,
 };
 
 const LIMITS_PREFETCH_ALLOWLIST: Record<string, true> = {
@@ -820,6 +832,56 @@ function positiveLimitField(record: Record<string, unknown>, key: string, path: 
 		throw new ConfigError(`${path}.${key} must be a positive integer`);
 	}
 	return value;
+}
+
+function boundedIntegerField(
+	record: Record<string, unknown>,
+	key: string,
+	path: string,
+	low: number,
+	high: number,
+): number | undefined {
+	const value = record[key];
+	if (value === undefined) return undefined;
+	if (typeof value !== "number" || !Number.isInteger(value) || value < low || value > high) {
+		throw new ConfigError(`${path}.${key} must be an integer from ${low} to ${high}`);
+	}
+	return value;
+}
+
+/** Validate `limits.recordCut`: the switch plus bounded tuning. Unknown keys fail, like every other limits field. */
+function normalizeRecordCutConfig(raw: unknown): RecordCutOptions {
+	if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+		throw new ConfigError("limits.recordCut must be an object");
+	}
+	const record = raw as Record<string, unknown>;
+	for (const key of Object.keys(record)) {
+		if (!Object.hasOwn(LIMITS_RECORD_CUT_ALLOWLIST, key)) {
+			throw new ConfigError(`limits.recordCut.${key} is not a recognized field`);
+		}
+	}
+	const path = "limits.recordCut";
+	if (record.enabled !== undefined && typeof record.enabled !== "boolean") {
+		throw new ConfigError(`${path}.enabled must be a boolean`);
+	}
+	const share = record.newRecordShare;
+	if (share !== undefined && (typeof share !== "number" || !(share >= 0 && share <= 1))) {
+		throw new ConfigError(`${path}.newRecordShare must be a number from 0 to 1`);
+	}
+	const depth = boundedIntegerField(record, "depth", path, 1, MAX_FUSION_DEPTH);
+	const perRecordFloor = boundedIntegerField(record, "perRecordFloor", path, 1, MAX_PER_RECORD);
+	const perRecordDivisor = boundedIntegerField(record, "perRecordDivisor", path, 1, MAX_PER_RECORD);
+	const resultChars = positiveLimitField(record, "resultChars", path);
+	const minReadChars = positiveLimitField(record, "minReadChars", path);
+	return {
+		...(record.enabled !== undefined ? { enabled: record.enabled as boolean } : {}),
+		...(depth !== undefined ? { depth } : {}),
+		...(share !== undefined ? { newRecordShare: share as number } : {}),
+		...(perRecordFloor !== undefined ? { perRecordFloor } : {}),
+		...(perRecordDivisor !== undefined ? { perRecordDivisor } : {}),
+		...(resultChars !== undefined ? { resultChars } : {}),
+		...(minReadChars !== undefined ? { minReadChars } : {}),
+	};
 }
 
 /** Validate the `limits` section and map it onto the agent option. */
@@ -861,6 +923,7 @@ export function normalizeLimitsConfig(raw: unknown): AutoRAGRetrievalLimits {
 			...(sectionLimit !== undefined ? { sectionLimit } : {}),
 		};
 	}
+	const recordCut = record.recordCut === undefined ? undefined : normalizeRecordCutConfig(record.recordCut);
 	return {
 		...(mergedEvidenceCeiling !== undefined ? { mergedEvidenceCeiling } : {}),
 		...(singleDatasourceTopK !== undefined ? { singleDatasourceTopK } : {}),
@@ -868,6 +931,7 @@ export function normalizeLimitsConfig(raw: unknown): AutoRAGRetrievalLimits {
 		...(minSyncScopedQueryTopK !== undefined ? { minSyncScopedQueryTopK } : {}),
 		...(toolDescriptionInstanceScopes !== undefined ? { toolDescriptionInstanceScopes } : {}),
 		...(prefetch !== undefined ? { prefetch } : {}),
+		...(recordCut !== undefined ? { recordCut } : {}),
 	};
 }
 

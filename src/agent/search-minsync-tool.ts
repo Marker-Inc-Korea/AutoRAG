@@ -2,8 +2,8 @@ import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
 import type { MinSyncVectorMethod } from "../minsync/method.ts";
 import { locationSuffix } from "../retrieval/chunk-location.ts";
-import type { RetrievalResult } from "../retrieval/types.ts";
 import { EvidenceLedger } from "./evidence-ledger.ts";
+import { type RecordCutToolOptions, registerAndRender } from "./result-render.ts";
 import { type SearchDocumentRetrievalTraceResult, toRetrievalTraceResults } from "./search-documents.ts";
 
 export const SEARCH_MINSYNC_DOCUMENTS_TOOL_NAME = "semantic_search_local_docs";
@@ -37,6 +37,7 @@ export function createSearchMinSyncDocumentsTool(
 	getMethod: () => MinSyncVectorMethod,
 	resolveScope: (scope: string | undefined) => string | undefined = (scope) => scope,
 	ledger: EvidenceLedger = new EvidenceLedger(),
+	options: RecordCutToolOptions = {},
 ): AgentTool<typeof searchMinSyncSchema, SearchMinSyncDocumentsDetails> {
 	return {
 		name: SEARCH_MINSYNC_DOCUMENTS_TOOL_NAME,
@@ -57,9 +58,23 @@ export function createSearchMinSyncDocumentsTool(
 				scope,
 				...(signal === undefined ? {} : { signal }),
 			});
-			const evidenceIds = results.map((result) => ledger.registerResult(SEARCH_MINSYNC_DOCUMENTS_TOOL_NAME, result));
+			const { text } = registerAndRender(
+				ledger,
+				SEARCH_MINSYNC_DOCUMENTS_TOOL_NAME,
+				results,
+				(result) => `${result.source} score=${result.score.toFixed(4)}${locationSuffix(result.metadata)}`,
+				options.recordCut,
+			);
 			return {
-				content: [{ type: "text", text: formatResults(results, evidenceIds) }],
+				content: [
+					{
+						type: "text",
+						text:
+							results.length === 0
+								? "No MinSync results."
+								: `MinSync results (cite evidence by its [eN] id):\n\n${text}`,
+					},
+				],
 				details: {
 					method: "semantic_search_local_docs",
 					resultCount: results.length,
@@ -69,13 +84,4 @@ export function createSearchMinSyncDocumentsTool(
 			};
 		},
 	};
-}
-
-function formatResults(results: readonly RetrievalResult[], evidenceIds: readonly string[]): string {
-	if (results.length === 0) return "No MinSync results.";
-	const rows = results.map((result, index) => {
-		const line = result.content.replace(/\s+/gu, " ");
-		return `[${evidenceIds[index]}] ${result.source} score=${result.score.toFixed(4)}${locationSuffix(result.metadata)}\n${line}`;
-	});
-	return `MinSync results (cite evidence by its [eN] id):\n\n${rows.join("\n\n")}`;
 }
