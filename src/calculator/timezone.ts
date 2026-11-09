@@ -10,6 +10,27 @@ export interface Zone {
 /** Zones without daylight saving whose abbreviation names exactly one place. */
 const UNAMBIGUOUS_ABBREVIATIONS: Readonly<Record<string, string>> = { KST: "Asia/Seoul", JST: "Asia/Tokyo" };
 
+/**
+ * US abbreviations whose offset never changes with the date: PST is UTC-8 in July too, while the region it is
+ * usually quoted for (America/Los_Angeles) is on UTC-7 then. The tool still refuses them, but it names the offset so the
+ * caller passes that, instead of swapping in a region that follows daylight saving.
+ */
+const US_ABBREVIATION_OFFSETS: Readonly<Record<string, string>> = {
+	PST: "-08:00",
+	PDT: "-07:00",
+	MST: "-07:00",
+	MDT: "-06:00",
+	EST: "-05:00",
+	EDT: "-04:00",
+};
+
+function abbreviationMessage(text: string, upper: string): string {
+	if (Object.hasOwn(US_ABBREVIATION_OFFSETS, upper)) {
+		const offset = US_ABBREVIATION_OFFSETS[upper] as string;
+		return `The time zone abbreviation "${text}" is not accepted, but it names the fixed offset ${offset} on every date. Pass "${offset}" to keep that meaning; pass an IANA region such as America/Los_Angeles only when the user means local time there, where the offset changes with daylight saving.`;
+	}
+	return `The time zone abbreviation "${text}" is used for several time zones with different offsets. Ask the user which one they mean, then pass an IANA name such as Asia/Kolkata or a fixed offset such as +05:30.`;
+}
 const formatters = new Map<string, Intl.DateTimeFormat>();
 
 function ianaZone(name: string): Zone {
@@ -56,11 +77,7 @@ export function parseZone(input: string): Zone {
 		return fixedZone((offset[1] === "-" ? -1 : 1) * (hours * 3600 + minutes * 60));
 	}
 	if (Object.hasOwn(UNAMBIGUOUS_ABBREVIATIONS, upper)) return ianaZone(UNAMBIGUOUS_ABBREVIATIONS[upper] as string);
-	if (/^[A-Z]{3,5}$/.test(text)) {
-		throw new CalculatorError(
-			`The time zone abbreviation "${text}" is ambiguous. Use an IANA name such as America/Los_Angeles, or a fixed offset such as -08:00.`,
-		);
-	}
+	if (/^[A-Z]{3,5}$/.test(text)) throw new CalculatorError(abbreviationMessage(text, upper));
 	if (text === "") throw new CalculatorError("The time zone is empty.");
 	return ianaZone(text);
 }
