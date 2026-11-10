@@ -92,9 +92,34 @@ export function formatStamp(ms) {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
 }
 
+// What a source is called in the pane. The config alias (`mailcrawl`, `nomadamas`) names an install, not a kind of
+// source; the type says what it is. Types with no friendlier name keep their own, and an unknown source falls back
+// to its alias.
+const SOURCE_NAMES = { mailcrawl: 'mail', hister: 'browser' }
+
+export function sourceName(group) {
+  const id = group?.datasourceId ?? String(group?.key ?? 'search').replace(/^source:/, '')
+  const type = group?.datasourceType
+  if (typeof type !== 'string' || !type) return SOURCE_NAMES[id] ?? id
+  return SOURCE_NAMES[type] ?? type
+}
+
+/** Tab names by group key. Two sources of the same kind (two Discord servers) are told apart by their alias. */
+export function tabLabels(groups) {
+  const sources = groups.filter(g => String(g.key).startsWith('source:'))
+  const kinds = new Map()
+  for (const g of sources) kinds.set(sourceName(g), (kinds.get(sourceName(g)) ?? 0) + 1)
+  const out = {}
+  for (const g of sources) {
+    const name = sourceName(g)
+    out[g.key] = (kinds.get(name) ?? 0) > 1 ? `${name} · ${g.datasourceId ?? g.key.replace(/^source:/, '')}` : name
+  }
+  return out
+}
+
 function sourceLabel(group) {
   if (!group) return 'search'
-  return group.datasourceId ?? group.key
+  return sourceName(group)
 }
 
 /** A chat or mail hit as a quote: where it came from, who wrote it, when, then the passage. */
@@ -408,10 +433,10 @@ function highlight(text, query) {
   return parts.map((part, i) => (i % 2 === 1 ? jsx('mark', { children: part }, i) : part))
 }
 
-function tabLabel(group, t) {
+function tabLabel(group, t, labels) {
   if (group.key === 'files') return t('files')
   if (group.key === 'content') return t('content')
-  return group.datasourceId ?? group.key.replace(/^source:/, '')
+  return labels[group.key] ?? sourceName(group)
 }
 
 function Row({ hit, selected, query, onToggle, ctx }) {
@@ -476,6 +501,7 @@ function FinderPane({ finder, ctx }) {
   const s = finder.getState()
   const group = s.groups.find(g => g.key === s.activeTab) ?? s.groups[0]
   const picked = Object.keys(s.selected)
+  const tabNames = tabLabels(s.groups)
 
   const body = () => {
     if (s.phase === 'idle') return jsx('div', { className: 'autorag-empty', children: t('hint') })
@@ -522,7 +548,7 @@ function FinderPane({ finder, ctx }) {
               type: 'button', role: 'tab', className: 'autorag-tab', 'data-active': g.key === s.activeTab, 'aria-selected': g.key === s.activeTab,
               onClick: () => finder.setActiveTab(g.key),
               children: [
-                tabLabel(g, t0),
+                tabLabel(g, t0, tabNames),
                 g.status === 'pending' ? jsx(GlyphSpinner, { ariaLabel: t('searching') }) : jsx('span', { className: 'autorag-count', children: g.status === 'ready' ? g.hits.length : '–' })
               ]
             }, g.key))

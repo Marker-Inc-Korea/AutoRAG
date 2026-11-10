@@ -60,7 +60,7 @@ globalThis.__sdk = {
   STATUSBAR_AREAS: { right: 'statusBar.right', left: 'statusBar.left' }
 }
 const mod = await loadPlugin()
-const { createFinder, applyLine, initialState, attachText, formatStamp } = mod
+const { createFinder, applyLine, initialState, attachText, formatStamp, sourceName, tabLabels } = mod
 
 const GROUPS = {
   type: 'groups',
@@ -511,6 +511,55 @@ describe('attachText / formatStamp', () => {
   it('formatStamp renders UTC-independent local date, null-safe', () => {
     assert.equal(formatStamp(null), '')
     assert.match(formatStamp(Date.UTC(2026, 10, 9, 5, 30)), /^2026-11-0[89] \d\d:\d\d$/)
+  })
+})
+
+describe('source names', () => {
+  const g = (id, type) => ({ key: `source:${id}`, datasourceId: id, datasourceType: type })
+
+  it('names a source by what it is, not by its config alias', () => {
+    assert.equal(sourceName(g('mailcrawl', 'mailcrawl')), 'mail')
+    assert.equal(sourceName(g('nomadamas', 'discord')), 'discord')
+    assert.equal(sourceName(g('browser', 'hister')), 'browser')
+    assert.equal(sourceName(g('kakao', 'kakao')), 'kakao')
+    assert.equal(sourceName(g('slack', 'slack')), 'slack')
+  })
+
+  it('falls back to the alias when the type is unknown or missing', () => {
+    assert.equal(sourceName(g('mystery', 'novel-thing')), 'novel-thing')
+    assert.equal(sourceName({ key: 'source:solo', datasourceId: 'solo' }), 'solo')
+    assert.equal(sourceName({ key: 'source:bare' }), 'bare')
+  })
+
+  it('tells two sources of the same kind apart by their alias, and only then', () => {
+    const labels = tabLabels([
+      { key: 'files' },
+      { key: 'content' },
+      g('nomadamas', 'discord'),
+      g('daon', 'discord'),
+      g('mailcrawl', 'mailcrawl')
+    ])
+    assert.equal(labels['source:nomadamas'], 'discord · nomadamas')
+    assert.equal(labels['source:daon'], 'discord · daon')
+    assert.equal(labels['source:mailcrawl'], 'mail')
+    assert.equal(labels.files, undefined)
+  })
+
+  it('a quoted chat hit names its source the same way', async () => {
+    const { finder, calls } = harness({
+      jobs: [[{
+        state: 'done', next: 3,
+        lines: [
+          { type: 'groups', groups: [{ key: 'source:mailcrawl', datasourceId: 'mailcrawl', datasourceType: 'mailcrawl' }] },
+          { type: 'group', key: 'source:mailcrawl', status: 'ready', hits: [message('m1', { title: '견적서' })], error: null },
+          { type: 'done' }
+        ]
+      }]]
+    })
+    await finder.search('x')
+    await settled(finder)
+    await finder.attach(['source:mailcrawl:m1'])
+    assert.match(calls.find(c => c[0] === 'insert')[2], /^> mail · 견적서/m)
   })
 })
 
