@@ -105,6 +105,58 @@ describe("runLiteFindWith", () => {
 		expect(lines.filter((line) => line.type === "group")).toHaveLength(1);
 	});
 
+	it("rejects a group that is not configured with exit 2, naming it and the valid ones", async () => {
+		const { ctx, out, err } = context(["needle"], { groups: "source:nope", json: true });
+		const searched = vi.fn(async () => answer({}));
+		const code = await runLiteFindWith(ctx, {
+			config: baseConfig({ datasources: { kakao: { type: "kakao" } } }),
+			runtime: fakeRuntime({ datasources: ["kakao"], searchSelected: searched }),
+			platform: "darwin",
+		});
+		expect(code).toBe(2);
+		expect(out).toEqual([]); // nothing is announced or searched for a request that cannot be honoured
+		expect(searched).not.toHaveBeenCalled();
+		const parsed = JSON.parse(err.at(-1) ?? "");
+		expect(parsed.error).toContain("source:nope");
+		expect(parsed.error).toContain("files, content, source:kakao");
+	});
+
+	it("rejects the whole request when only some of the groups exist", async () => {
+		const { ctx, out, err } = context(["needle"], { groups: "files,source:typo", json: true });
+		const code = await runLiteFindWith(ctx, { config: baseConfig(), runtime: fakeRuntime(), platform: "darwin" });
+		expect(code).toBe(2);
+		expect(out).toEqual([]);
+		expect(err.join("\n")).toContain("source:typo");
+		expect(err.join("\n")).not.toContain('"files"'); // a valid name is not reported as unknown
+	});
+
+	it("names every unknown group, once each", async () => {
+		const { ctx, err } = context(["needle"], { groups: "a,b,a", json: true });
+		await runLiteFindWith(ctx, { config: baseConfig(), runtime: fakeRuntime(), platform: "darwin" });
+		const message = JSON.parse(err.at(-1) ?? "").error as string;
+		expect(message.match(/\ba\b/g)?.length).toBe(1);
+		expect(message).toContain("b");
+	});
+
+	it("a disabled datasource is an unknown group, not a silent empty one", async () => {
+		const { ctx, err } = context(["needle"], { groups: "source:off", json: true });
+		const code = await runLiteFindWith(ctx, {
+			config: baseConfig({ datasources: { off: { type: "kakao", enabled: false } } }),
+			runtime: fakeRuntime({ datasources: ["off"] }),
+			platform: "darwin",
+		});
+		expect(code).toBe(2);
+		expect(err.join("\n")).toContain("source:off");
+	});
+
+	it("prints the same error in plain text without --json", async () => {
+		const { ctx, out, err } = context(["needle"], { groups: "nope" });
+		const code = await runLiteFindWith(ctx, { config: baseConfig(), runtime: fakeRuntime(), platform: "darwin" });
+		expect(code).toBe(2);
+		expect(out).toEqual([]);
+		expect(err.join("\n")).toMatch(/unknown group/i);
+	});
+
 	it("keeps exit 0 when a group errors", async () => {
 		const { ctx, out, err } = context(["needle"], { json: true });
 		const runtime = fakeRuntime({

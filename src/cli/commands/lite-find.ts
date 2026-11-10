@@ -141,6 +141,16 @@ export async function runLiteFindWith(ctx: CommandContext, overrides: LiteFindOv
 	const sourceDescriptors = configuredDatasources(config, runtime);
 	const wantedGroups = parseGroups(ctx);
 	const allGroups: readonly FindGroupDescriptor[] = [{ key: "files" }, { key: "content" }, ...sourceDescriptors];
+	if (wantedGroups !== undefined) {
+		// A group that does not exist would otherwise be dropped silently and read as "no results".
+		const known = new Set(allGroups.map((descriptor) => descriptor.key));
+		const unknown = [...new Set(wantedGroups.filter((key) => !known.has(key)))];
+		if (unknown.length > 0) {
+			const message = `Unknown group${unknown.length > 1 ? "s" : ""}: ${unknown.join(", ")}. Available groups: ${allGroups.map((descriptor) => descriptor.key).join(", ")}.`;
+			ctx.stderr(renderError(new Error(message), { json: ctx.json, debug: ctx.debug }));
+			return 2;
+		}
+	}
 	const groupsLine =
 		wantedGroups === undefined ? allGroups : allGroups.filter((descriptor) => wantedGroups.includes(descriptor.key));
 
