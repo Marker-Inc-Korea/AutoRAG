@@ -93,43 +93,4 @@ Discord staying keyword-only because discrawl's own config has embeddings off.
 > - Processes: long-lived stdio child; refresh spawns local helper binaries.
 > - No telemetry, no self-update (version pinned in `mcp.json`), no credentials read.
 > - Tools are annotated `readOnlyHint` except `autorag.refresh` and `autorag.report`.
-> - Tested with `hermes plugins validate` and `hermes plugins doctor --ci`; demo video linked below.
-
-## Demo
-
-`demo/` rebuilds a fully synthetic corpus (fictional company, fictional vendor) and records it with VHS.
-No real file, chat, or credential is used.
-
-```bash
-cd plugins/hermes-submission/demo
-./setup-demo.sh                       # corpus + sandbox AutoRAG config + first index (about 15 s warm)
-# isolated Hermes home with the plugin enabled; the gateway must be running before recording
-export HERMES_HOME=/tmp/hh-demo
-hermes plugins install file:///path/to/plugins-hermes-git-copy --enable   # or the catalog name after merge
-hermes pm install --extra mcp         # only if the MCP SDK is missing
-export HERMES_BIN="$(command -v hermes)" FIREWORKS_API_KEY=...
-vhs demo.tape                         # writes demo.mp4 and demo.gif
-```
-
-Model: `accounts/fireworks/models/glm-5p3-flash` (released 2026-08-26 per the Hermes model catalog cache), the
-only model used in the recording. No run without the plugin was recorded, so there is no with/without comparison.
-
-### What the recording shows
-
-1. `hermes plugins show autorag`.
-2. A question answered from the contract PDF with the file cited.
-3. A cross-source check: Slack says 11,500 KRW/box, the PDF says 10,800; Discord asks for 60 days
-   notice, the PDF says 30; Telegram adds a Tue/Thu delivery window and a 15% weekend surcharge the
-   PDF does not contain.
-4. Duplicate detection, read-only.
-
-### Caveats for the X post and form
-
-- The recorded model answers are not deterministic. Re-run before posting and trust the new take.
-- The synthetic Telegram, Slack, and Discord archives are built by writing the crawlers' own SQLite
-  schemas (Telegram, Discord) or importing a Slack export (Slack). They are realistic in shape, not
-  captured from a live account.
-- The Telegram crawler's `import` is replaced by `telecrawl-preimported.sh` in the demo config only,
-  because a real import needs Telegram Desktop's store. Say so if asked.
-- Star counts and "no competing plugin" claims in the planning notes were not verified here.
-- Not done by design: X post, Typeform submission, catalog PR, pushing this branch.
+> - Tested with `hermes plugins validate` and `hermes plugins doctor --ci`.
