@@ -123,4 +123,19 @@ describe("runFind", () => {
 		expect(files).toMatchObject({ status: "off", hits: [], error: null });
 		expect(content).toMatchObject({ status: "off", hits: [], error: null });
 	});
+
+	it("skips the groups line when announce is false", async () => {
+		const { lines, emit } = collect();
+		await runFind({
+			query: "q",
+			topK: 5,
+			runtime: fakeRuntime(),
+			platform: "darwin",
+			datasources: [],
+			announce: false,
+			emit,
+		});
+		expect(lines.some((line) => line.type === "groups")).toBe(false);
+		expect(lines.at(-1)?.type).toBe("done");
+	});
 });

@@ -29,7 +29,17 @@ export interface LiteFindOverrides {
 	readonly emit?: (line: FindLine) => void;
 }
 
-const USAGE = "Usage: autorag lite find <query> [--top-k N] [--groups key,key]";
+const USAGE = "Usage: autorag lite find <query> [--query TEXT] [--top-k N] [--groups key,key]";
+
+/**
+ * The query: `--query` wins over positionals, so a query that begins with `-`
+ * (`--query=--help`) is searchable instead of parsed as a flag.
+ */
+function resolveQuery(ctx: CommandContext): string {
+	const flag = ctx.flags.query;
+	if (typeof flag === "string") return flag.trim();
+	return ctx.positionals.join(" ").trim();
+}
 
 function parseTopK(
 	value: string | boolean | undefined,
@@ -95,7 +105,7 @@ function renderHuman(
  * unusable runtime; 0 otherwise (individual group failures stay on the stream).
  */
 export async function runLiteFindWith(ctx: CommandContext, overrides: LiteFindOverrides = {}): Promise<number> {
-	const query = ctx.positionals.join(" ").trim();
+	const query = resolveQuery(ctx);
 	if (query.length === 0) {
 		ctx.stderr(renderError(new Error(USAGE), { json: ctx.json, debug: ctx.debug }));
 		return 2;
@@ -127,6 +137,31 @@ export async function runLiteFindWith(ctx: CommandContext, overrides: LiteFindOv
 		return 2;
 	}
 
+	const platform = overrides.platform ?? process.platform;
+	const sourceDescriptors = configuredDatasources(config, runtime);
+	const wantedGroups = parseGroups(ctx);
+	const allGroups: readonly FindGroupDescriptor[] = [{ key: "files" }, { key: "content" }, ...sourceDescriptors];
+	const groupsLine =
+		wantedGroups === undefined ? allGroups : allGroups.filter((descriptor) => wantedGroups.includes(descriptor.key));
+
+	const groupLines: FindGroupLine[] = [];
+	let doneElapsed = 0;
+	const emit: (line: FindLine) => void =
+		overrides.emit ??
+		((line) => {
+			if (ctx.json) {
+				ctx.stdout(JSON.stringify(line));
+			} else if (line.type === "group") {
+				groupLines.push(line);
+			} else if (line.type === "done") {
+				doneElapsed = line.elapsedMs;
+			}
+		});
+
+	// Announce the group list before any slow work (judge resolution, datasource
+	// searches) so the UI can paint its tabs immediately.
+	emit({ type: "groups", groups: groupsLine });
+
 	let judge: FindJudge | undefined = overrides.judge;
 	if (judge === undefined) {
 		try {
@@ -141,10 +176,7 @@ export async function runLiteFindWith(ctx: CommandContext, overrides: LiteFindOv
 		}
 	}
 
-	const platform = overrides.platform ?? process.platform;
-	const descriptors = configuredDatasources(config, runtime);
-	const wantedGroups = parseGroups(ctx);
-	const options = {
+	await runFind({
 		query,
 		topK: topK.value ?? 10,
 		runtime,
@@ -152,33 +184,16 @@ export async function runLiteFindWith(ctx: CommandContext, overrides: LiteFindOv
 		platform,
 		fileSearchEnabled: filenameIndexEnabled(config, platform),
 		semanticEnabled: true,
-		datasources: descriptors,
+		datasources: sourceDescriptors,
 		...(wantedGroups === undefined ? {} : { groups: wantedGroups }),
+		announce: false,
 		...(overrides.now === undefined ? {} : { now: overrides.now }),
-	};
-
-	if (overrides.emit !== undefined) {
-		await runFind({ ...options, emit: overrides.emit });
-		return 0;
-	}
-
-	if (ctx.json) {
-		await runFind({ ...options, emit: (line) => ctx.stdout(JSON.stringify(line)) });
-		return 0;
-	}
-
-	const groupLines: FindGroupLine[] = [];
-	let groupsLine: readonly FindGroupDescriptor[] = [];
-	let elapsedMs = 0;
-	await runFind({
-		...options,
-		emit: (line) => {
-			if (line.type === "groups") groupsLine = line.groups;
-			else if (line.type === "group") groupLines.push(line);
-			else elapsedMs = line.elapsedMs;
-		},
+		emit,
 	});
-	ctx.stdout(renderHuman(groupsLine, groupLines, elapsedMs));
+
+	if (overrides.emit === undefined && !ctx.json) {
+		ctx.stdout(renderHuman(groupsLine, groupLines, doneElapsed));
+	}
 	return 0;
 }
 

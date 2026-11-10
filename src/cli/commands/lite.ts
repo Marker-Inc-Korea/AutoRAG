@@ -45,6 +45,8 @@ Subcommands:
                        completion order) with --json: a "groups" line first,
                        one "group" line per surface, and a final "done" line.
                        (--top-k N  --groups key,key  --json  --debug)
+                       --query TEXT  searches TEXT as the query (wins over the
+                       positional), so a query beginning with "-" works.
                        --groups narrows the search to the listed group keys
                        (files, content, source:<datasourceId>).
 

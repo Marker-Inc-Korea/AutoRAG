@@ -42,6 +42,7 @@ const VALUE_FLAGS = new Set([
 	"top-k",
 	"scope",
 	"groups",
+	"query",
 	"result",
 	"debounce-ms",
 	"power",

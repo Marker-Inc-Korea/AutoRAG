@@ -19,6 +19,8 @@ export interface FindRunOptions {
 	readonly datasources?: readonly FindGroupDescriptor[];
 	/** `--groups` narrowing: run only these keys. */
 	readonly groups?: readonly string[];
+	/** Emit the `groups` line before running. Pass false when the caller already announced it. */
+	readonly announce?: boolean;
 	readonly emit: (line: FindLine) => void;
 	readonly now?: () => number;
 }
@@ -38,7 +40,9 @@ export async function runFind(options: FindRunOptions): Promise<void> {
 	const wanted = options.groups;
 	const selected = wanted === undefined ? runners : runners.filter((runner) => wanted.includes(runner.key));
 
-	options.emit({ type: "groups", groups: selected.map((runner) => runner.descriptor) });
+	if (options.announce !== false) {
+		options.emit({ type: "groups", groups: selected.map((runner) => runner.descriptor) });
+	}
 
 	const started = now();
 	await Promise.all(

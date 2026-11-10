@@ -3,7 +3,8 @@ import { liteUsage } from "../../src/cli/commands/lite.ts";
 import { runLiteFindWith } from "../../src/cli/commands/lite-find.ts";
 import type { CommandContext } from "../../src/cli/commands/types.ts";
 import type { CliConfig } from "../../src/cli/config.ts";
-import { main } from "../../src/cli/index.ts";
+import { main, parseArgs } from "../../src/cli/index.ts";
+import type { FindLine } from "../../src/find/index.ts";
 import { answer, fakeRuntime, judgeFrom, result } from "../find/fakes.ts";
 
 function baseConfig(overrides: Partial<CliConfig> = {}): CliConfig {
@@ -133,5 +134,62 @@ describe("runLiteFindWith", () => {
 		});
 		expect(out.join("\n")).toContain("files");
 		expect(out.join("\n")).toContain("done");
+	});
+
+	it("parses --query with the = form without treating the value as a flag", () => {
+		const parsed = parseArgs(["lite", "find", "--query=--help", "--json"]);
+		expect("error" in parsed).toBe(false);
+		if (!("error" in parsed)) expect(parsed.flags.query).toBe("--help");
+		const dashed = parseArgs(["--query=-x foo"]);
+		expect("error" in dashed).toBe(false);
+		if (!("error" in dashed)) expect(dashed.flags.query).toBe("-x foo");
+	});
+
+	it("searches the --query value instead of the positionals", async () => {
+		const seen: string[] = [];
+		const runtime = fakeRuntime({
+			searchFsearch: async (request) => {
+				seen.push(String(request.query));
+				return { ok: true, backend: "fsearch-cli", results: [] };
+			},
+			searchSelected: async (query) => {
+				seen.push(query);
+				return answer({});
+			},
+		});
+		const { ctx } = context(["ignored"], { query: "--help", json: true });
+		const code = await runLiteFindWith(ctx, {
+			config: baseConfig(),
+			runtime,
+			platform: "darwin",
+			emit: () => {},
+		});
+		expect(code).toBe(0);
+		expect(seen).toContain("--help");
+		expect(seen).not.toContain("ignored");
+	});
+
+	it("announces the groups line before any search runs", async () => {
+		let searches = 0;
+		const runtime = fakeRuntime({
+			searchFsearch: async () => {
+				searches += 1;
+				return { ok: true, backend: "fsearch-cli", results: [] };
+			},
+			searchSelected: async () => {
+				searches += 1;
+				return answer({});
+			},
+		});
+		const lines: FindLine[] = [];
+		const { ctx } = context(["needle"], { json: true });
+		await runLiteFindWith(ctx, {
+			config: baseConfig(),
+			runtime,
+			platform: "darwin",
+			emit: (line) => lines.push(line),
+		});
+		expect(lines[0]?.type).toBe("groups");
+		expect(searches).toBeGreaterThan(0);
 	});
 });
