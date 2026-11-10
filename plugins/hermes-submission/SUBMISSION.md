@@ -79,7 +79,7 @@ Discord staying keyword-only because discrawl's own config has embeddings off.
 > Portable Agent Plugins v1 package (`plugin.json` + `mcp.json` + three skills). Source:
 > `Marker-Inc-Korea/AutoRAG` `plugins/hermes` (submitted by a contributor to that repository; confirm owner or major-contributor status before opening, rule 5).
 >
-> - Surfaces used: stdio MCP server (`@autorag/librarian@2.13.8`, pinned), skills. No hooks, no middleware, no core
+> - Surfaces used: stdio MCP server (`@autorag/librarian@2.13.9`, pinned), skills. No hooks, no middleware, no core
 >   overrides, no Python imported into Hermes. One skill (`automate`) bundles a standard-library Python helper script
 >   that the agent runs only when the user asks for a file automation (macOS/Linux): it writes an AutoRAG automation
 >   rule and two small scripts, and nothing at install time.
