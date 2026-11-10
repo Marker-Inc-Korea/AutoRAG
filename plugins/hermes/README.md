@@ -114,6 +114,18 @@ search never waits on npm. Changing the version pinned in `mcp.json` reinstalls 
 Desktop opt-in: Hermes ships a package's desktop half switched off. Turn on **AutoRAG search** once in
 Capabilities → Plugins; it then sits next to the file tree in the right sidebar, and opens with `Cmd+Alt+F`.
 
+## Citations (Hermes Desktop)
+
+Answers that cite a source show it as a card: `[2] general`, `[1] Hanbit_Logistics_Contract_Renewal_2026.pdf`. Click a
+card to see the exact passage AutoRAG indexed (file path or sender and time, with your search words highlighted), then
+**Open file**, **Show in Finder**, or **Copy quote**. A citation the model made up, or one that is not in the index, is
+shown with a warning triangle and "not in the AutoRAG index": the plugin checks every cited id against the index, so a
+fabricated source is visible instead of looking like the others. In the CLI and messaging apps the model cites in
+plain text (`[n]` and the source name), as before.
+
+This works on Hermes Desktop with the transcript-directive seam (Hermes 0.23.1 has it); on an older Desktop the cards
+do not appear and the plain-text citations remain.
+
 ## Configuration
 
 All optional. Hermes forwards these from your shell or profile `.env` only when
@@ -177,6 +189,12 @@ variable names, never values.
   `hermes cron run` for that job. The daemon is registered with launchd or systemd `--user` only if you run
   `autorag automate install`. Nothing is created at install time, and `remove` deletes everything the helper made.
   File paths (not contents) are passed to your Hermes model for the job you define.
+- **Citation cards (Desktop).** When the model writes `::autorag-cite{...}` (the `search` skill tells it to, on Desktop
+  only), the plugin draws a card. The card asks `/api/plugins/autorag/evidence`, which runs the resident librarian's
+  `lite retrieve --scope=<id>` (read-only, no shell, one argument, a few seconds, at most two at a time) and returns
+  the indexed passage. What the card shows and opens comes from that answer, never from the model's text. Open file
+  hands only document and image types to your OS default app; anything else can only be shown in Finder. Nothing is
+  sent anywhere and nothing is written.
 
 ## Develop and verify
 

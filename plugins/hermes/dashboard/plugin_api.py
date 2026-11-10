@@ -249,6 +249,30 @@ def set_runtime(runtime: Optional[Runtime]) -> None:
         _runtime = runtime
 
 
+def librarian_command(
+    *,
+    env: Optional[dict[str, str]] = None,
+    which: Callable[[str], Optional[str]] = shutil.which,
+    runtime_dir: Optional[Path] = None,
+    runtime: Optional[Runtime] = None,
+) -> list[str]:
+    """argv prefix that runs the resident librarian with `node` (never npx, so a call cannot wait on npm)."""
+    environment = os.environ if env is None else env
+    node = which("node")
+    if not node:
+        raise FinderUnavailable("Node.js 24+ was not found on PATH (the AutoRAG finder runs on it)")
+
+    local_cli = environment.get("AUTORAG_LIBRARIAN_CLI", "").strip()
+    if local_cli:
+        return [node, local_cli]
+
+    rt = runtime or (Runtime(runtime_dir) if runtime_dir is not None else get_runtime())
+    if not rt.is_ready():
+        state = rt.status()["state"]
+        raise FinderNotReady("installing" if state == "installing" else state)
+    return [node, str(rt.cli)]
+
+
 def build_find_argv(
     query: str,
     groups: Optional[Sequence[str]],
@@ -263,24 +287,10 @@ def build_find_argv(
     parsed as a flag. No shell is involved."""
     text = validate_query(query)
     wanted = validate_groups(groups)
-    environment = os.environ if env is None else env
     tail = ["lite", "find", f"--query={text}", "--json"]
     if wanted:
         tail.append("--groups=" + ",".join(wanted))
-
-    node = which("node")
-    if not node:
-        raise FinderUnavailable("Node.js 24+ was not found on PATH (the AutoRAG finder runs on it)")
-
-    local_cli = environment.get("AUTORAG_LIBRARIAN_CLI", "").strip()
-    if local_cli:
-        return [node, local_cli, *tail]
-
-    rt = runtime or (Runtime(runtime_dir) if runtime_dir is not None else get_runtime())
-    if not rt.is_ready():
-        state = rt.status()["state"]
-        raise FinderNotReady("installing" if state == "installing" else state)
-    return [node, str(rt.cli), *tail]
+    return [*librarian_command(env=env, which=which, runtime_dir=runtime_dir, runtime=runtime), *tail]
 
 
 def spawn_process(argv: Sequence[str], env: dict[str, str]) -> "subprocess.Popen[str]":
@@ -560,3 +570,157 @@ async def cancel_find(job_id: str) -> dict[str, bool]:
     if not get_registry().cancel(job_id):
         raise HTTPException(status_code=404, detail="unknown find job")
     return {"cancelled": True}
+
+
+# ---- evidence for one cited source ----------------------------------------------------------------------------
+#
+# The model cites a source in chat with `::autorag-cite{id="..."}`. The id is the virtual path AutoRAG returned
+# (`metadata.virtualPath` for files, `source` for chat and mail). It is written by the model, so it is untrusted:
+# it only ever reaches the librarian as a `--scope=` value, which matches indexed sources and nothing else. What
+# the card shows and what it opens (the file path, the link) comes from the index's own answer, never from the
+# model's text. An id that matches nothing is reported as "not in the index", which is how a made-up citation shows.
+
+EVIDENCE_TIMEOUT_S = 150.0
+EVIDENCE_CACHE_MAX = 64
+MAX_EVIDENCE_CHARS = 2400
+MAX_CITE_QUERY_CHARS = 200
+_SOURCE_ID_RE = re.compile(r"^/[^\x00-\x1f\x7f]{0,1022}$")
+
+
+class SourceNotIndexed(LookupError):
+    """The id matches nothing in the AutoRAG index."""
+
+
+def validate_source_id(source_id: str) -> str:
+    if not isinstance(source_id, str) or not _SOURCE_ID_RE.match(source_id) or ".." in source_id.split("/"):
+        raise ValueError("invalid source id")
+    return source_id
+
+
+def validate_cite_query(query: Optional[str]) -> str:
+    """The words that pick the best chunk inside the cited source. Never starts with `-`: it is a positional argument."""
+    text = (query or "").replace("\x00", " ").strip()[:MAX_CITE_QUERY_CHARS].lstrip("- \t\r\n").strip()
+    return text or "evidence"
+
+
+def build_evidence_argv(
+    source_id: str,
+    query: Optional[str],
+    *,
+    env: Optional[dict[str, str]] = None,
+    which: Callable[[str], Optional[str]] = shutil.which,
+    runtime_dir: Optional[Path] = None,
+    runtime: Optional[Runtime] = None,
+) -> list[str]:
+    scope = validate_source_id(source_id)
+    text = validate_cite_query(query)
+    base = librarian_command(env=env, which=which, runtime_dir=runtime_dir, runtime=runtime)
+    return [*base, "lite", "retrieve", text, f"--scope={scope}", "--top-k", "1", "--json"]
+
+
+def _http_url(value: Any) -> Optional[str]:
+    return value if isinstance(value, str) and re.match(r"^https?://", value, re.I) and len(value) <= 2048 else None
+
+
+def parse_evidence(source_id: str, raw: Any) -> Optional[dict[str, Any]]:
+    """The one chunk `lite retrieve` returned for the cited source, shaped for the card. None when it found nothing."""
+    results = raw.get("results") if isinstance(raw, dict) else None
+    hit = results[0] if isinstance(results, list) and results else None
+    if not isinstance(hit, dict):
+        return None
+    meta = hit.get("metadata") if isinstance(hit.get("metadata"), dict) else {}
+    source = str(hit.get("source") or "")
+    content = str(hit.get("content") or "")
+    is_file = isinstance(meta.get("virtualPath"), str) and os.path.isabs(source)
+    if is_file and content.startswith("files/") and "\n" in content:
+        content = content.split("\n", 1)[1]  # the first line is the index's own file label, not document text
+    content = content.strip()
+    truncated = len(content) > MAX_EVIDENCE_CHARS
+    published = meta.get("publishedAt")
+    out: dict[str, Any] = {
+        "id": source_id,
+        "kind": "file" if is_file else "message",
+        "title": os.path.basename(source) if is_file else str(meta.get("title") or meta.get("channelName") or ""),
+        "author": None if is_file else (meta.get("senderName") or meta.get("author") or None),
+        "timestamp": published if isinstance(published, (int, float)) and not isinstance(published, bool) else None,
+        "datasource": meta.get("datasourceId") if isinstance(meta.get("datasourceId"), str) else None,
+        "location": str(meta.get("hierarchy") or meta.get("virtualPath") or ""),
+        "path": source if is_file and os.path.isfile(source) else None,
+        "missing": bool(is_file and not os.path.isfile(source)),
+        "url": _http_url(meta.get("url")),
+        "content": content[:MAX_EVIDENCE_CHARS],
+        "truncated": truncated,
+    }
+    return out
+
+
+_evidence_cache: "OrderedDict[tuple[str, str], dict[str, Any]]" = OrderedDict()
+_evidence_lock = threading.Lock()
+# Each lookup starts a librarian child (a few seconds). A page with many citations must not start them all at once.
+_evidence_slots = threading.BoundedSemaphore(2)
+
+
+def clear_evidence_cache() -> None:
+    with _evidence_lock:
+        _evidence_cache.clear()
+
+
+def fetch_evidence(
+    source_id: str,
+    query: Optional[str],
+    *,
+    env: Optional[dict[str, str]] = None,
+    run: Callable[..., Any] = subprocess.run,
+    **argv_options: Any,
+) -> dict[str, Any]:
+    argv = build_evidence_argv(source_id, query, env=env, **argv_options)
+    key = (source_id, validate_cite_query(query))
+    with _evidence_lock:
+        cached = _evidence_cache.get(key)
+        if cached is not None:
+            _evidence_cache.move_to_end(key)
+            return dict(cached)
+    with _evidence_slots:
+        try:
+            done = run(argv, stdin=subprocess.DEVNULL, capture_output=True, text=True, encoding="utf-8",
+                       errors="replace", env=child_env(env), timeout=EVIDENCE_TIMEOUT_S)
+        except subprocess.TimeoutExpired as exc:
+            partial = exc.stderr if isinstance(exc.stderr, str) else (exc.stderr or b"").decode("utf-8", "replace")
+            tail = partial.strip()[-600:]
+            raise FinderUnavailable("looking up the cited source timed out" + (f": {tail}" if tail else ""))
+    if done.returncode != 0:
+        raise RuntimeError((str(done.stderr).strip() or f"exit {done.returncode}")[-MAX_STDERR_CHARS:])
+    try:
+        raw = json.loads(done.stdout)
+    except ValueError:
+        raise RuntimeError("the librarian did not return JSON")
+    evidence = parse_evidence(source_id, raw)
+    if evidence is None:
+        raise SourceNotIndexed(source_id)
+    with _evidence_lock:
+        _evidence_cache[key] = evidence
+        while len(_evidence_cache) > EVIDENCE_CACHE_MAX:
+            _evidence_cache.popitem(last=False)
+    return dict(evidence)
+
+
+@router.get("/evidence")
+def get_evidence(id: str, q: str = "") -> dict[str, Any]:
+    """The indexed chunk behind a citation card. Plain `def`: FastAPI runs it in its thread pool, so the librarian
+    child never blocks the gateway's event loop."""
+    try:
+        validate_source_id(id)
+        validate_cite_query(q)
+    except ValueError as exc:
+        raise _unprocessable(exc)
+    try:
+        return fetch_evidence(id, q)
+    except SourceNotIndexed:
+        raise HTTPException(status_code=404, detail="not-in-index")
+    except FinderNotReady as exc:
+        get_runtime().warm()
+        raise HTTPException(status_code=503, detail={"state": exc.state, "message": str(exc)})
+    except FinderUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))

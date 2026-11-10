@@ -9,6 +9,7 @@ import {
   Button, GlyphSpinner, icons, KEYBINDS_AREA, PALETTE_AREA, PANES_AREA, ScrollArea, STATUSBAR_AREAS, Tip, host,
   usePluginI18n
 } from '@hermes/plugin-sdk'
+import * as sdk from '@hermes/plugin-sdk'
 import { useEffect, useRef, useState } from 'react'
 import { jsx, jsxs } from 'react/jsx-runtime'
 
@@ -142,6 +143,72 @@ function errorText(error) {
 function notReadyState(error) {
   const state = error?.detail?.state
   return state === 'installing' || state === 'idle' || state === 'failed' ? state : null
+}
+
+// ---- citations -----------------------------------------------------------------------------------
+
+const CITE_DIRECTIVE = 'autorag-cite'
+const MAX_CITE_ID = 1024
+// The backend lets one lookup run 150 s and runs two at a time, so the third card of a page can wait for a slot. The
+// default REST timeout (30 s) gave up first, which showed a working citation as an error.
+const EVIDENCE_TIMEOUT_MS = 330_000
+// Document and image types a click may hand to the OS default app. Anything else (scripts, apps, archives) can only
+// be revealed in the file manager: the model's citation must never become "run this file".
+const OPENABLE = /\.(pdf|docx?|pptx?|xlsx?|hwpx?|odt|ods|odp|rtf|txt|md|csv|tsv|json|html?|eml|msg|png|jpe?g|gif|webp|bmp|tiff?)$/i
+
+export function canOpenDirectly(path) {
+  return typeof path === 'string' && OPENABLE.test(path)
+}
+
+/** Directive attributes are model output: keep only what a card can safely use. */
+export function citeAttrs(attrs) {
+  const a = attrs && typeof attrs === 'object' ? attrs : {}
+  const id = typeof a.id === 'string' ? a.id.trim() : ''
+  return {
+    id: id.startsWith('/') && id.length <= MAX_CITE_ID ? id : '',
+    n: typeof a.n === 'string' && /^\d{1,3}$/.test(a.n.trim()) ? a.n.trim() : '',
+    q: typeof a.q === 'string' ? a.q.slice(0, 200) : ''
+  }
+}
+
+/** The backend answers an id the index does not contain with 404 `{"detail":"not-in-index"}`. Desktop's REST bridge
+ *  rethrows it as an Error whose message is `<status>: <body>` (the live run showed `404: {"detail":"not-in-index"}`),
+ *  not as a parsed object, so read the message; a parsed `detail` is accepted too. */
+export function notInIndex(error) {
+  if (error?.detail === 'not-in-index') return true
+  const text = typeof error === 'string' ? error : String(error?.message ?? '')
+  return /(^|\D)404\b/.test(text) && text.includes('not-in-index')
+}
+
+/** Looks one cited source up in the index, once per (id, query): results and "not in the index" are cached,
+ *  transient failures are not (the next click tries again). */
+export function createEvidence({ rest }) {
+  const settled = new Map()
+  const inflight = new Map()
+  const load = (id, q = '') => {
+    const key = `${id}\u0000${q}`
+    if (settled.has(key)) return Promise.resolve(settled.get(key))
+    if (inflight.has(key)) return inflight.get(key)
+    const params = `id=${encodeURIComponent(id)}${q ? `&q=${encodeURIComponent(q)}` : ''}`
+    const p = rest(`/evidence?${params}`, { timeoutMs: EVIDENCE_TIMEOUT_MS })
+      .then(evidence => {
+        const out = { status: 'ready', evidence }
+        settled.set(key, out)
+        return out
+      })
+      .catch(error => {
+        if (notInIndex(error)) {
+          const out = { status: 'unknown' }
+          settled.set(key, out)
+          return out
+        }
+        return { status: 'error', message: errorText(error) }
+      })
+      .finally(() => inflight.delete(key))
+    inflight.set(key, p)
+    return p
+  }
+  return { load }
 }
 
 // ---- controller ----------------------------------------------------------------------------------
@@ -364,7 +431,14 @@ const EN = {
   capped: ' Only the first 20 were added.',
   line: 'line',
   error: 'Search failed',
-  preparing: 'Getting AutoRAG ready (first run only, about a minute)…'
+  preparing: 'Getting AutoRAG ready (first run only, about a minute)…',
+  citeOpen: 'Open file',
+  citeCopy: 'Copy quote',
+  citeRetry: 'Retry',
+  citeMissing: 'The file was moved or deleted.',
+  citeOpenFailed: 'Could not open it. It may not be on this computer.',
+  citeCopyFailed: 'Could not copy.',
+  citeUnknown: 'This source is not in the AutoRAG index. Check it yourself before relying on the answer.'
 }
 const KO = {
   title: 'AutoRAG 검색',
@@ -390,7 +464,14 @@ const KO = {
   capped: ' 처음 20개만 추가했습니다.',
   line: '줄',
   error: '검색 실패',
-  preparing: 'AutoRAG를 준비하는 중입니다 (처음 한 번만, 1분 정도 걸립니다)…'
+  preparing: 'AutoRAG를 준비하는 중입니다 (처음 한 번만, 1분 정도 걸립니다)…',
+  citeOpen: '파일 열기',
+  citeCopy: '인용문 복사',
+  citeRetry: '다시 시도',
+  citeMissing: '파일이 이동되었거나 삭제되었습니다.',
+  citeOpenFailed: '열지 못했습니다. 이 컴퓨터에 있는 파일이 아닐 수 있습니다.',
+  citeCopyFailed: '복사하지 못했습니다.',
+  citeUnknown: 'AutoRAG 인덱스에서 이 출처를 찾을 수 없습니다. 답변에 의존하기 전에 직접 확인하세요.'
 }
 const LOCALES = { en: EN, ko: KO }
 const fill = (text, vars) => String(text).replace(/\{(\w+)\}/g, (_, k) => vars?.[k] ?? '')
@@ -421,6 +502,16 @@ const CSS = `
 .autorag-err{padding:10px 12px;color:var(--ui-text-secondary);white-space:pre-wrap;word-break:break-word}
 .autorag-foot{display:flex;gap:8px;align-items:center;padding:6px 10px;border-top:1px solid var(--ui-stroke-secondary)}
 .autorag-notice{flex:1;color:var(--ui-text-secondary)}
+.autorag-cite{display:block;margin:4px 0}
+.autorag-chip{display:inline-flex;gap:5px;align-items:center;max-width:100%;padding:2px 8px;border:1px solid var(--ui-stroke-secondary);border-radius:999px;background:transparent;color:var(--ui-text-primary);font:inherit;font-size:12px;cursor:pointer}
+.autorag-chip:hover,.autorag-chip:focus-visible{background:var(--chrome-action-hover)}
+.autorag-chip-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.autorag-cite[data-state=unknown] .autorag-chip{border-style:dashed;color:var(--ui-text-tertiary)}
+.autorag-cite-panel{margin-top:4px;padding:8px 10px;border:1px solid var(--ui-stroke-secondary);border-radius:8px;font-size:12px}
+.autorag-cite-quote{margin:6px 0;padding:0 0 0 8px;border-left:2px solid var(--ui-accent);color:var(--ui-text-secondary);white-space:pre-wrap;word-break:break-word;max-height:14rem;overflow:auto}
+.autorag-cite-quote mark{background:color-mix(in srgb,var(--ui-accent) 30%,transparent);color:inherit;border-radius:2px}
+.autorag-cite-actions{display:flex;flex-wrap:wrap;gap:4px}
+.autorag-cite-note{color:var(--ui-text-secondary);margin-top:4px}
 `
 
 // ---- view ----------------------------------------------------------------------------------------
@@ -570,6 +661,80 @@ function FinderPane({ finder, ctx }) {
   })
 }
 
+function CiteCard({ attrs, streaming, ctx, evidence }) {
+  const t0 = usePluginI18n(ID)
+  const t = (k, v) => fill(t0(k), v)
+  const cite = citeAttrs(attrs)
+  const [open, setOpen] = useState(false)
+  const [res, setRes] = useState(null)
+  const [note, setNote] = useState('')
+  const load = () => {
+    setRes(null)
+    void evidence.load(cite.id, cite.q).then(setRes)
+  }
+  // Check the citation against the index as soon as the message stops streaming, so a made-up one shows at a glance.
+  useEffect(() => {
+    if (streaming || !cite.id) return undefined
+    let live = true
+    void evidence.load(cite.id, cite.q).then(r => live && setRes(r))
+    return () => { live = false }
+  }, [streaming, cite.id, cite.q, evidence])
+
+  const tag = cite.n ? `[${cite.n}]` : ''
+  const ev = res?.status === 'ready' ? res.evidence : null
+  const unknown = !cite.id || res?.status === 'unknown'
+  const label = ev ? ev.title || cite.id : cite.id.split('/').pop() || cite.id
+  const icon = unknown ? icons.AlertTriangle : ev?.kind === 'message' ? icons.MessageCircle : icons.FileText
+
+  const act = async (fn, failKey) => {
+    let ok = false
+    try { ok = await fn() } catch { ok = false }
+    setNote(ok ? '' : t(failKey))
+  }
+  const meta = ev ? [ev.author, formatStamp(ev.timestamp), ev.location].filter(Boolean).join(' · ') : ''
+
+  const panel = () => {
+    if (unknown) return jsx('div', { className: 'autorag-cite-note', role: 'status', children: t('citeUnknown') })
+    if (!res) return jsx('div', { className: 'autorag-cite-note', role: 'status', children: t('searching') })
+    if (res.status === 'error') {
+      return jsxs('div', {
+        className: 'autorag-cite-note', role: 'status',
+        children: [res.message, ' ', jsx(Button, { variant: 'ghost', size: 'xs', onClick: load, children: t('citeRetry') })]
+      })
+    }
+    const direct = ev.path && canOpenDirectly(ev.path)
+    return jsxs('div', {
+      children: [
+        meta ? jsx('div', { className: 'autorag-meta', children: meta }) : null,
+        jsx('blockquote', { className: 'autorag-cite-quote', children: [highlight(ev.content, cite.q), ev.truncated ? '…' : ''] }),
+        ev.missing ? jsx('div', { className: 'autorag-cite-note', children: t('citeMissing') }) : null,
+        jsxs('div', {
+          className: 'autorag-cite-actions',
+          children: [
+            direct ? jsx(Button, { size: 'xs', onClick: () => void act(() => ctx.os.openExternal(ev.path), 'citeOpenFailed'), children: t('citeOpen') }) : null,
+            ev.path ? jsx(Button, { variant: 'ghost', size: 'xs', onClick: () => void act(() => ctx.os.revealPath(ev.path), 'citeOpenFailed'), children: t('reveal') }) : null,
+            ev.url ? jsx(Button, { variant: 'ghost', size: 'xs', onClick: () => void act(() => ctx.os.openExternal(ev.url), 'citeOpenFailed'), children: t('open') }) : null,
+            jsx(Button, { variant: 'ghost', size: 'xs', onClick: () => void act(() => ctx.os.writeClipboard(ev.content), 'citeCopyFailed'), children: t('citeCopy') })
+          ]
+        }),
+        note ? jsx('div', { className: 'autorag-cite-note', role: 'status', children: note }) : null
+      ]
+    })
+  }
+
+  return jsxs('div', {
+    className: 'autorag-cite', 'data-state': unknown ? 'unknown' : res?.status ?? 'loading',
+    children: [
+      jsxs('button', {
+        type: 'button', className: 'autorag-chip', 'aria-expanded': open,
+        onClick: () => { setOpen(o => !o); if (res?.status === 'error') load() },
+        children: [jsx(icon, {}, 'i'), jsx('span', { className: 'autorag-chip-label', children: [tag, tag ? ' ' : '', label] }, 'l')]
+      }),
+      open ? jsx('div', { className: 'autorag-cite-panel', children: panel() }) : null
+    ]
+  })
+}
+
 // ---- plugin --------------------------------------------------------------------------------------
 
 export default {
@@ -593,6 +758,7 @@ export default {
     ctx.onDispose(() => finder.dispose())
     // Install the librarian in the background now, so the first search does not wait on npm.
     void finder.prepare()
+    const evidence = createEvidence({ rest: (path, opts) => ctx.rest(path, opts) })
 
     const open = () => host.revealPane(PANE_ID)
     const title = LOCALES.en.title
@@ -615,7 +781,15 @@ export default {
       {
         id: 'chip', area: STATUSBAR_AREAS.right, order: 60,
         render: () => jsx(Tip, { label: title, children: jsx(Button, { variant: 'ghost', size: 'xs', 'aria-label': title, onClick: open, children: jsx(icons.Search, {}) }) })
-      }
+      },
+      // `::autorag-cite{n="1" id="/docs/x.pdf" q="unit price"}` in an assistant message becomes a card that shows the
+      // indexed evidence and opens its file. Hosts older than the transcript-directive seam have no such area.
+      ...(typeof sdk.TRANSCRIPT_DIRECTIVE_AREA === 'string'
+        ? [{
+            id: 'cite', area: sdk.TRANSCRIPT_DIRECTIVE_AREA,
+            data: { name: CITE_DIRECTIVE, render: props => jsx(CiteCard, { attrs: props.attrs, streaming: props.streaming, ctx, evidence }, props.source) }
+          }]
+        : [])
     ])
   }
 }
