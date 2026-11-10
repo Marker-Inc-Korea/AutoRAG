@@ -164,8 +164,10 @@ function harness(over = {}) {
   const finder = createFinder({
     rest, request, composer,
     getSessionId: () => (over.sessionId === undefined ? 'sess-1' : over.sessionId),
-    sleep: async () => {},
-    pollMs: 0
+    // A real macrotask: a microtask-only sleep lets a wait loop starve every setImmediate in the test.
+    sleep: () => new Promise(r => setImmediate(r)),
+    pollMs: 0,
+    ...(over.prepareWaitMs === undefined ? {} : { prepareWaitMs: over.prepareWaitMs })
   })
   return { finder, calls, composer }
 }
@@ -247,6 +249,96 @@ describe('controller.search', () => {
     const before = n
     finder.setActiveTab('content')
     assert.equal(n, before)
+  })
+})
+
+// ---- the librarian is installed in the background; a search never waits on npm ---------------------------
+
+function notReady(state) {
+  const e = new Error('503')
+  e.detail = { state, message: `the AutoRAG finder is ${state}` }
+  return e
+}
+
+const until = async (predicate, ms = 2000) => {
+  const end = Date.now() + ms
+  while (!predicate() && Date.now() < end) await new Promise(r => setImmediate(r))
+  assert.ok(predicate(), 'condition was not reached in time')
+}
+
+describe('preparing', () => {
+  it('shows a preparing phase while the install runs, then searches by itself', async () => {
+    let ready = false
+    const { finder, calls } = harness({
+      rest: async (path, opts) => {
+        if (path === '/find' && opts.method === 'POST' && !ready) throw notReady('installing')
+        if (path === '/status') return { state: ready ? 'ready' : 'installing' }
+      }
+    })
+    const searching = finder.search('계약서') // stays pending until the install finishes
+    await until(() => finder.getState().phase === 'preparing')
+    ready = true
+    await searching
+    await settled(finder)
+    assert.equal(finder.getState().phase, 'done')
+    assert.equal(calls.filter(c => c[1] === '/find' && c[2] === 'POST').length, 2)
+  })
+
+  it('a failed install is an error with the reason, not an endless wait', async () => {
+    const { finder } = harness({
+      rest: async (path, opts) => {
+        if (path === '/find' && opts.method === 'POST') throw notReady('installing')
+        if (path === '/status') return { state: 'failed', error: 'npm ERR! network' }
+      }
+    })
+    await finder.search('x')
+    for (let i = 0; i < 50 && finder.getState().phase === 'preparing'; i++) await new Promise(r => setImmediate(r))
+    const s = finder.getState()
+    assert.equal(s.phase, 'error')
+    assert.match(s.error, /network/)
+  })
+
+  it('a newer search replaces one that is still waiting for the install', async () => {
+    let ready = false
+    const { finder, calls } = harness({
+      rest: async (path, opts) => {
+        if (path === '/find' && opts.method === 'POST' && !ready) throw notReady('installing')
+        if (path === '/status') return { state: ready ? 'ready' : 'installing' }
+      }
+    })
+    const first = finder.search('first')
+    await until(() => finder.getState().phase === 'preparing')
+    const second = finder.search('second')
+    await first // the replaced search ends without retrying
+    ready = true
+    await second
+    await settled(finder)
+    assert.equal(finder.getState().query, 'second')
+    assert.equal(finder.getState().phase, 'done')
+    const retried = calls.filter(c => c[1] === '/find' && c[2] === 'POST' && c[3].query === 'first').length
+    assert.equal(retried, 1) // 'first' was tried once and never again after being replaced
+  })
+
+  it('prepare() asks the backend to start installing once, without waiting for it', async () => {
+    const { finder, calls } = harness({ rest: async path => (path === '/prepare' ? { state: 'installing' } : undefined) })
+    await finder.prepare()
+    assert.deepEqual(calls[0].slice(0, 3), ['rest', '/prepare', 'POST'])
+    assert.equal(finder.getState().phase, 'idle')
+  })
+
+  it('gives up waiting for the install after the cap', async () => {
+    const { finder } = harness({
+      prepareWaitMs: 5,
+      rest: async (path, opts) => {
+        if (path === '/find' && opts.method === 'POST') throw notReady('installing')
+        if (path === '/status') return { state: 'installing' }
+      }
+    })
+    await finder.search('x')
+    await new Promise(r => setTimeout(r, 60))
+    const s = finder.getState()
+    assert.equal(s.phase, 'error')
+    assert.match(s.error, /still being prepared|timed out/i)
   })
 })
 
@@ -432,5 +524,18 @@ describe('plugin contract', () => {
     const key = regs.find(r => r.area === 'keybinds')
     assert.deepEqual(key.data.defaults, ['mod+alt+f'])
     assert.ok(disposers.length >= 1)
+
+    // A Cmd+F-style bar lives in the right sidebar next to the file tree, never in the middle of the chat.
+    const pane = regs.find(r => r.area === 'panes')
+    assert.equal(pane.data.placement, 'right')
+    // `enforce` re-homes a pane an earlier version already adopted into the chat zone.
+    assert.deepEqual(pane.data.dock, { pane: 'files', pos: 'center', enforce: true })
+    // Docked in the files zone, so it must not out-size it: a wider tenant widens the whole fixed zone (max() of
+    // its tabs) and, with no cap of its own, uncaps it, which squeezed the chat to a sliver in the real app.
+    assert.deepEqual(
+      { width: pane.data.width, minWidth: pane.data.minWidth, maxWidth: pane.data.maxWidth },
+      { width: '20rem', minWidth: '10rem', maxWidth: '20rem' }
+    )
+    assert.ok(!('defaultCollapsed' in pane.data) || pane.data.defaultCollapsed === false)
   })
 })

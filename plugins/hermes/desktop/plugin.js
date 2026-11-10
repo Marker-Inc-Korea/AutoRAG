@@ -19,6 +19,8 @@ const MAX_ATTACH = 20
 const QUOTE_CHARS = 700
 const POLL_MS = 250
 const MAX_POLL_ERRORS = 8
+// How long a search waits for the librarian install before giving up: the first install downloads the package once.
+const PREPARE_WAIT_MS = 5 * 60 * 1000
 
 // ---- state ---------------------------------------------------------------------------------------
 
@@ -107,12 +109,19 @@ export function attachText(hit, label) {
 
 function errorText(error) {
   if (!error) return 'unknown error'
-  return String(error.detail ?? error.message ?? error)
+  const detail = error.detail ?? error.message ?? error
+  return typeof detail === 'string' ? detail : String(detail?.message ?? JSON.stringify(detail))
+}
+
+/** The backend answers a search made before the librarian is installed with 503 and `{state, message}`. */
+function notReadyState(error) {
+  const state = error?.detail?.state
+  return state === 'installing' || state === 'idle' || state === 'failed' ? state : null
 }
 
 // ---- controller ----------------------------------------------------------------------------------
 
-export function createFinder({ rest, request, composer, getSessionId, sleep = ms => new Promise(r => setTimeout(r, ms)), pollMs = POLL_MS }) {
+export function createFinder({ rest, request, composer, getSessionId, sleep = ms => new Promise(r => setTimeout(r, ms)), pollMs = POLL_MS, prepareWaitMs = PREPARE_WAIT_MS }) {
   let state = initialState()
   let run = 0
   let jobId = null
@@ -128,6 +137,34 @@ export function createFinder({ rest, request, composer, getSessionId, sleep = ms
     if (id) void rest(`/find/${id}`, { method: 'DELETE' }).catch(() => {})
   }
 
+  async function startJob(mine, text) {
+    const deadline = Date.now() + prepareWaitMs
+    for (;;) {
+      try {
+        return (await rest('/find', { method: 'POST', body: { query: text } })).id
+      } catch (error) {
+        if (!notReadyState(error)) throw error
+        if (mine !== run || disposed) return null
+        set(s => (s.phase === 'preparing' ? s : { ...s, phase: 'preparing' }))
+        // Wait for the background install by polling its status, never by holding the search open.
+        for (;;) {
+          await sleep(Math.max(pollMs, 1))
+          if (mine !== run || disposed) return null
+          let status
+          try {
+            status = await rest('/status')
+          } catch {
+            status = { state: 'installing' }
+          }
+          if (status.state === 'failed') throw new Error(status.error || 'the AutoRAG finder could not be installed')
+          if (status.state === 'ready') break
+          if (Date.now() > deadline) throw new Error('The AutoRAG finder is still being prepared (timed out). Try again in a minute.')
+        }
+        set(s => ({ ...s, phase: 'running' }))
+      }
+    }
+  }
+
   async function search(query) {
     const text = String(query ?? '').trim()
     if (!text || disposed) return
@@ -137,17 +174,28 @@ export function createFinder({ rest, request, composer, getSessionId, sleep = ms
     set({ ...initialState(text) })
     let id
     try {
-      id = (await rest('/find', { method: 'POST', body: { query: text } })).id
+      id = await startJob(mine, text)
     } catch (error) {
       if (mine === run) set(failPending({ ...state, phase: 'running' }, errorText(error)))
       return
     }
+    if (id === null) return
     if (mine !== run || disposed) {
       cancelJob(id)
       return
     }
     jobId = id
     void poll(mine, id)
+  }
+
+  /** Start the background install when the pane opens, so the first search finds it ready. */
+  async function prepare() {
+    if (disposed) return
+    try {
+      await rest('/prepare', { method: 'POST' })
+    } catch {
+      // The search itself reports an unavailable backend, with its reason.
+    }
   }
 
   async function poll(mine, id) {
@@ -235,6 +283,7 @@ export function createFinder({ rest, request, composer, getSessionId, sleep = ms
       return () => listeners.delete(fn)
     },
     search,
+    prepare,
     attach,
     setActiveTab: key => set({ ...state, activeTab: key }),
     toggle(key) {
@@ -284,7 +333,8 @@ const EN = {
   composer: 'The chat input did not accept the text. Click into the chat and try again.',
   capped: ' Only the first 20 were added.',
   line: 'line',
-  error: 'Search failed'
+  error: 'Search failed',
+  preparing: 'Getting AutoRAG ready (first run only, about a minute)…'
 }
 const KO = {
   title: 'AutoRAG 검색',
@@ -309,7 +359,8 @@ const KO = {
   composer: '대화 입력창이 텍스트를 받지 못했습니다. 입력창을 클릭한 뒤 다시 시도하세요.',
   capped: ' 처음 20개만 추가했습니다.',
   line: '줄',
-  error: '검색 실패'
+  error: '검색 실패',
+  preparing: 'AutoRAG를 준비하는 중입니다 (처음 한 번만, 1분 정도 걸립니다)…'
 }
 const LOCALES = { en: EN, ko: KO }
 const fill = (text, vars) => String(text).replace(/\{(\w+)\}/g, (_, k) => vars?.[k] ?? '')
@@ -415,13 +466,15 @@ function FinderPane({ finder, ctx }) {
   useEffect(() => finder.subscribe(() => tick(n => n + 1)), [finder])
   useEffect(() => {
     inputRef.current?.focus()
-  }, [])
+    void finder.prepare()
+  }, [finder])
   const s = finder.getState()
   const group = s.groups.find(g => g.key === s.activeTab) ?? s.groups[0]
   const picked = Object.keys(s.selected)
 
   const body = () => {
     if (s.phase === 'idle') return jsx('div', { className: 'autorag-empty', children: t('hint') })
+    if (s.phase === 'preparing') return jsx('div', { className: 'autorag-empty', role: 'status', children: [jsx(GlyphSpinner, { ariaLabel: t('preparing') }, 's'), ` ${t('preparing')}`] })
     if (!group) return s.phase === 'error' ? jsx('div', { className: 'autorag-err', children: s.error }) : jsx('div', { className: 'autorag-empty', children: jsx(GlyphSpinner, { ariaLabel: t('searching') }) })
     if (group.status === 'pending') return jsx('div', { className: 'autorag-empty', children: [jsx(GlyphSpinner, { ariaLabel: t('searching') }, 's'), ` ${t('searching')}…`] })
     if (group.status === 'error') return jsx('div', { className: 'autorag-err', children: group.error || t('error') })
@@ -507,11 +560,25 @@ export default {
       getSessionId: () => host.state.focusedSessionId.get()
     })
     ctx.onDispose(() => finder.dispose())
+    // Install the librarian in the background now, so the first search does not wait on npm.
+    void finder.prepare()
 
     const open = () => host.revealPane(PANE_ID)
     const title = LOCALES.en.title
     ctx.registerMany([
-      { id: PANE, area: PANES_AREA, title, data: { placement: 'right', width: '380px' }, render: () => jsx(FinderPane, { finder, ctx }) },
+      // A tab in the right sidebar, stacked with the file tree (its `files` pane): the same place as the folder
+      // browser the finder replaces, never a tile taking width from the chat. A zone is as wide as its widest tab
+      // and is capped only if EVERY tab declares a cap, so this declares the files pane's own width, min and max
+      // (apps/desktop FILE_BROWSER_*): a wider or uncapped tab turned the zone into an uncapped track that took
+      // the chat's width.
+      {
+        id: PANE, area: PANES_AREA, title,
+        data: {
+          placement: 'right', width: '20rem', minWidth: '10rem', maxWidth: '20rem',
+          dock: { pane: 'files', pos: 'center', enforce: true }
+        },
+        render: () => jsx(FinderPane, { finder, ctx })
+      },
       { id: 'open', area: PALETTE_AREA, data: { id: 'autorag.find', label: title, keywords: ['autorag', 'search', 'find', '검색'], run: open } },
       { id: 'key', area: KEYBINDS_AREA, data: { id: 'autorag.find', label: title, category: 'AutoRAG', defaults: ['mod+alt+f'], run: open } },
       {

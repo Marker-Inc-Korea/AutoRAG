@@ -93,23 +93,42 @@ DONE = {"type": "done", "elapsedMs": 9}
 # ---- argv ------------------------------------------------------------------------------------
 
 
-def test_argv_uses_the_version_pinned_in_mcp_json(api):
+def _ready_runtime(api, tmp_path):
+    cli = tmp_path / "node_modules" / "@autorag" / "librarian" / "dist" / "cli" / "index.js"
+    cli.parent.mkdir(parents=True)
+    cli.write_text("// cli")
     pin = json.loads((ROOT / "mcp.json").read_text())["mcpServers"]["autorag"]["args"]
-    spec = next(a for a in pin if a.startswith("@autorag/librarian@"))
-    argv = api.build_find_argv("계약서", None, env={"PATH": "/bin"}, which=lambda n: f"/x/{n}")
-    assert argv[:5] == ["/x/npx", "-y", "-p", spec, "autorag"]
-    assert argv[5:7] == ["lite", "find"]
+    spec = pin[pin.index("-p") + 1]
+    (tmp_path / ".installed").write_text(json.dumps({"spec": spec}))
+    return api.Runtime(tmp_path), cli, spec
+
+
+def test_the_resident_install_is_the_version_pinned_in_mcp_json(api, tmp_path):
+    rt, cli, spec = _ready_runtime(api, tmp_path)
+    assert rt.spec == spec  # the same package the MCP tools run
+    argv = api.build_find_argv("계약서", None, env={"PATH": "/bin"}, which=lambda n: f"/x/{n}", runtime=rt)
+    assert argv[:2] == ["/x/node", str(cli)]
+    assert argv[2:4] == ["lite", "find"]
     assert "--json" in argv
 
 
-def test_argv_passes_a_dash_query_as_one_value_flag(api):
-    argv = api.build_find_argv("--help -v2", None, env={}, which=lambda n: f"/x/{n}")
+def test_an_install_of_another_version_is_not_ready(api, tmp_path):
+    rt, _cli, _spec = _ready_runtime(api, tmp_path)
+    (tmp_path / ".installed").write_text(json.dumps({"spec": "@autorag/librarian@0.0.1"}))
+    with pytest.raises(api.FinderNotReady):
+        api.build_find_argv("x", None, env={}, which=lambda n: f"/x/{n}", runtime=rt)
+
+
+def test_argv_passes_a_dash_query_as_one_value_flag(api, tmp_path):
+    rt, _cli, _spec = _ready_runtime(api, tmp_path)
+    argv = api.build_find_argv("--help -v2", None, env={}, which=lambda n: f"/x/{n}", runtime=rt)
     assert "--query=--help -v2" in argv
     assert "--help -v2" not in argv  # never a bare positional
 
 
-def test_argv_narrows_groups(api):
-    argv = api.build_find_argv("x", ["files", "source:kakao"], env={}, which=lambda n: f"/x/{n}")
+def test_argv_narrows_groups(api, tmp_path):
+    rt, _cli, _spec = _ready_runtime(api, tmp_path)
+    argv = api.build_find_argv("x", ["files", "source:kakao"], env={}, which=lambda n: f"/x/{n}", runtime=rt)
     assert "--groups=files,source:kakao" in argv
 
 
@@ -195,11 +214,11 @@ def test_non_json_stdout_is_ignored(api):
 
 
 def test_nonzero_exit_without_done_is_an_error_with_stderr(api):
-    reg, _ = make_registry(api, [FakeProc(nd(GROUPS), code=2, stderr="Unknown lite subcommand: find\n")])
+    reg, _ = make_registry(api, [FakeProc(nd(GROUPS), code=2, stderr="ENOSPC: no space left on device\n")])
     job = reg.start("x", None)
     assert wait_for(lambda: reg.get(job)["state"] == "error")
     out = reg.get(job)
-    assert "Unknown lite subcommand: find" in out["error"]
+    assert "ENOSPC: no space left on device" in out["error"]
 
 
 def test_clean_exit_without_done_still_ends_the_job(api):
@@ -341,3 +360,177 @@ def test_unavailable_node_is_503(client, api):
 def test_manifest_declares_a_hidden_backend_only_plugin(api):
     m = json.loads((ROOT / "dashboard" / "manifest.json").read_text())
     assert m["name"] == "autorag" and m["api"] == "plugin_api.py" and m["tab"]["hidden"] is True
+
+
+# ---- a librarian that predates `lite find` ------------------------------------------------------------
+
+OLD_CLI_STDERR = "Unknown flag: --query\n\nautorag - self-evolving librarian CLI\n\nUsage: autorag <command> [args] [flags]\n"
+OLD_SUBCOMMAND_STDERR = "Unknown lite subcommand: find\n\nautorag lite - model-free AutoRAG lifecycle CLI\n"
+
+
+@pytest.mark.parametrize("stderr", [OLD_CLI_STDERR, OLD_SUBCOMMAND_STDERR])
+def test_a_librarian_without_find_gets_an_actionable_message(api, stderr):
+    reg, _ = make_registry(api, [FakeProc([], code=2, stderr=stderr)])
+    job = reg.start("x", None)
+    assert wait_for(lambda: reg.get(job)["state"] == "error")
+    message = reg.get(job)["error"]
+    assert "lite find" in message
+    assert "newer" in message
+    assert "Usage:" not in message  # never the CLI's own usage dump
+
+
+def test_other_failures_keep_the_raw_stderr(api):
+    reg, _ = make_registry(api, [FakeProc([], code=1, stderr="EACCES: permission denied, open '/x'\n")])
+    job = reg.start("x", None)
+    assert wait_for(lambda: reg.get(job)["state"] == "error")
+    assert "EACCES" in reg.get(job)["error"]
+
+
+# ---- the package target is whatever mcp.json runs ----------------------------------------------------
+
+
+def _plugin_root_with(tmp_path, pkg):
+    (tmp_path / "mcp.json").write_text(
+        json.dumps({"mcpServers": {"autorag": {"command": "npx", "args": ["-y", "-p", pkg, "autorag-mcp"]}}})
+    )
+    return tmp_path
+
+
+def test_pinned_spec_follows_the_dash_p_argument_even_for_a_tarball(api, tmp_path, monkeypatch):
+    monkeypatch.setattr(api, "PLUGIN_ROOT", _plugin_root_with(tmp_path, "/tmp/autorag-librarian-2.13.9.tgz"))
+    assert api.pinned_librarian_spec() == "/tmp/autorag-librarian-2.13.9.tgz"
+
+
+def test_pinned_spec_still_reads_a_registry_pin(api, tmp_path, monkeypatch):
+    monkeypatch.setattr(api, "PLUGIN_ROOT", _plugin_root_with(tmp_path, "@autorag/librarian@2.13.9"))
+    assert api.pinned_librarian_spec() == "@autorag/librarian@2.13.9"
+
+
+def test_pinned_spec_without_dash_p_is_unavailable(api, tmp_path, monkeypatch):
+    (tmp_path / "mcp.json").write_text(json.dumps({"mcpServers": {"autorag": {"command": "x", "args": ["serve"]}}}))
+    monkeypatch.setattr(api, "PLUGIN_ROOT", tmp_path)
+    with pytest.raises(api.FinderUnavailable):
+        api.pinned_librarian_spec()
+
+
+# ---- a resident install: no npx on the search path -------------------------------------------------
+
+
+def _fake_runtime(tmp_path, api):
+    """A runtime dir that already holds an installed librarian CLI."""
+    cli = tmp_path / "node_modules" / "@autorag" / "librarian" / "dist" / "cli" / "index.js"
+    cli.parent.mkdir(parents=True)
+    cli.write_text("// cli")
+    (tmp_path / ".installed").write_text(json.dumps({"spec": "@autorag/librarian@2.13.8"}))
+    return cli
+
+
+def test_a_resident_install_is_run_with_node_directly(api, tmp_path):
+    cli = _fake_runtime(tmp_path, api)
+    argv = api.build_find_argv("x", None, env={}, which=lambda n: f"/x/{n}", runtime_dir=tmp_path)
+    assert argv[:2] == ["/x/node", str(cli)]
+    assert "npx" not in " ".join(argv)
+    assert argv[2:4] == ["lite", "find"]
+
+
+def test_without_a_resident_install_the_search_refuses_instead_of_installing_inline(api, tmp_path):
+    with pytest.raises(api.FinderNotReady):
+        api.build_find_argv("x", None, env={}, which=lambda n: f"/x/{n}", runtime_dir=tmp_path)
+
+
+def test_the_local_cli_override_still_wins(api, tmp_path):
+    argv = api.build_find_argv(
+        "x", None, env={"AUTORAG_LIBRARIAN_CLI": "/tmp/mine/index.js"}, which=lambda n: f"/x/{n}", runtime_dir=tmp_path
+    )
+    assert argv[:2] == ["/x/node", "/tmp/mine/index.js"]
+
+
+class FakeInstaller:
+    def __init__(self, tmp_path, fail=False, gate=None):
+        self.calls = []
+        self._tmp = tmp_path
+        self._fail = fail
+        self._gate = gate
+
+    def __call__(self, spec, runtime_dir, env):
+        self.calls.append(spec)
+        if self._gate is not None:
+            self._gate.wait(5)
+        if self._fail:
+            raise RuntimeError("npm ERR! network")
+        cli = runtime_dir / "node_modules" / "@autorag" / "librarian" / "dist" / "cli" / "index.js"
+        cli.parent.mkdir(parents=True, exist_ok=True)
+        cli.write_text("// cli")
+
+
+def test_ensure_installs_once_and_records_the_spec(api, tmp_path):
+    inst = FakeInstaller(tmp_path)
+    rt = api.Runtime(tmp_path, spec="@autorag/librarian@2.13.8", installer=inst)
+    rt.ensure()
+    rt.ensure()
+    assert inst.calls == ["@autorag/librarian@2.13.8"]
+    assert rt.status()["state"] == "ready"
+
+
+def test_a_changed_pin_reinstalls(api, tmp_path):
+    inst = FakeInstaller(tmp_path)
+    api.Runtime(tmp_path, spec="@autorag/librarian@2.13.8", installer=inst).ensure()
+    api.Runtime(tmp_path, spec="@autorag/librarian@2.13.9", installer=inst).ensure()
+    assert inst.calls == ["@autorag/librarian@2.13.8", "@autorag/librarian@2.13.9"]
+
+
+def test_concurrent_ensure_shares_one_install(api, tmp_path):
+    gate = threading.Event()
+    inst = FakeInstaller(tmp_path, gate=gate)
+    rt = api.Runtime(tmp_path, spec="@autorag/librarian@2.13.8", installer=inst)
+    t1 = threading.Thread(target=rt.ensure)
+    t2 = threading.Thread(target=rt.ensure)
+    t1.start(); t2.start()
+    assert wait_for(lambda: rt.status()["state"] == "installing")
+    gate.set()
+    t1.join(5); t2.join(5)
+    assert inst.calls == ["@autorag/librarian@2.13.8"]
+
+
+def test_a_failed_install_is_reported_and_retried_on_the_next_ensure(api, tmp_path):
+    bad = FakeInstaller(tmp_path, fail=True)
+    rt = api.Runtime(tmp_path, spec="@autorag/librarian@2.13.8", installer=bad)
+    with pytest.raises(api.FinderUnavailable, match="network"):
+        rt.ensure()
+    assert rt.status()["state"] == "failed" and "network" in rt.status()["error"]
+    rt._installer = FakeInstaller(tmp_path)
+    rt.ensure()
+    assert rt.status()["state"] == "ready"
+
+
+def test_warm_runs_in_the_background_and_does_not_block(api, tmp_path):
+    gate = threading.Event()
+    rt = api.Runtime(tmp_path, spec="@autorag/librarian@2.13.8", installer=FakeInstaller(tmp_path, gate=gate))
+    t0 = time.time()
+    rt.warm()
+    assert time.time() - t0 < 0.5
+    assert rt.status()["state"] in {"installing", "idle"}
+    gate.set()
+    assert wait_for(lambda: rt.status()["state"] == "ready")
+
+
+def test_start_find_while_installing_reports_not_ready_with_202_semantics(api, tmp_path, client):
+    gate = threading.Event()
+    rt = api.Runtime(tmp_path, spec="@autorag/librarian@2.13.8", installer=FakeInstaller(tmp_path, gate=gate))
+    api.set_runtime(rt)
+    api.set_registry(api.FindRegistry(runtime=rt))
+    rt.warm()
+    assert wait_for(lambda: rt.status()["state"] == "installing")
+    r = client.post("/api/plugins/autorag/find", json={"query": "x"})
+    assert r.status_code == 503
+    assert r.json()["detail"]["state"] == "installing"
+    gate.set()
+
+
+def test_status_route(api, client, tmp_path):
+    rt = api.Runtime(tmp_path, spec="@autorag/librarian@2.13.8", installer=FakeInstaller(tmp_path))
+    api.set_runtime(rt)
+    assert client.get("/api/plugins/autorag/status").json()["state"] == "idle"
+    rt.ensure()
+    body = client.get("/api/plugins/autorag/status").json()
+    assert body["state"] == "ready" and body["spec"] == "@autorag/librarian@2.13.8"

@@ -37,6 +37,10 @@ MAX_JOBS = 8
 MAX_LINES_PER_JOB = 200
 MAX_STDERR_CHARS = 2000
 
+# `lite find` shipped after 2.13.8. A librarian without it rejects the flag (or the subcommand) and then prints its
+# whole usage text; show one sentence the user can act on instead.
+_OLD_LIBRARIAN_RE = re.compile(r"^(?:Unknown flag: --query\b|Unknown lite subcommand: find\b)")
+
 _GROUP_RE = re.compile(r"^(?:files|content|source:[a-z0-9][a-z0-9_.-]{0,63})$")
 _ENV_KEEP = re.compile(
     r"^(?:PATH|HOME|USER|LOGNAME|SHELL|TMPDIR|TERM|LANG|LANGUAGE|LC_[A-Z]+|TZ|SSL_CERT_FILE|SSL_CERT_DIR|"
@@ -49,15 +53,22 @@ class FinderUnavailable(RuntimeError):
     """The finder cannot start on this machine (for example Node.js is missing)."""
 
 
+class FinderNotReady(FinderUnavailable):
+    """The librarian is still being installed; a search started now would only wait on the install."""
+
+    def __init__(self, state: str, message: str = "") -> None:
+        super().__init__(message or f"the AutoRAG finder is {state}")
+        self.state = state
+
 def pinned_librarian_spec() -> str:
-    """`@autorag/librarian@x.y.z` exactly as pinned in mcp.json, so the finder and the MCP tools
-    always run the same published code."""
+    """The package `mcp.json` runs (the value after `-p`), so the finder and the MCP tools always run the same
+    code: normally `@autorag/librarian@x.y.z`, or a tarball or path when a build is under test."""
     mcp = json.loads((PLUGIN_ROOT / "mcp.json").read_text(encoding="utf-8"))
     args = mcp["mcpServers"]["autorag"]["args"]
-    spec = next((a for a in args if isinstance(a, str) and a.startswith("@autorag/librarian@")), None)
-    if spec is None:
-        raise FinderUnavailable("mcp.json does not pin @autorag/librarian")
-    return spec
+    for flag, value in zip(args, args[1:]):
+        if flag == "-p" and isinstance(value, str) and value:
+            return value
+    raise FinderUnavailable("mcp.json does not name the librarian package to run (-p)")
 
 
 def child_env(source: Optional[dict[str, str]] = None) -> dict[str, str]:
@@ -87,15 +98,146 @@ def validate_groups(groups: Optional[Sequence[str]]) -> Optional[list[str]]:
     return out
 
 
+RUNTIME_DIR = Path(os.environ.get("HERMES_HOME", str(Path.home() / ".hermes"))) / "plugin-data" / "autorag" / "runtime"
+_CLI_REL = Path("node_modules") / "@autorag" / "librarian" / "dist" / "cli" / "index.js"
+INSTALL_TIMEOUT_S = 600.0
+
+
+def default_installer(spec: str, runtime_dir: Path, env: dict[str, str]) -> None:
+    """`npm install` the pinned librarian into `runtime_dir`, once, so a search never installs anything."""
+    runtime_dir.mkdir(parents=True, exist_ok=True)
+    pkg = runtime_dir / "package.json"
+    if not pkg.exists():
+        pkg.write_text(json.dumps({"name": "autorag-finder-runtime", "private": True}), encoding="utf-8")
+    npm = shutil.which("npm", path=env.get("PATH"))
+    if not npm:
+        raise FinderUnavailable("npm was not found on PATH (the AutoRAG finder installs its librarian with it)")
+    done = subprocess.run(
+        [npm, "install", "--no-audit", "--no-fund", "--no-progress", "--no-update-notifier", "--save-exact", spec],
+        cwd=str(runtime_dir), env=env, capture_output=True, text=True, timeout=INSTALL_TIMEOUT_S,
+    )
+    if done.returncode != 0:
+        raise RuntimeError((done.stderr or done.stdout or "npm install failed").strip()[-400:])
+
+
+class Runtime:
+    """The resident librarian install: where it lives, whether it is ready, and the one place it gets installed.
+
+    `ensure()` is idempotent and thread-safe (concurrent callers share one install); `warm()` runs it in the
+    background. A search only runs against a ready install, so it never waits on npm or the registry."""
+
+    def __init__(
+        self,
+        runtime_dir: Path,
+        *,
+        spec: Optional[str] = None,
+        installer: Callable[[str, Path, dict[str, str]], None] = default_installer,
+    ) -> None:
+        self.dir = Path(runtime_dir)
+        self._spec = spec
+        self._installer = installer
+        self._lock = threading.Lock()
+        self._state = "idle"
+        self._error: Optional[str] = None
+        self._thread: Optional[threading.Thread] = None
+
+    @property
+    def spec(self) -> str:
+        return self._spec or pinned_librarian_spec()
+
+    @property
+    def cli(self) -> Path:
+        return self.dir / _CLI_REL
+
+    def _recorded(self) -> Optional[str]:
+        try:
+            return json.loads((self.dir / ".installed").read_text(encoding="utf-8")).get("spec")
+        except (OSError, ValueError):
+            return None
+
+    def is_ready(self) -> bool:
+        return self.cli.is_file() and self._recorded() == self.spec
+
+    def status(self) -> dict[str, Any]:
+        with self._lock:
+            state = "ready" if self._state != "installing" and self.is_ready() else self._state
+            return {"state": state, "error": self._error, "spec": self.spec}
+
+    def ensure(self) -> None:
+        with self._lock:
+            if self._state != "installing" and self.is_ready():
+                self._state = "ready"
+                return
+            if self._state == "installing":
+                waiter = self._thread
+            else:
+                waiter = None
+                self._state, self._error = "installing", None
+                self._thread = threading.current_thread()
+        if waiter is not None:
+            waiter.join(INSTALL_TIMEOUT_S)
+            self._raise_if_failed()
+            return
+        try:
+            self._installer(self.spec, self.dir, child_env())
+            self.dir.mkdir(parents=True, exist_ok=True)
+            (self.dir / ".installed").write_text(json.dumps({"spec": self.spec}), encoding="utf-8")
+            with self._lock:
+                self._state = "ready"
+        except Exception as exc:
+            with self._lock:
+                self._state, self._error = "failed", str(exc)
+            raise FinderUnavailable(f"could not install the AutoRAG finder: {exc}") from exc
+
+    def _raise_if_failed(self) -> None:
+        if self._state == "failed":
+            raise FinderUnavailable(f"could not install the AutoRAG finder: {self._error}")
+
+    def warm(self) -> None:
+        """Install in the background (if needed). Never raises; `status()` reports the outcome."""
+        with self._lock:
+            if self._state == "installing" or (self._state != "failed" and self.is_ready()):
+                return
+
+        def run() -> None:
+            try:
+                self.ensure()
+            except FinderUnavailable:
+                pass
+
+        threading.Thread(target=run, name="autorag-find-warm", daemon=True).start()
+
+
+_runtime: Optional[Runtime] = None
+_runtime_lock = threading.Lock()
+
+
+def get_runtime() -> Runtime:
+    global _runtime
+    with _runtime_lock:
+        if _runtime is None:
+            _runtime = Runtime(RUNTIME_DIR)
+        return _runtime
+
+
+def set_runtime(runtime: Optional[Runtime]) -> None:
+    global _runtime
+    with _runtime_lock:
+        _runtime = runtime
+
+
 def build_find_argv(
     query: str,
     groups: Optional[Sequence[str]],
     *,
     env: Optional[dict[str, str]] = None,
     which: Callable[[str], Optional[str]] = shutil.which,
+    runtime_dir: Optional[Path] = None,
+    runtime: Optional[Runtime] = None,
 ) -> list[str]:
-    """argv for `autorag lite find`. The query always travels as ONE `--query=` token so text that
-    starts with `-` is searched, never parsed as a flag. No shell is involved."""
+    """argv for `autorag lite find`, run with `node` against the resident install (never npx, so a search cannot
+    wait on npm). The query always travels as ONE `--query=` token so text that starts with `-` is searched, never
+    parsed as a flag. No shell is involved."""
     text = validate_query(query)
     wanted = validate_groups(groups)
     environment = os.environ if env is None else env
@@ -103,17 +245,19 @@ def build_find_argv(
     if wanted:
         tail.append("--groups=" + ",".join(wanted))
 
+    node = which("node")
+    if not node:
+        raise FinderUnavailable("Node.js 24+ was not found on PATH (the AutoRAG finder runs on it)")
+
     local_cli = environment.get("AUTORAG_LIBRARIAN_CLI", "").strip()
     if local_cli:
-        node = which("node")
-        if not node:
-            raise FinderUnavailable("Node.js 24+ was not found on PATH")
         return [node, local_cli, *tail]
 
-    npx = which("npx")
-    if not npx or not which("node"):
-        raise FinderUnavailable("Node.js 24+ was not found on PATH (the AutoRAG finder runs on it)")
-    return [npx, "-y", "-p", pinned_librarian_spec(), "autorag", *tail]
+    rt = runtime or (Runtime(runtime_dir) if runtime_dir is not None else get_runtime())
+    if not rt.is_ready():
+        state = rt.status()["state"]
+        raise FinderNotReady("installing" if state == "installing" else state)
+    return [node, str(rt.cli), *tail]
 
 
 def spawn_process(argv: Sequence[str], env: dict[str, str]) -> "subprocess.Popen[str]":
@@ -180,12 +324,13 @@ class FindRegistry:
         self,
         *,
         spawn: Callable[[Sequence[str], dict[str, str]], Any] = spawn_process,
-        argv_builder: Callable[[str, Optional[Sequence[str]]], list[str]] = build_find_argv,
+        argv_builder: Optional[Callable[[str, Optional[Sequence[str]]], list[str]]] = None,
+        runtime: Optional[Runtime] = None,
         timeout_s: float = JOB_TIMEOUT_S,
         max_jobs: int = MAX_JOBS,
     ) -> None:
         self._spawn = spawn
-        self._argv_builder = argv_builder
+        self._argv_builder = argv_builder or (lambda q, g: build_find_argv(q, g, runtime=runtime))
         self._timeout_s = timeout_s
         self._max_jobs = max_jobs
         self._jobs: "OrderedDict[str, _Job]" = OrderedDict()
@@ -258,7 +403,14 @@ class FindRegistry:
         elif job.saw_done and code == 0:
             self._finish(job, "done", None)
         else:
-            detail = (stderr_box[0].strip() if stderr_box else "")[:MAX_STDERR_CHARS]
+            raw = (stderr_box[0].strip() if stderr_box else "")[:MAX_STDERR_CHARS]
+            if _OLD_LIBRARIAN_RE.match(raw):
+                detail = (
+                    "The installed @autorag/librarian has no `lite find` yet. Update the plugin to a release that "
+                    "pins a newer @autorag/librarian, or set AUTORAG_LIBRARIAN_CLI to a build that has it."
+                )
+            else:
+                detail = raw
             if not detail:
                 detail = "finder exited without finishing" if code == 0 else f"finder exited with code {code}"
             self._finish(job, "error", detail)
@@ -341,6 +493,19 @@ def _unprocessable(exc: Exception) -> HTTPException:
     return HTTPException(status_code=422, detail=str(exc))
 
 
+@router.get("/status")
+async def finder_status() -> dict[str, Any]:
+    """Whether the librarian install is ready. The pane shows "preparing" from this instead of spinning on a search."""
+    return get_runtime().status()
+
+
+@router.post("/prepare")
+async def prepare_finder() -> dict[str, Any]:
+    """Start installing in the background (idempotent) and return immediately."""
+    get_runtime().warm()
+    return get_runtime().status()
+
+
 @router.post("/find")
 async def start_find(body: FindRequest) -> dict[str, str]:
     try:
@@ -352,6 +517,9 @@ async def start_find(body: FindRequest) -> dict[str, str]:
         return {"id": get_registry().start(body.query.strip(), body.groups)}
     except ValueError as exc:
         raise _unprocessable(exc)
+    except FinderNotReady as exc:
+        get_runtime().warm()
+        raise HTTPException(status_code=503, detail={"state": exc.state, "message": str(exc)})
     except FinderUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc))
 
