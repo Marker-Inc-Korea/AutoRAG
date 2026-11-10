@@ -14,7 +14,7 @@ Set TypingSpeed 18ms
 Set PlaybackSpeed 1
 
 Hide
-Type "export PS1='$ ' && alias hermes='./hermes-demo-env.sh ${HERMES_BIN:-hermes}' && clear"
+Type "export PS1='$ ' R=/tmp/autorag-hermes-demo && alias hermes='./hermes-demo-env.sh ${HERMES_BIN:-hermes}' && clear"
 Enter
 Show
 
@@ -44,3 +44,19 @@ Type "hermes -t autorag -z 'Any duplicate files in my documents? Do not delete a
 Enter
 Wait@90s /^\$ *$/
 Sleep 4s
+
+Type "clear"
+Enter
+Type "# New: a file-system cron. AutoRAG watches a folder; each new PDF wakes a Hermes agent job."
+Enter
+Sleep 1s
+Type "hermes cron list | grep -E 'Name|Schedule'"
+Enter
+Sleep 3s
+Type "cp $R/docs/Hanbit_Logistics_Contract_Renewal_2026.pdf $R/incoming/Hanbit_renewal_signed.pdf"
+Enter
+Sleep 1s
+Type "./await-run.sh"
+Enter
+Wait@120s /^\$ *$/
+Sleep 6s
