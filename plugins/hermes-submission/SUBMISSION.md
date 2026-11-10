@@ -16,6 +16,25 @@ The plugin itself lives in [`../hermes`](../hermes) (the only tree the catalog i
 | Real `~/.autorag/config.json` sha1 before and after | identical |
 | Model-driven setup on a first-time sandbox user (no `~/.autorag`, synthetic Documents + Slack/Telegram/Discord archives), prompt "Set up AutoRAG for my Documents folder." | finished in 12 min (722 s) with 57 tool calls; wrote the config, merged the Slack, Telegram and Discord entries with a backup, built the index, started the embedding daemon, and reported accurately. Its `mcp` tools only appeared after `hermes pm install --extra mcp` and a new session. |
 
+### On the Hermes the desktop app actually uses (v0.23.0 updated to v0.23.1, stable channel)
+
+| Check | Result |
+| --- | --- |
+| `hermes update` on `~/.hermes/hermes-agent` | v0.23.0 -> v0.23.1 (`3b4215785882`); `update --check` then reports up to date |
+| `hermes plugins install Marker-Inc-Korea/AutoRAG/plugins/hermes --ref <sha> --no-enable`, then `enable` | installs to `~/.hermes/plugins/autorag`; `plugins validate` passes; custom-source warning shown (not a catalog entry yet) |
+| MCP registration on the running gateway | first connect after `enable` was cancelled after about 28 s (`CancelledError`, cold `npx`); a later reconcile registered 16 tools (the 9 core tools minus none, plus one per datasource in the real config) |
+| Question to the live agent: list the AutoRAG tool names | returned exactly those 16 names in 10 s |
+| In-process `registry.dispatch` of `autorag_datasources_list` and `autorag_status` in the install's own PM environment | both returned; `status` took 35 s and reports `state: failed` from an earlier refresh in the real index, which I did not touch |
+| Real `~/.autorag/config.json` sha1 before and after | identical |
+
+What did not work: a live-agent request to call `autorag_status` and `autorag_datasources_list` issued both
+calls and then produced no result for 170 s, so the run was cut off. The same two calls complete when
+dispatched in-process (above) and over a raw stdio session, so I could not reproduce the stall outside the
+agent loop. Cause not found; do not claim live-agent tool calls work on this install until that is explained.
+
+Side effects of the update on this machine: `hermes update` stopped the running gateway without respawning
+it. I restarted it with `hermes gateway ensure`. Any open desktop session was interrupted. A backup of
+`config.yaml` and `auth.json` was taken first under `~/.hermes/backup/pre-autorag-plugin-*`.
 Not verified: Windows and Linux, a second Hermes version, `hermes plugins validate --install-deps`
 (portable package, no Python deps), the catalog CI job itself (it only runs on the upstream PR), and a
 second setup run (the 12 min figure is one sample on a loaded machine; cargo was present so `minsync`
