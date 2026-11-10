@@ -41,6 +41,7 @@ const VALUE_FLAGS = new Set([
 	"model-id",
 	"top-k",
 	"scope",
+	"groups",
 	"result",
 	"debounce-ms",
 	"power",
