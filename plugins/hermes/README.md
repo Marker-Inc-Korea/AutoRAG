@@ -71,6 +71,21 @@ prefixed `mcp__autorag__` in Hermes:
 Skills (namespaced `autorag:`): `search` (how to query, cite, and compare
 across sources) and `setup` (folders, datasources, first index, verification).
 
+## Search pane (Hermes Desktop)
+
+In Hermes Desktop the plugin adds a search pane: press `Cmd+Alt+F` (`Ctrl+Alt+F` elsewhere), use the status-bar
+magnifier, or run **AutoRAG search** from the command palette. `Enter` searches file names, local document contents
+and every connected datasource at once; each source gets its own tab, filled as it answers. Results are filtered for
+relevance: an exact or Korean-stem word match is kept, and the rest are judged by your configured Jev/sLLM decision
+model (if none is reachable, nothing is filtered out).
+
+Select results and press **Add to chat**. Files are staged through Hermes' own `file.attach` and an `@file:` reference
+is placed in the current chat's input; chat and mail hits are inserted as quoted blocks naming their source, author and
+time. Nothing is sent until you send the message. The backend (`dashboard/plugin_api.py`) runs the pinned
+`autorag lite find --json` as a child process with a reduced environment (no provider API keys from the gateway).
+It needs Node.js 24+ and a built index, like the MCP tools. The pane is Desktop-only; the CLI and messaging gateways
+use the MCP tools.
+
 ## Configuration
 
 All optional. Hermes forwards these from your shell or profile `.env` only when
@@ -121,12 +136,19 @@ variable names, never values.
 - **Hermes approvals.** The server's tools are annotated `readOnlyHint` except
   `autorag_refresh` and `autorag_report`, which write only AutoRAG's own index
   and report state.
+- **Search pane.** `desktop/plugin.js` talks only to this plugin's own `/api/plugins/autorag/` routes and to the
+  gateway's `file.attach`. It does not read files itself; `lite find` reads the folders and archives you configured.
+  The relevance step may send result snippets to your configured decision model (Jev or sLLM), the same data path as
+  any search whose results your model reads.
 
 ## Develop and verify
 
 ```bash
-hermes plugins validate plugins/hermes --install-deps
+hermes plugins validate plugins/hermes
 hermes plugins doctor plugins/hermes --ci
+uv run --with pytest --with fastapi --with httpx pytest plugins/hermes-tests -q   # backend
+node --test plugins/hermes-tests/desktop/                                          # desktop controller
+plugins/hermes-tests/e2e/run.sh   # live Electron E2E; needs a built hermes-agent checkout (see the script header)
 ```
 
 Health check without Hermes:
