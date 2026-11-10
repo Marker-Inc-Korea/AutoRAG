@@ -9,7 +9,7 @@ subdir: plugins/hermes
 version: "1.0.0"
 description: >-
   Search your own files and chat/mail archives from Hermes. Indexing and retrieval run locally. Runs the model-free
-  AutoRAG Lite MCP server (pinned @autorag/librarian@2.13.7 over npx stdio) for hybrid
+  AutoRAG Lite MCP server (pinned @autorag/librarian@2.13.8 over npx stdio) for hybrid
   BM25 + dense + sparse retrieval over PDF, DOCX, PPTX, XLSX, Markdown, email and Korean HWP/HWPX,
   plus Slack, Discord, Telegram, WhatsApp, KakaoTalk, email, Notion and Obsidian archives through
   the local crawler CLIs you already have. Cited evidence, file-name search and duplicate detection;

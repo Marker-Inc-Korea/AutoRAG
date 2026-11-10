@@ -79,7 +79,7 @@ Discord staying keyword-only because discrawl's own config has embeddings off.
 > Portable Agent Plugins v1 package (`plugin.json` + `mcp.json` + two skills). Source:
 > `Marker-Inc-Korea/AutoRAG` `plugins/hermes` (submitted by a contributor to that repository; confirm owner or major-contributor status before opening, rule 5).
 >
-> - Surfaces used: stdio MCP server (`@autorag/librarian@2.13.7`, pinned), skills. No Python, no hooks,
+> - Surfaces used: stdio MCP server (`@autorag/librarian@2.13.8`, pinned), skills. No Python, no hooks,
 >   no middleware, no core overrides.
 > - Network: retrieval is local, but chunks a search returns are read by the user's Hermes model. First start downloads the pinned package from npm via `npx`. The first refresh downloads
 >   `minsync` (cargo or sha256-verified GitHub release asset), `jikji` (cargo), and two local embedding

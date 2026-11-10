@@ -13,7 +13,7 @@ mkdir -p "$DEMO_ROOT/workspace" "$DEMO_ROOT/autorag-home" "$DEMO_ROOT/home/.cach
 
 export HOME="$DEMO_ROOT/home" AUTORAG_HOME="$DEMO_ROOT/autorag-home" AUTORAG_CONFIG="$DEMO_ROOT/autorag-home/config.json"
 case "$AUTORAG_CONFIG" in "$DEMO_ROOT"/*) ;; *) echo "config path escaped the demo root" >&2; exit 1;; esac
-AUTORAG="${AUTORAG:-npx -y -p @autorag/librarian@2.13.7 autorag}"
+AUTORAG="${AUTORAG:-npx -y -p @autorag/librarian@2.13.8 autorag}"
 
 $AUTORAG lite init --search-paths "$DEMO_ROOT/docs" --workspace "$DEMO_ROOT/workspace" \
   --memory-path "$AUTORAG_HOME/memory.json" >/dev/null

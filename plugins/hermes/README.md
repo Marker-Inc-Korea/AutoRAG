@@ -41,9 +41,9 @@ Without the setup skill:
 
 ```bash
 mkdir -p ~/.autorag/workspace
-npx -y -p @autorag/librarian@2.13.7 autorag setup \
+npx -y -p @autorag/librarian@2.13.8 autorag setup \
   --search-paths "$HOME/Documents" --workspace ~/.autorag/workspace
-npx -y -p @autorag/librarian@2.13.7 autorag lite refresh
+npx -y -p @autorag/librarian@2.13.8 autorag lite refresh
 ```
 
 Hermes needs its MCP support (the `mcp` extra, part of Hermes's `[all]`
@@ -91,7 +91,7 @@ variable names, never values.
 ## Disclosure
 
 - **First run downloads software.** `npx` fetches the pinned
-  `@autorag/librarian@2.13.7` from npm (about 11 MB unpacked, plus its
+  `@autorag/librarian@2.13.8` from npm (about 11 MB unpacked, plus its
   dependencies). The first `autorag_refresh` (or `autorag lite refresh`) then
   provisions local helpers: `minsync` (`cargo install` when Rust is present,
   otherwise a sha256-verified GitHub release asset from NomaDamas/MinSync),
@@ -133,7 +133,7 @@ Health check without Hermes:
 
 ```bash
 printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"probe","version":"0"}}}' \
-  | npx -y -p @autorag/librarian@2.13.7 autorag-mcp
+  | npx -y -p @autorag/librarian@2.13.8 autorag-mcp
 ```
 
 Source of truth for the tools and schemas:

@@ -7,7 +7,7 @@
       "args": [
         "-y",
         "-p",
-        "@autorag/librarian@2.13.7",
+        "@autorag/librarian@2.13.8",
         "autorag-mcp"
       ],
       "cwd": "${PLUGIN_DATA}",
