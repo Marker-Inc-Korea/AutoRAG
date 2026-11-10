@@ -44,6 +44,7 @@ import {
 	cloudScope,
 	defaultCloudProbe,
 } from "../filesystem/cloud-placeholder.ts";
+import { isGlobExclusion } from "../filesystem/path-exclusions.ts";
 import {
 	FSearchClient,
 	type FSearchClientOptions,
@@ -5395,6 +5396,7 @@ function toMinSyncReasonDiagnostic(reason: string): SearchDocumentDiagnostic {
  * path is legitimate.
  */
 function pinExcludedPath(path: string): string {
+	if (isGlobExclusion(path)) return path;
 	const resolvedPath = resolve(path);
 	try {
 		return join(realpathSync(dirname(resolvedPath)), basename(resolvedPath));

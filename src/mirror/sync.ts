@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { BigIntStats, Dir } from "node:fs";
 import { opendir, readFile, stat } from "node:fs/promises";
-import { basename, dirname, extname, join, resolve, sep } from "node:path";
+import { basename, dirname, extname, join, resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { type DupeyCliOptions, fingerprintWithDupey } from "../dupey/cli.ts";
 import {
@@ -10,6 +10,7 @@ import {
 	canonicalPathMapper,
 	isPathInside,
 } from "../filesystem/cloud-placeholder.ts";
+import { createPathExclusionMatcher } from "../filesystem/path-exclusions.ts";
 import { planSourceRoots, type SourceRoot, sourceIdentifier } from "../filesystem/source-paths.ts";
 import { resolveMinSyncBinary } from "../minsync/binary.ts";
 import { MinSyncStageSession } from "../minsync/stage.ts";
@@ -1064,12 +1065,17 @@ function normalizeExtension(extension: string): string {
 	return lower.startsWith(".") ? lower : `.${lower}`;
 }
 
+const matcherBySet = new WeakMap<ReadonlySet<string>, (path: string) => boolean>();
+
+/** A path is excluded when it equals an excluded path, sits under one, or matches an excluded glob. */
 export function isPathExcluded(sourcePath: string, excluded: ReadonlySet<string> | undefined): boolean {
-	if (excluded === undefined) return false;
-	for (const excludedPath of excluded) {
-		if (sourcePath === excludedPath || sourcePath.startsWith(`${excludedPath}${sep}`)) return true;
+	if (excluded === undefined || excluded.size === 0) return false;
+	let matcher = matcherBySet.get(excluded);
+	if (matcher === undefined) {
+		matcher = createPathExclusionMatcher([...excluded]);
+		matcherBySet.set(excluded, matcher);
 	}
-	return false;
+	return matcher(sourcePath);
 }
 
 type SearchRootUnavailableReason = "gone" | "not-a-directory" | "unreadable" | "empty";
