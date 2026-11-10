@@ -86,6 +86,14 @@ time. Nothing is sent until you send the message. The backend (`dashboard/plugin
 It needs Node.js 24+ and a built index, like the MCP tools. The pane is Desktop-only; the CLI and messaging gateways
 use the MCP tools.
 
+The first time the plugin loads (or the pane opens), the backend installs the pinned `@autorag/librarian` once into
+`$HERMES_HOME/plugin-data/autorag/runtime` with `npm install` (about 1 GB of dependencies and about 25 s on a warm
+cache; the pane shows "Getting AutoRAG ready" until it finishes). Searches then run with `node` from that folder, so a
+search never waits on npm. Changing the version pinned in `mcp.json` reinstalls on the next load.
+
+Desktop opt-in: Hermes ships a package's desktop half switched off. Turn on **AutoRAG search** once in
+Capabilities → Plugins; it then sits next to the file tree in the right sidebar, and opens with `Cmd+Alt+F`.
+
 ## Configuration
 
 All optional. Hermes forwards these from your shell or profile `.env` only when
@@ -138,6 +146,8 @@ variable names, never values.
   and report state.
 - **Search pane.** `desktop/plugin.js` talks only to this plugin's own `/api/plugins/autorag/` routes and to the
   gateway's `file.attach`. It does not read files itself; `lite find` reads the folders and archives you configured.
+  The backend runs `npm install` of the pinned package once (see above), from the registry configured for npm on this
+  machine, and writes only under `$HERMES_HOME/plugin-data/autorag`.
   The relevance step may send result snippets to your configured decision model (Jev or sLLM), the same data path as
   any search whose results your model reads.
 
