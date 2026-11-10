@@ -456,6 +456,35 @@ describe("mirror staleness decisions", () => {
 		expect(diagnostics).toEqual([]);
 	});
 
+	it("reuses the last refresh's duplicate exclusions instead of needing a fresh duplicate scan", async () => {
+		await refreshWithDeliberateSkips();
+
+		const diagnostics = await detectMirrorStaleness({
+			root,
+			searchPaths: [source],
+			registry: createDefaultParserRegistry(),
+			maxSourceBytes: 100,
+			reuseRecordedDuplicateExclusions: true,
+		});
+
+		expect(diagnostics).toEqual([]);
+	});
+
+	it("still reports a recorded duplicate copy as stale once it changes", async () => {
+		await refreshWithDeliberateSkips();
+		writeFileSync(join(source, "dup-copy.txt"), "edited since the last refresh\n");
+
+		const diagnostics = await detectMirrorStaleness({
+			root,
+			searchPaths: [source],
+			registry: createDefaultParserRegistry(),
+			maxSourceBytes: 100,
+			reuseRecordedDuplicateExclusions: true,
+		});
+
+		expect(diagnostics.map((diagnostic) => diagnostic.source)).toEqual(["/docs/dup-copy.txt"]);
+	});
+
 	it("never treats Jikji's product artifact as a corpus source", async () => {
 		writeFileSync(join(source, "ok.txt"), "Fine\n");
 		writeFileSync(join(source, ".jikji_agent_map.md"), "# Jikji Agent Map\n");
