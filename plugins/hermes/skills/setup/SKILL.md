@@ -49,24 +49,27 @@ model, and reports what is ready. Pick `$WORKSPACE` outside the indexed folders
 `remediation` and carry on; the usual cause is a missing embedding daemon,
 handled in step 5.
 
-## 3. Connect the archives on this machine
+## 3. Connect only archives that actually work here
 
-Probe, then connect every archive that has both its CLI and a local archive:
+Never wire an archive just because its CLI is installed. A source is connectable
+only when its crawler CLI exists AND its local archive already holds data. Do
+not install a crawler, log in to anything, or run an import from the source app.
 
-```bash
-command -v slacrawl discrawl telecrawl wacrawl lazykatok mailcrawl
-```
+Probe each one (all read-only):
 
-| Source | Check the archive exists | Config entry to add under `datasources` |
-| --- | --- | --- |
-| Telegram | `~/.telecrawl/telecrawl.db` | `"telegram": {"instanceId": "default", "connector": {}}` |
-| Slack | `~/.slacrawl/slacrawl.db`; id: `sqlite3 -readonly ~/.slacrawl/slacrawl.db "select id from workspaces"` | `"slack": {"instanceId": "default", "connector": {"syncSource": "wiretap", "workspace": "<id>"}}` |
-| Discord | `discrawl status` shows `guilds>0`; id: `discrawl --json sql "select id,name from guilds"` | `"discord": {"type": "discord", "instanceId": "<name>", "connector": {"guildId": "<id>"}}` |
-| WhatsApp | `~/.wacrawl/wacrawl.db` | `"whatsapp": {"instanceId": "default", "connector": {}}` |
-| KakaoTalk, email | run `CLI setup --format json`, read the `datasources` states | use the entry shape `docs/datasource-skills.md` shows |
+| Source | CLI | Archive that must exist | Config entry |
+| --- | --- | --- | --- |
+| Telegram | `telecrawl` | `~/.telecrawl/telecrawl.db` with `chats` > 0 (`telecrawl status`) | `"telegram": {"instanceId": "default", "connector": {}}` |
+| Slack | `slacrawl` | `~/.slacrawl/slacrawl.db`; id: `sqlite3 -readonly ~/.slacrawl/slacrawl.db "select id from workspaces"` | `"slack": {"instanceId": "default", "connector": {"syncSource": "wiretap", "workspace": "<id>"}}` |
+| Discord | `discrawl` | `discrawl status` shows `guilds` > 0; id: `discrawl --json sql "select id,name from guilds"` | `"discord": {"type": "discord", "instanceId": "<name>", "connector": {"guildId": "<id>"}}` |
+| WhatsApp | `wacrawl` | `~/.wacrawl/wacrawl.db` | `"whatsapp": {"instanceId": "default", "connector": {}}` |
+| KakaoTalk, email, others | `lazykatok`, `mailcrawl`, ... | run `CLI setup --format json`; connect only entries whose state is not `skipped` | entry shape in `docs/datasource-skills.md` |
 
-Merge into the existing config; never replace it. This keeps every entry the
-user already has, adds only missing ones, and writes a backup first:
+`CLI setup --format json` also reports `skipped` with a reason (`missing <cli>
+binary`, `native store is not present`); trust it over your own guess.
+
+Add the entries to the config by merging, never replacing. Keep every entry the
+user already has, add only missing ones, and back up first:
 
 ```bash
 python3 - <<'PY'
@@ -76,14 +79,24 @@ cfg = os.environ.get("AUTORAG_CONFIG") or os.path.join(
 c = json.load(open(cfg))
 shutil.copy(cfg, f"{cfg}.bak-{int(time.time())}-before-hermes-plugin")
 ds = c.setdefault("datasources", {})
-# ds.setdefault("telegram", {...}); ds.setdefault("slack", {...}); one line per source found
+# ds.setdefault("telegram", {...}); one line per source that passed the probe
 json.dump(c, open(cfg, "w"), indent=2)
 PY
 ```
 
-Give each entry a short `"description"` saying what the archive contains; the
-model uses it to pick the right archive. List every source you skipped and why
-(CLI missing, no archive). Do not install or log in to a crawler unasked.
+Give each new entry a short `"description"` of what the archive contains; the
+model uses it to pick the right archive.
+
+Then prove each new entry syncs, and remove the ones that do not. A present
+archive can still fail (for example Telegram's archive exists but `telecrawl
+import` needs Telegram Desktop's data folder). Run
+`CLI lite refresh --method datasources --json`, read `datasources[]`, and for
+every entry you added with `ok: false` delete it from the config (back up
+first) and report the error text. Never remove an entry the user had before you
+started. Measured on a sandbox: Telegram failed with `telecrawl nonzero-exit`,
+was removed, Slack and Discord stayed, and the next refresh was all `ok`.
+
+Finish by listing every source you skipped or removed and why.
 
 The running MCP server reads its config once, at start. Measured: a config
 written after the server started was ignored (refresh did nothing, search
