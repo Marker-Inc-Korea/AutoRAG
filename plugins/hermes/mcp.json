@@ -7,11 +7,12 @@
       "args": [
         "-y",
         "-p",
-        "@autorag/librarian@2.13.8",
+        "@autorag/librarian@2.13.9",
         "autorag-mcp"
       ],
       "cwd": "${PLUGIN_DATA}",
       "env": {
+        "npm_config_allow_remote": "all",
         "AUTORAG_HOME": "${AUTORAG_HOME}",
         "AUTORAG_CONFIG": "${AUTORAG_CONFIG}",
         "AUTORAG_SEARCH_PATHS": "${AUTORAG_SEARCH_PATHS}",

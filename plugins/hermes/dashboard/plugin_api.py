@@ -37,7 +37,7 @@ MAX_JOBS = 8
 MAX_LINES_PER_JOB = 200
 MAX_STDERR_CHARS = 2000
 
-# `lite find` shipped after 2.13.8. A librarian without it rejects the flag (or the subcommand) and then prints its
+# `lite find` shipped in 2.13.9; older releases lack it. A librarian without it rejects the flag (or the subcommand) and then prints its
 # whole usage text; show one sentence the user can act on instead.
 _OLD_LIBRARIAN_RE = re.compile(r"^(?:Unknown flag: --query\b|Unknown lite subcommand: find\b)")
 
@@ -103,21 +103,44 @@ _CLI_REL = Path("node_modules") / "@autorag" / "librarian" / "dist" / "cli" / "i
 INSTALL_TIMEOUT_S = 600.0
 
 
-def default_installer(spec: str, runtime_dir: Path, env: dict[str, str]) -> None:
-    """`npm install` the pinned librarian into `runtime_dir`, once, so a search never installs anything."""
+def _npm_major(npm: str, env: dict[str, str], run: Callable[..., Any]) -> int:
+    """npm's major version, or 0 when it cannot be read (treated as an old npm, which is the safe direction)."""
+    try:
+        out = run([npm, "--version"], cwd=None, env=env, capture_output=True, text=True, timeout=30)
+        return int(str(out.stdout).strip().split(".")[0])
+    except Exception:
+        return 0
+
+
+def default_installer(
+    spec: str,
+    runtime_dir: Path,
+    env: dict[str, str],
+    *,
+    run: Callable[..., Any] = subprocess.run,
+    which: Callable[..., Optional[str]] = shutil.which,
+) -> None:
+    """`npm install` the pinned librarian into `runtime_dir`, once, so a search never installs anything.
+
+    The librarian depends on `xlsx` through an https tarball URL (cdn.sheetjs.com). npm 12 refuses remote tarballs
+    unless `--allow-remote` says otherwise, so on npm 12+ the flag is passed; older npm does not know it and would
+    reject it. Dependency lifecycle scripts stay off: the finder needs no native build step."""
     runtime_dir.mkdir(parents=True, exist_ok=True)
     pkg = runtime_dir / "package.json"
     if not pkg.exists():
         pkg.write_text(json.dumps({"name": "autorag-finder-runtime", "private": True}), encoding="utf-8")
-    npm = shutil.which("npm", path=env.get("PATH"))
+    npm = which("npm", path=env.get("PATH"))
     if not npm:
         raise FinderUnavailable("npm was not found on PATH (the AutoRAG finder installs its librarian with it)")
-    done = subprocess.run(
-        [npm, "install", "--no-audit", "--no-fund", "--no-progress", "--no-update-notifier", "--save-exact", spec],
-        cwd=str(runtime_dir), env=env, capture_output=True, text=True, timeout=INSTALL_TIMEOUT_S,
-    )
+    argv = [npm, "install", "--no-audit", "--no-fund", "--no-progress", "--no-update-notifier", "--ignore-scripts", "--save-exact"]
+    if _npm_major(npm, env, run) >= 12:
+        argv.append("--allow-remote=all")
+    argv.append(spec)
+    done = run(argv, cwd=str(runtime_dir), env=env, capture_output=True, text=True, timeout=INSTALL_TIMEOUT_S)
     if done.returncode != 0:
-        raise RuntimeError((done.stderr or done.stdout or "npm install failed").strip()[-400:])
+        text = (done.stderr or done.stdout or "npm install failed").strip()
+        # npm prints the cause first and a log hint last; keep the cause.
+        raise RuntimeError(text[:600])
 
 
 class Runtime:

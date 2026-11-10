@@ -417,11 +417,11 @@ def test_pinned_spec_without_dash_p_is_unavailable(api, tmp_path, monkeypatch):
 
 
 def _fake_runtime(tmp_path, api):
-    """A runtime dir that already holds an installed librarian CLI."""
+    """A runtime dir that already holds the installed librarian CLI for the version mcp.json pins."""
     cli = tmp_path / "node_modules" / "@autorag" / "librarian" / "dist" / "cli" / "index.js"
     cli.parent.mkdir(parents=True)
     cli.write_text("// cli")
-    (tmp_path / ".installed").write_text(json.dumps({"spec": "@autorag/librarian@2.13.8"}))
+    (tmp_path / ".installed").write_text(json.dumps({"spec": api.pinned_librarian_spec()}))
     return cli
 
 
@@ -534,3 +534,78 @@ def test_status_route(api, client, tmp_path):
     rt.ensure()
     body = client.get("/api/plugins/autorag/status").json()
     assert body["state"] == "ready" and body["spec"] == "@autorag/librarian@2.13.8"
+
+
+# ---- npm itself: the install command must work on npm 12 and on older npm -------------------------------
+
+
+class FakeRun:
+    """subprocess.run stand-in that records argv and answers per npm version."""
+
+    def __init__(self, version="12.0.2", install_rc=0, install_err=""):
+        self.calls = []
+        self.version = version
+        self.install_rc = install_rc
+        self.install_err = install_err
+
+    def __call__(self, argv, **kw):
+        self.calls.append(list(argv))
+        import types
+
+        if "--version" in argv:
+            return types.SimpleNamespace(returncode=0, stdout=self.version + "\n", stderr="")
+        return types.SimpleNamespace(returncode=self.install_rc, stdout="", stderr=self.install_err)
+
+
+def _install(api, tmp_path, run):
+    api.default_installer("@autorag/librarian@2.13.9", tmp_path, {"PATH": "/bin"}, run=run, which=lambda n, path=None: "/x/npm")
+
+
+def test_npm_12_gets_allow_remote_so_the_xlsx_tarball_dependency_can_install(api, tmp_path):
+    run = FakeRun(version="12.0.2")
+    _install(api, tmp_path, run)
+    install = next(c for c in run.calls if "install" in c)
+    assert "--allow-remote=all" in install
+
+
+def test_older_npm_is_not_given_a_flag_it_would_reject(api, tmp_path):
+    run = FakeRun(version="11.20.0")
+    _install(api, tmp_path, run)
+    install = next(c for c in run.calls if "install" in c)
+    assert not any(a.startswith("--allow-remote") for a in install)
+
+
+def test_an_unreadable_npm_version_is_treated_as_old(api, tmp_path):
+    run = FakeRun(version="not-a-version")
+    _install(api, tmp_path, run)
+    assert not any(a.startswith("--allow-remote") for a in next(c for c in run.calls if "install" in c))
+
+
+def test_the_install_never_runs_dependency_scripts_or_audits(api, tmp_path):
+    run = FakeRun()
+    _install(api, tmp_path, run)
+    install = next(c for c in run.calls if "install" in c)
+    for flag in ("--no-audit", "--no-fund", "--ignore-scripts", "--save-exact"):
+        assert flag in install
+
+
+def test_a_failed_npm_install_surfaces_npms_own_error_text(api, tmp_path):
+    run = FakeRun(install_rc=1, install_err="npm error code EALLOWREMOTE\nnpm error Refusing to fetch xlsx")
+    with pytest.raises(RuntimeError, match="EALLOWREMOTE"):
+        _install(api, tmp_path, run)
+
+
+def test_status_reports_the_install_failure_instead_of_idle(api, tmp_path, client):
+    bad = FakeInstaller(tmp_path, fail=True)
+    rt = api.Runtime(tmp_path, spec="@autorag/librarian@2.13.9", installer=bad)
+    api.set_runtime(rt)
+    with pytest.raises(api.FinderUnavailable):
+        rt.ensure()
+    body = client.get("/api/plugins/autorag/status").json()
+    assert body["state"] == "failed" and "network" in body["error"]
+
+
+def test_mcp_server_may_fetch_the_xlsx_tarball_on_npm_12():
+    """The librarian depends on a https tarball (xlsx); npm 12 refuses remote tarballs unless allowed."""
+    env = json.loads((ROOT / "mcp.json").read_text())["mcpServers"]["autorag"]["env"]
+    assert env["npm_config_allow_remote"] == "all"
