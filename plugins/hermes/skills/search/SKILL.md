@@ -87,6 +87,11 @@ with `tool_search` (query `autorag`) and read their schemas with `tool_describe`
 - `autorag.duplicates` scans the configured roots for exact duplicate files and
   near-duplicate document families. It is read-only. Present the families and
   let the user decide; never move or delete files on your own.
+- `autorag.convert` converts files to another format (docx to pdf, heic to jpg, hwp to docx, md to html). Ask
+  `autorag.convert.formats` with `from` first when unsure a route exists. It writes new files only; it never
+  replaces an existing one, so say where the copy went. The result lists a Dupey verdict per output: `exact` or
+  `near` means the copy would be grouped as a duplicate of its source, which is expected and not a problem. Convert
+  only paths the user named; do not convert a folder the user did not point at. It is absent in read-only mode.
 
 ## Safety
 
