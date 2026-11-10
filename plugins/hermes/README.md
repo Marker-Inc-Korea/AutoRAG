@@ -16,6 +16,9 @@ Hermes keeps its own model; AutoRAG supplies retrieval.
   `autorag.evidence` persist and re-open the exact chunks behind an answer.
 - `autorag.duplicates` finds exact and near-duplicate documents; it never
   deletes anything.
+- `autorag.convert` converts local files to another format offline (documents, spreadsheets, slides, HWP/HWPX,
+  images, e-books, audio, video) with Filee and reports whether each copy would count as a duplicate of its source.
+  It writes new files only: a colliding name gets a number added, and an existing file is never replaced.
 
 ## Install
 
@@ -66,6 +69,8 @@ prefixed `mcp__autorag__` in Hermes:
 | `autorag_search_datasource_<id>` | Search one connected archive |
 | `autorag_datasources_list` / `_get` | What is connected |
 | `autorag_duplicates` | Duplicate and near-duplicate scan |
+| `autorag_convert` | Convert files to another format with Filee (absent in read-only mode); never replaces a file |
+| `autorag_convert_formats` | What a source format can be converted to |
 | `autorag_report` / `autorag_evidence` | Persist and re-open cited evidence |
 
 Skills (namespaced `autorag:`): `search` (how to query, cite, and compare

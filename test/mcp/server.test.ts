@@ -97,6 +97,10 @@ interface FakeOptions {
 	readonly fsearchProvider?: (request: FSearchRequest) => unknown | Promise<unknown>;
 	/** Injected Dupey scanner seam; the server forwards `config.dupey` verbatim. */
 	readonly dupey?: unknown;
+	/** `config.filee`; `{ enabled: false }` removes the conversion tools. */
+	readonly filee?: { readonly enabled?: boolean };
+	readonly convertFiles?: (request: unknown, signal?: AbortSignal) => Promise<unknown>;
+	readonly listFileConversions?: (from?: string, signal?: AbortSignal) => Promise<string>;
 	readonly datasources?: readonly unknown[];
 	/** Datasource ids with a registered retrieval method (dynamic tool exposure). */
 	readonly retrievalDatasourceIds?: readonly string[];
@@ -121,7 +125,11 @@ function fakeLite(options: FakeOptions): {
 			dupey: options.dupey ?? {
 				run: async () => JSON.stringify({ dir: "", files: [], families: [], errors: [] }),
 			},
+			...(options.filee !== undefined ? { filee: options.filee } : {}),
 		},
+		convertFiles:
+			options.convertFiles ?? (async () => ({ result: { converted: 0, failed: 0, files: [] }, links: [] })),
+		listFileConversions: options.listFileConversions ?? (async () => ""),
 		getRefreshStatus: async () => ({
 			state: "success",
 			inFlight: false,
@@ -252,6 +260,8 @@ describe("AutoRAG Lite MCP server", () => {
 				"autorag.duplicates",
 				"autorag.search_datasource_kakao",
 				"autorag.refresh",
+				"autorag.convert",
+				"autorag.convert.formats",
 				"autorag.report",
 				"autorag.evidence",
 			].sort(),
@@ -281,6 +291,8 @@ describe("AutoRAG Lite MCP server", () => {
 		const names = tools.map((tool) => tool.name);
 		expect(names).not.toContain("autorag.refresh");
 		expect(names).not.toContain("autorag.report");
+		expect(names).not.toContain("autorag.convert");
+		expect(names).toContain("autorag.convert.formats");
 		expect(names).toContain("autorag.search");
 		expect(names).toContain("autorag.evidence");
 		expect(names).toContain("autorag.search.files");
@@ -695,6 +707,184 @@ describe("AutoRAG Lite MCP server", () => {
 		expect(result.structuredContent).toMatchObject({ errorCode: "duplicates-failed" });
 		await client.close();
 		await server.close();
+	});
+
+	describe("file conversion", () => {
+		const converted = {
+			result: {
+				preset: "PDF",
+				target: "pdf",
+				converted: 1,
+				skipped: 0,
+				failed: 0,
+				files: [{ source: "/in/a.docx", state: "done", outputs: ["/in/a.pdf"] }],
+			},
+			links: [
+				{ source: "/in/a.docx", output: "/in/a.pdf", dupey: { relation: "near", jaccard: 0.93, nearScore: 0.95 } },
+			],
+		};
+
+		it("converts through Filee, maps the request, and reports the outputs with their dupey relation", async () => {
+			const requests: unknown[] = [];
+			const { lite } = fakeLite({
+				workspacePath: workspace(true),
+				convertFiles: async (request: unknown) => {
+					requests.push(request);
+					return converted;
+				},
+			});
+			const { client, server } = await connectedServer(lite);
+			const result = await client.callTool({
+				name: "autorag.convert",
+				arguments: {
+					inputs: ["/in/a.docx"],
+					to: "pdf",
+					outputDir: "/out",
+					recursive: true,
+					quality: 80,
+					keepDates: true,
+				},
+			});
+			expect(result.isError).not.toBe(true);
+			expect(requests).toEqual([
+				{ inputs: ["/in/a.docx"], to: "pdf", outputDir: "/out", recursive: true, quality: 80, keepDates: true },
+			]);
+			expect(result.structuredContent).toMatchObject({
+				ok: true,
+				converted: 1,
+				failed: 0,
+				files: [{ source: "/in/a.docx", outputs: ["/in/a.pdf"] }],
+				links: [{ output: "/in/a.pdf", dupey: { relation: "near" } }],
+			});
+			await client.close();
+			await server.close();
+		});
+
+		it("never lets a caller replace an existing file: overwrite is not an accepted argument", async () => {
+			const calls: unknown[] = [];
+			const { lite } = fakeLite({
+				workspacePath: workspace(true),
+				convertFiles: async (request: unknown) => {
+					calls.push(request);
+					return converted;
+				},
+			});
+			const { client, server } = await connectedServer(lite);
+			const result = await client.callTool({
+				name: "autorag.convert",
+				arguments: { inputs: ["/in/a.docx"], to: "pdf", overwrite: true },
+			});
+			expect(result.isError).toBe(true);
+			expect(calls).toEqual([]);
+			await client.close();
+			await server.close();
+		});
+
+		it("is an error with the per-file reasons when nothing converted", async () => {
+			const { lite } = fakeLite({
+				workspacePath: workspace(true),
+				convertFiles: async () => ({
+					result: {
+						preset: "PDF",
+						target: "pdf",
+						converted: 0,
+						skipped: 0,
+						failed: 1,
+						files: [{ source: "/in/a.xyz", state: "failed", outputs: [], error: "no route from xyz to pdf" }],
+					},
+					links: [],
+				}),
+			});
+			const { client, server } = await connectedServer(lite);
+			const result = await client.callTool({
+				name: "autorag.convert",
+				arguments: { inputs: ["/in/a.xyz"], to: "pdf" },
+			});
+			expect(result.isError).toBe(true);
+			expect(result.structuredContent).toMatchObject({
+				ok: false,
+				errorCode: "convert-failed",
+				files: [{ error: "no route from xyz to pdf" }],
+			});
+			await client.close();
+			await server.close();
+		});
+
+		it("reports a converter that cannot run as convert-failed instead of throwing", async () => {
+			const { lite } = fakeLite({
+				workspacePath: workspace(true),
+				convertFiles: async () => {
+					throw new Error("filee-cli was not found");
+				},
+			});
+			const { client, server } = await connectedServer(lite);
+			const result = await client.callTool({
+				name: "autorag.convert",
+				arguments: { inputs: ["/in/a.docx"], to: "pdf" },
+			});
+			expect(result.isError).toBe(true);
+			expect(result.structuredContent).toMatchObject({
+				errorCode: "convert-failed",
+				message: "filee-cli was not found",
+			});
+			await client.close();
+			await server.close();
+		});
+
+		it("rejects an empty input list and an out-of-range quality before running anything", async () => {
+			const calls: unknown[] = [];
+			const { lite } = fakeLite({
+				workspacePath: workspace(true),
+				convertFiles: async (request: unknown) => {
+					calls.push(request);
+					return converted;
+				},
+			});
+			const { client, server } = await connectedServer(lite);
+			for (const args of [
+				{ inputs: [], to: "pdf" },
+				{ inputs: ["/in/a.png"], to: "" },
+				{ inputs: ["/in/a.png"], to: "webp", quality: 0 },
+				{ inputs: ["/in/a.png"], to: "webp", quality: 101 },
+			]) {
+				expect((await client.callTool({ name: "autorag.convert", arguments: args })).isError).toBe(true);
+			}
+			expect(calls).toEqual([]);
+			await client.close();
+			await server.close();
+		});
+
+		it("lists what a source format can become", async () => {
+			const asked: (string | undefined)[] = [];
+			const { lite } = fakeLite({
+				workspacePath: workspace(true),
+				listFileConversions: async (from?: string) => {
+					asked.push(from);
+					return "heic -> jpg, png, webp, pdf";
+				},
+			});
+			const { client, server } = await connectedServer(lite);
+			const result = await client.callTool({ name: "autorag.convert.formats", arguments: { from: "heic" } });
+			expect(result.isError).not.toBe(true);
+			expect(asked).toEqual(["heic"]);
+			expect(result.structuredContent).toMatchObject({
+				ok: true,
+				from: "heic",
+				formats: "heic -> jpg, png, webp, pdf",
+			});
+			await client.close();
+			await server.close();
+		});
+
+		it("is not offered when the config turns Filee off", async () => {
+			const { lite } = fakeLite({ workspacePath: workspace(true), filee: { enabled: false } });
+			const { client, server } = await connectedServer(lite);
+			const names = (await client.listTools()).tools.map((tool) => tool.name);
+			expect(names).not.toContain("autorag.convert");
+			expect(names).not.toContain("autorag.convert.formats");
+			await client.close();
+			await server.close();
+		});
 	});
 
 	it("exposes dynamic datasource tools only for datasources with a registered retrieval method", async () => {
