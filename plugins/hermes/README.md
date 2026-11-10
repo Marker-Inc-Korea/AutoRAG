@@ -74,8 +74,10 @@ prefixed `mcp__autorag__` in Hermes:
 | `autorag_report` / `autorag_evidence` | Persist and re-open cited evidence |
 
 Skills (namespaced `autorag:`): `search` (how to query, cite, and compare
-across sources), `setup` (folders, datasources, first index, verification) and
-`automate` (run a Hermes agent task whenever files appear in a folder).
+across sources), `setup` (folders, datasources, first index, verification),
+`automate` (run a Hermes agent task whenever files appear in a folder) and
+`schedule` (Hermes cron jobs that re-index on a schedule, only on AC power or inside time windows, and report new
+duplicate documents; no model runs, and nothing is sent unless there is news).
 
 ## File automations
 
