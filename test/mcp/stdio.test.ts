@@ -519,4 +519,32 @@ describe("AutoRAG Lite MCP stdio", () => {
 		expect(field(status.structuredContent, "state")).toBe("idle");
 		expect(field(status.structuredContent, "inFlight")).toBe(false);
 	}, 60000);
+
+	it("picks up a config written after the server started, without a restart", async () => {
+		const { config, binDir, docs, root } = makeFixture();
+		const written = readFileSync(config, "utf8");
+		// First-time setup order: no config exists when the server starts. An empty AUTORAG_CONFIG means "not set",
+		// so the server resolves <AUTORAG_HOME>/config.json, which is absent, like the Hermes plugin on a fresh machine.
+		const home = join(root, "home");
+		mkdirSync(home, { recursive: true });
+		const connection = await connect(config, binDir, { AUTORAG_CONFIG: "", AUTORAG_HOME: home });
+
+		const before = await connection.client.callTool({
+			name: "autorag.search",
+			arguments: { query: "Who approves refund exceptions?", topK: 3 },
+		});
+		// No config, no index: the search finds nothing (this is what the user saw after setup).
+		expect(resultsArray(before.structuredContent)).toHaveLength(0);
+
+		writeFileSync(join(home, "config.json"), written);
+
+		const refresh = await connection.client.callTool({ name: "autorag.refresh", arguments: {} });
+		expect(refresh.isError).not.toBe(true);
+		const search = await connection.client.callTool({
+			name: "autorag.search",
+			arguments: { query: "Who approves refund exceptions?", topK: 3 },
+		});
+		expect(search.isError).not.toBe(true);
+		expectRefundEvidence(resultsArray(search.structuredContent), docs);
+	}, 90000);
 });
