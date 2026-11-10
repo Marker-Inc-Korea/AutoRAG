@@ -4464,20 +4464,25 @@ export class AutoRAGAgent {
 	}
 
 	/**
-	 * Lightweight stat-only staleness scan used when `refresh` is called with
+	 * Lightweight stat-only staleness scan used by status and when `refresh` is called with
 	 * methods that exclude parsed mirrors (e.g. only `datasources` or `jikji`).
 	 * Returns a zero-count `ParsedMirrorSyncResult` carrying fresh diagnostics
 	 * so the refresh result and status remain consistent.
+	 *
+	 * It never runs a duplicate scan: that reads every file under every root and costs seconds
+	 * on a large corpus. It reuses the exclusions the last refresh recorded instead, so it
+	 * differs from a fresh scan in two narrow ways: an indexed file that has since become an
+	 * older exact duplicate is not reported (the next refresh drops it), and a newly added file
+	 * that is already a duplicate is reported stale until the next refresh excludes it.
 	 */
 	private async scanMirrorStaleness(): Promise<ParsedMirrorSyncResult> {
-		const duplicateFilter = await this.exactDuplicateExclusions();
 		const diagnostics = await detectMirrorStaleness({
 			...this.refreshLimits,
 			root: this.workspaceProjectRoot,
 			searchPaths: this.searchPaths,
 			minSyncBinaryPath: this.minSyncBinaryPath,
 			parserOptions: this.parserOptions,
-			excludeSourcePaths: duplicateFilter.excluded,
+			reuseRecordedDuplicateExclusions: true,
 			userExcludedSourcePaths: new Set(this.excludePaths),
 			cloudProbe: this.cloudProbe,
 		});
