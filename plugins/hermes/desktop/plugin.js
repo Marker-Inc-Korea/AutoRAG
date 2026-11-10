@@ -251,28 +251,33 @@ export function createFinder({ rest, request, composer, getSessionId, sleep = ms
     const refs = []
     const quotes = []
     let failed = 0
+    let reason = ''
     for (const { hit, group } of items) {
       if (hit.path) {
         try {
           const res = await request('file.attach', { session_id: sessionId, path: hit.path, name: hit.title })
           if (res && res.attached !== false && typeof res.ref_text === 'string' && res.ref_text) refs.push(res.ref_text)
-          else failed += 1
-        } catch {
+          else {
+            failed += 1
+            reason ||= String(res?.message || 'the chat did not return a file reference')
+          }
+        } catch (error) {
           failed += 1
+          reason ||= errorText(error)
         }
       } else {
         quotes.push(attachText(hit, sourceLabel(group)))
       }
     }
     const count = refs.length + quotes.length
-    if (count === 0) return set({ ...state, notice: { kind: 'failed', failed } })
+    if (count === 0) return set({ ...state, notice: { kind: 'failed', failed, reason } })
     const text = [refs.join(' '), ...quotes].filter(Boolean).join('\n\n')
     const accepted = await composer.insertText(sessionId, `${text}\n`, { mode: 'block' })
     if (!accepted) return set({ ...state, notice: { kind: 'composer' } })
     set({
       ...state,
       selected: {},
-      notice: failed ? { kind: 'partial', count, failed, capped } : { kind: 'attached', count, capped }
+      notice: failed ? { kind: 'partial', count, failed, capped, reason } : { kind: 'attached', count, capped }
     })
   }
 
@@ -487,8 +492,8 @@ function FinderPane({ finder, ctx }) {
   const notice = s.notice && ({
     'no-session': t('noSession'),
     attached: t('attached', { n: s.notice.count }) + (s.notice.capped ? t('capped') : ''),
-    partial: t('partial', { n: s.notice.count, failed: s.notice.failed }) + (s.notice.capped ? t('capped') : ''),
-    failed: t('failed'),
+    partial: t('partial', { n: s.notice.count, failed: s.notice.failed }) + (s.notice.capped ? t('capped') : '') + (s.notice.reason ? ` (${s.notice.reason})` : ''),
+    failed: t('failed') + (s.notice.reason ? ` (${s.notice.reason})` : ''),
     composer: t('composer')
   })[s.notice.kind]
 

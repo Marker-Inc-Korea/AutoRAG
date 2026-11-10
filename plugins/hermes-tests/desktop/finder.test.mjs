@@ -452,6 +452,22 @@ describe('attach', () => {
     assert.deepEqual([n.count, n.failed], [1, 1])
   })
 
+  it('says WHY a file could not be staged, with the gateway\'s own words', async () => {
+    const { finder } = await withResults({
+      request: async () => { const e = new Error('Error: file.attach 5028'); e.message = 'path is outside the allowed folders'; throw e }
+    })
+    await finder.attach(['files:a'])
+    const n = finder.getState().notice
+    assert.equal(n.kind, 'failed')
+    assert.match(n.reason, /outside the allowed folders/)
+  })
+
+  it('a refused attach (attached:false + message) reports its message', async () => {
+    const { finder } = await withResults({ request: async () => ({ attached: false, message: 'file too large' }) })
+    await finder.attach(['files:a'])
+    assert.match(finder.getState().notice.reason, /file too large/)
+  })
+
   it('all files failing inserts nothing', async () => {
     const { finder, calls } = await withResults({ request: async () => { throw new Error('nope') } })
     await finder.attach(['files:a'])
