@@ -1,0 +1,106 @@
+# Hermes Plugin Hackathon: submission kit
+
+Nothing here has been posted, opened, or submitted. This directory is the prep.
+The plugin itself lives in [`../hermes`](../hermes) (the only tree the catalog installs).
+
+## What is verified (run on Hermes git `6cff782b`, 2026-11-10)
+
+| Check | Result |
+| --- | --- |
+| `hermes plugins validate plugins/hermes` | passes (portable manifest, security scan `safe`) |
+| `hermes plugins doctor plugins/hermes --ci` | passes |
+| `plugin-catalog/autorag.yaml` parsed by upstream `entry_from_mapping` | accepted (with a syntactically valid sha) |
+| `hermes plugins install file://...` then `enable` | installs, MCP server `autorag` registers 10 tools |
+| Real Hermes gateway turn (`-t autorag -z`) with `glm-5p3-flash` | calls `mcp__autorag__*` tools and answers from files, Slack, Discord, Telegram |
+| `autorag.duplicates` through Hermes | finds the exact duplicate pair |
+| Real `~/.autorag/config.json` sha1 before and after | identical |
+
+Not verified: Windows and Linux, a second Hermes version, `hermes plugins validate --install-deps`
+(portable package, no Python deps), and the catalog CI job itself (it only runs on the upstream PR).
+
+## Findings that change the plan
+
+1. **MCP SDK.** Hermes loads the plugin's MCP server only when its Python `mcp` SDK is importable.
+   `mcp` is part of Hermes's `[all]` extra, so a normal install should have it; I did not verify a
+   stock install. My throwaway `uv sync` environment lacked it and the plugin then registered zero
+   tools while the model quietly fell back to `terminal`. Mention `hermes pm install --extra mcp`
+   in the PR description as the fix.
+2. **Cold start.** With npm audit, fund, and update-notifier left on, the first `npx` start took
+   about 20 s to 145 s depending on machine load (Hermes's connect budget is 60 s). A second start
+   after the package is cached took about 1.4 s. Hermes's code retries a failed first connect on a
+   cooldown (not tested here), so expect the first question after install to possibly find no tools. The `timeout: 1800` in `plugin.json` only widens tool calls, not the connect.
+3. **`Hermes -z` and `hermes chat` go through a gateway daemon.** With no gateway running, the first
+   call spawns one; it can lose a race with a one-shot client. For a recording, start the gateway
+   first and wait for `registered 10 tool(s)` in `logs/agent.log`.
+4. **Tool names:** `mcp__autorag__autorag_search`, not `mcp__autorag__autorag.search`; dots become
+   underscores. The skills describe this.
+5. **Config must exist.** Without a config the server starts but searches `.` (Hermes's data dir)
+   and `autorag.search` returns `index-not-ready`. The `setup` skill handles first-time init.
+
+## Before opening the catalog PR
+
+1. Merge `plugins/hermes` to `Marker-Inc-Korea/AutoRAG` `main` (separate PR, DCO sign-off, squash).
+2. Copy the merged commit sha into `catalog/autorag.yaml` (`sha:` must be the 40-char commit that
+   contains `plugins/hermes`; the file ships with a `000...` placeholder on purpose).
+3. In `NousResearch/hermes-agent`, add that one file as `plugin-catalog/autorag.yaml`.
+4. PR description must carry the rule-13 disclosure. Draft below.
+5. Check `requires_hermes` against the Hermes release current on submission day; it is `>=0.22.3`
+   here because the `servers.<name>.timeout` extension is only honoured from that release (the
+   official `meshy` entry declares the same floor for the same key).
+
+### PR description draft
+
+> **AutoRAG** adds local search over your own files and chat/mail archives to Hermes.
+> Portable Agent Plugins v1 package (`plugin.json` + `mcp.json` + two skills). Source:
+> `Marker-Inc-Korea/AutoRAG` `plugins/hermes` (submitted by a contributor to that repository; confirm owner or major-contributor status before opening, rule 5).
+>
+> - Surfaces used: stdio MCP server (`@autorag/librarian@2.13.7`, pinned), skills. No Python, no hooks,
+>   no middleware, no core overrides.
+> - Network: retrieval is local, but chunks a search returns are read by the user's Hermes model. First start downloads the pinned package from npm via `npx`. The first refresh downloads
+>   `minsync` (cargo or sha256-verified GitHub release asset), `jikji` (cargo), and two local embedding
+>   models from Hugging Face (about 1.5 GB). Search itself needs no network for local files and local crawler archives; Notion, GitHub, RSS and Hister connectors do.
+> - Reads outside plugin data: the folders in the user's AutoRAG config and local crawler archives the
+>   user configures. Writes only AutoRAG's own index and report state. Never edits user documents.
+> - Processes: long-lived stdio child; refresh spawns local helper binaries.
+> - No telemetry, no self-update (version pinned in `mcp.json`), no credentials read.
+> - Tools are annotated `readOnlyHint` except `autorag.refresh` and `autorag.report`.
+> - Tested with `hermes plugins validate` and `hermes plugins doctor --ci`; demo video linked below.
+
+## Demo
+
+`demo/` rebuilds a fully synthetic corpus (fictional company, fictional vendor) and records it with VHS.
+No real file, chat, or credential is used.
+
+```bash
+cd plugins/hermes-submission/demo
+./setup-demo.sh                       # corpus + sandbox AutoRAG config + first index (about 15 s warm)
+# isolated Hermes home with the plugin enabled; the gateway must be running before recording
+export HERMES_HOME=/tmp/hh-demo
+hermes plugins install file:///path/to/plugins-hermes-git-copy --enable   # or the catalog name after merge
+hermes pm install --extra mcp         # only if the MCP SDK is missing
+export HERMES_BIN="$(command -v hermes)" FIREWORKS_API_KEY=...
+vhs demo.tape                         # writes demo.mp4 and demo.gif
+```
+
+Model: `accounts/fireworks/models/glm-5p3-flash` (released 2026-08-26 per the Hermes model catalog cache), the
+only model used in the recording. No run without the plugin was recorded, so there is no with/without comparison.
+
+### What the recording shows
+
+1. `hermes plugins show autorag`.
+2. A question answered from the contract PDF with the file cited.
+3. A cross-source check: Slack says 11,500 KRW/box, the PDF says 10,800; Discord asks for 60 days
+   notice, the PDF says 30; Telegram adds a Tue/Thu delivery window and a 15% weekend surcharge the
+   PDF does not contain.
+4. Duplicate detection, read-only.
+
+### Caveats for the X post and form
+
+- The recorded model answers are not deterministic. Re-run before posting and trust the new take.
+- The synthetic Telegram, Slack, and Discord archives are built by writing the crawlers' own SQLite
+  schemas (Telegram, Discord) or importing a Slack export (Slack). They are realistic in shape, not
+  captured from a live account.
+- The Telegram crawler's `import` is replaced by `telecrawl-preimported.sh` in the demo config only,
+  because a real import needs Telegram Desktop's store. Say so if asked.
+- Star counts and "no competing plugin" claims in the planning notes were not verified here.
+- Not done by design: X post, Typeform submission, catalog PR, pushing this branch.

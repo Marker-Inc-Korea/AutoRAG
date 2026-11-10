@@ -1,0 +1,24 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "autorag": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "-p",
+        "@autorag/librarian@2.13.7",
+        "autorag-mcp"
+      ],
+      "cwd": "${PLUGIN_DATA}",
+      "env": {
+        "AUTORAG_HOME": "${AUTORAG_HOME}",
+        "AUTORAG_CONFIG": "${AUTORAG_CONFIG}",
+        "AUTORAG_SEARCH_PATHS": "${AUTORAG_SEARCH_PATHS}",
+        "AUTORAG_WORKSPACE": "${AUTORAG_WORKSPACE}",
+        "AUTORAG_MCP_READ_ONLY": "${AUTORAG_MCP_READ_ONLY}",
+        "AUTORAG_MCP_TOOLS": "${AUTORAG_MCP_TOOLS}"
+      }
+    }
+  }
+}
