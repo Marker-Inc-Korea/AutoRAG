@@ -69,7 +69,20 @@ prefixed `mcp__autorag__` in Hermes:
 | `autorag_report` / `autorag_evidence` | Persist and re-open cited evidence |
 
 Skills (namespaced `autorag:`): `search` (how to query, cite, and compare
-across sources) and `setup` (folders, datasources, first index, verification).
+across sources), `setup` (folders, datasources, first index, verification) and
+`automate` (run a Hermes agent task whenever files appear in a folder).
+
+## File automations
+
+Hermes cron has no file trigger. The `automate` skill adds one with AutoRAG's own file automations: AutoRAG's daemon
+watches a folder, and each batch of new files queues its paths and runs one Hermes cron job. The job's pre-run script
+hands the agent the file list, or skips the run with no model call when nothing is queued. Example request:
+"When a PDF lands in Downloads, summarize it and send it to me on Telegram."
+
+Tested in an isolated `HERMES_HOME`: a dropped PDF reached the agent in about 9 s; three files dropped together
+became one run; names with spaces, quotes, `#` and Korean text arrived intact; a file named like an instruction was
+refused by Hermes' own cron scanner before any model call, and the next file still ran. The job's tools are limited
+through `enabled_toolsets`, so the agent holds no terminal unless you ask for one.
 
 ## Search pane (Hermes Desktop)
 
@@ -150,6 +163,13 @@ variable names, never values.
   machine, and writes only under `$HERMES_HOME/plugin-data/autorag`.
   The relevance step may send result snippets to your configured decision model (Jev or sLLM), the same data path as
   any search whose results your model reads.
+- **File automations (opt-in, only when you ask for one).** The `automate` skill's helper
+  (`skills/automate/scripts/autorag_automation.py`, Python standard library) writes a rule to
+  `~/.autorag/automations.json` (backed up first), a generated `fire.sh` under
+  `$HERMES_HOME/plugin-data/autorag/automations/`, and a gate script in `$HERMES_HOME/scripts/`. `fire.sh` runs
+  `hermes cron run` for that job. The daemon is registered with launchd or systemd `--user` only if you run
+  `autorag automate install`. Nothing is created at install time, and `remove` deletes everything the helper made.
+  File paths (not contents) are passed to your Hermes model for the job you define.
 
 ## Develop and verify
 

@@ -13,8 +13,10 @@ description: >-
   BM25 + dense + sparse retrieval over PDF, DOCX, PPTX, XLSX, Markdown, email and Korean HWP/HWPX,
   plus Slack, Discord, Telegram, WhatsApp, KakaoTalk, email, Notion and Obsidian archives through
   the local crawler CLIs you already have. Cited evidence, file-name search and duplicate detection;
-  it never edits your documents. Bundles search and setup skills. Portable Agent Plugins v1
-  package (mcp.json + skills/); needs Node.js 24+.
+  it never edits your documents. Bundles search, setup and automate skills (automate runs a
+  Hermes cron job when files appear in a folder, through a standard-library Python helper the
+  agent runs only on request; macOS/Linux). Portable Agent Plugins v1 package (mcp.json +
+  skills/); needs Node.js 24+.
   Disclosure - first start downloads the pinned server from npm through npx; the first refresh
   provisions the local helpers minsync and jikji (cargo, or a sha256-verified GitHub release for
   minsync) and downloads the local embedding models (Qwen3-Embedding-0.6B about 1.2 GB and

@@ -76,16 +76,20 @@ Discord staying keyword-only because discrawl's own config has embeddings off.
 ### PR description draft
 
 > **AutoRAG** adds local search over your own files and chat/mail archives to Hermes.
-> Portable Agent Plugins v1 package (`plugin.json` + `mcp.json` + two skills). Source:
+> Portable Agent Plugins v1 package (`plugin.json` + `mcp.json` + three skills). Source:
 > `Marker-Inc-Korea/AutoRAG` `plugins/hermes` (submitted by a contributor to that repository; confirm owner or major-contributor status before opening, rule 5).
 >
-> - Surfaces used: stdio MCP server (`@autorag/librarian@2.13.8`, pinned), skills. No Python, no hooks,
->   no middleware, no core overrides.
+> - Surfaces used: stdio MCP server (`@autorag/librarian@2.13.8`, pinned), skills. No hooks, no middleware, no core
+>   overrides, no Python imported into Hermes. One skill (`automate`) bundles a standard-library Python helper script
+>   that the agent runs only when the user asks for a file automation (macOS/Linux): it writes an AutoRAG automation
+>   rule and two small scripts, and nothing at install time.
 > - Network: retrieval is local, but chunks a search returns are read by the user's Hermes model. First start downloads the pinned package from npm via `npx`. The first refresh downloads
 >   `minsync` (cargo or sha256-verified GitHub release asset), `jikji` (cargo), and two local embedding
 >   models from Hugging Face (about 1.5 GB). Search itself needs no network for local files and local crawler archives; Notion, GitHub, RSS and Hister connectors do.
 > - Reads outside plugin data: the folders in the user's AutoRAG config and local crawler archives the
 >   user configures. Writes only AutoRAG's own index and report state. Never edits user documents.
+> - Writes beyond that, only on request: `~/.autorag/automations.json` (backed up first) and
+>   `$HERMES_HOME/plugin-data/autorag/automations/` plus one gate script in `$HERMES_HOME/scripts/`. `remove` deletes them.
 > - Processes: long-lived stdio child; refresh spawns local helper binaries.
 > - No telemetry, no self-update (version pinned in `mcp.json`), no credentials read.
 > - Tools are annotated `readOnlyHint` except `autorag.refresh` and `autorag.report`.
