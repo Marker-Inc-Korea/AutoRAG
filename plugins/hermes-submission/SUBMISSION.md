@@ -14,9 +14,14 @@ The plugin itself lives in [`../hermes`](../hermes) (the only tree the catalog i
 | Real Hermes gateway turn (`-t autorag -z`) with `glm-5p3-flash` | calls `mcp__autorag__*` tools and answers from files, Slack, Discord, Telegram |
 | `autorag.duplicates` through Hermes | finds the exact duplicate pair |
 | Real `~/.autorag/config.json` sha1 before and after | identical |
+| Model-driven setup on a first-time sandbox user (no `~/.autorag`, synthetic Documents + Slack/Telegram/Discord archives), prompt "Set up AutoRAG for my Documents folder." | finished in 12 min (722 s) with 57 tool calls; wrote the config, merged the Slack, Telegram and Discord entries with a backup, built the index, started the embedding daemon, and reported accurately. Its `mcp` tools only appeared after `hermes pm install --extra mcp` and a new session. |
 
 Not verified: Windows and Linux, a second Hermes version, `hermes plugins validate --install-deps`
-(portable package, no Python deps), and the catalog CI job itself (it only runs on the upstream PR).
+(portable package, no Python deps), the catalog CI job itself (it only runs on the upstream PR), and a
+second setup run (the 12 min figure is one sample on a loaded machine; cargo was present so `minsync`
+compiled, which dominated it). In that run the model also hit two problems the skill did not cover and
+patched the skill itself (now folded into its Troubleshooting): a Hermes installer PATH precheck, and
+Discord staying keyword-only because discrawl's own config has embeddings off.
 
 ## Findings that change the plan
 

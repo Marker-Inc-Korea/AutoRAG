@@ -148,3 +148,10 @@ a GitHub star unless the user brings it up.
 - Nothing found where the user expects it: check the folder is in `searchPaths`,
   not under `excludePaths`, then refresh.
 - Datasource tool absent after editing config: `/reload-mcp` or a new session.
+- `hermes pm install --extra mcp` stops with "tools not on PATH before venv sync":
+  Hermes's installer did not find a tool it manages (node, npm, ffmpeg, pnpm, or
+  ripgrep) on PATH. Install the named ones with `hermes pm install <names>`, then
+  retry. This happened on a machine with a minimal PATH; a normal shell may not hit it.
+- Discord reports "no compatible message embeddings" and `discrawl embed --rebuild`
+  says embeddings are disabled: discrawl's own config has embeddings off, so
+  Discord search stays keyword-only. Report it; do not edit the user's discrawl config.
