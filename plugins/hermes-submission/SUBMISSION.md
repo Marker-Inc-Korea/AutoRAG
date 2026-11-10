@@ -22,7 +22,7 @@ The plugin itself lives in [`../hermes`](../hermes) (the only tree the catalog i
 | --- | --- |
 | `hermes update` on `~/.hermes/hermes-agent` | v0.23.0 -> v0.23.1 (`3b4215785882`); `update --check` then reports up to date |
 | `hermes plugins install Marker-Inc-Korea/AutoRAG/plugins/hermes --ref <sha> --no-enable`, then `enable` | installs to `~/.hermes/plugins/autorag`; `plugins validate` passes; custom-source warning shown (not a catalog entry yet) |
-| MCP registration on the running gateway | first connect after `enable` was cancelled after about 28 s (`CancelledError`, cold `npx`); a later reconcile registered 16 tools (the 9 core tools minus none, plus one per datasource in the real config) |
+| MCP registration on the running gateway | first connect after `enable` was cancelled after about 28 s (`CancelledError`, cold `npx`); a later reconcile registered 16 tools: 9 core (status, search, search_files, datasources_list/get, duplicates, evidence, refresh, report) plus 7 `search_datasource_*` (mailcrawl, kakao, telegram, whatsapp, slack, nomadamas, browser) |
 | Question to the live agent: list the AutoRAG tool names | returned exactly those 16 names in 10 s |
 | In-process `registry.dispatch` of `autorag_datasources_list` and `autorag_status` in the install's own PM environment | both returned; `status` took 35 s and reports `state: failed` from an earlier refresh in the real index, which I did not touch |
 | Real `~/.autorag/config.json` sha1 before and after | identical |
@@ -35,6 +35,7 @@ agent loop. Cause not found; do not claim live-agent tool calls work on this ins
 Side effects of the update on this machine: `hermes update` stopped the running gateway without respawning
 it. I restarted it with `hermes gateway ensure`. Any open desktop session was interrupted. A backup of
 `config.yaml` and `auth.json` was taken first under `~/.hermes/backup/pre-autorag-plugin-*`.
+
 Not verified: Windows and Linux, a second Hermes version, `hermes plugins validate --install-deps`
 (portable package, no Python deps), the catalog CI job itself (it only runs on the upstream PR), and a
 second setup run (the 12 min figure is one sample on a loaded machine; cargo was present so `minsync`
