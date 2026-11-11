@@ -8,7 +8,7 @@ the UI poll them with a cursor.
 
 Nothing here reads documents or credentials. The child gets a reduced environment: PATH, HOME,
 locale, proxy and AUTORAG_* variables; provider API keys in the gateway's environment are not
-passed on (the CLI resolves its own decision-model credentials from ~/.autorag and Pi's auth.json).
+passed on. Pi's model runtime is isolated under this plugin's data, never the user's Pi login directory.
 """
 
 from __future__ import annotations
@@ -45,7 +45,7 @@ _GROUP_RE = re.compile(r"^(?:files|content|source:[a-z0-9][a-z0-9_.-]{0,63})$")
 _ENV_KEEP = re.compile(
     r"^(?:PATH|HOME|USER|LOGNAME|SHELL|TMPDIR|TERM|LANG|LANGUAGE|LC_[A-Z]+|TZ|SSL_CERT_FILE|SSL_CERT_DIR|"
     r"NODE_EXTRA_CA_CERTS|(?:HTTPS?|NO|ALL)_PROXY|(?:https?|no|all)_proxy|XDG_[A-Z_]+|AUTORAG_[A-Z_]+|"
-    r"PI_CODING_AGENT_DIR|SystemRoot|USERPROFILE|APPDATA|LOCALAPPDATA)$"
+    r"SystemRoot|USERPROFILE|APPDATA|LOCALAPPDATA)$"
 )
 
 
@@ -73,7 +73,10 @@ def pinned_librarian_spec() -> str:
 
 def child_env(source: Optional[dict[str, str]] = None) -> dict[str, str]:
     env = os.environ if source is None else source
-    return {k: v for k, v in env.items() if _ENV_KEEP.match(k)}
+    reduced = {k: v for k, v in env.items() if _ENV_KEEP.match(k)}
+    reduced["PI_CODING_AGENT_DIR"] = str(RUNTIME_DIR.parent / "model-runtime")
+    reduced["AUTORAG_AUTH_MODE"] = "environment"
+    return reduced
 
 
 def validate_query(query: str) -> str:

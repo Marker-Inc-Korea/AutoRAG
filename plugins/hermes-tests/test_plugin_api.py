@@ -178,6 +178,17 @@ def test_child_env_drops_secrets_and_keeps_runtime_basics(api):
     assert "OPENAI_API_KEY" not in env and "FIREWORKS_API_KEY" not in env and "GITHUB_TOKEN" not in env
 
 
+def test_child_env_cannot_select_another_tools_credential_store(api, tmp_path, monkeypatch):
+    data = tmp_path / "plugin-data" / "autorag"
+    monkeypatch.setattr(api, "RUNTIME_DIR", data / "runtime")
+    for inherited in ("/other-profile/.pi/agent", "/home/user/.pi/agent"):
+        env = api.child_env({"HOME": "/home/user", "PI_CODING_AGENT_DIR": inherited, "AUTORAG_AUTH_MODE": "stored"})
+        selected = Path(env["PI_CODING_AGENT_DIR"])
+        assert selected.is_relative_to(data)
+        assert str(selected) != inherited
+        assert env["AUTORAG_AUTH_MODE"] == "environment"
+
+
 # ---- registry ------------------------------------------------------------------------------------
 
 

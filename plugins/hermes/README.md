@@ -44,9 +44,9 @@ Without the setup skill:
 
 ```bash
 mkdir -p ~/.autorag/workspace
-npx -y -p @autorag/librarian@2.13.11 autorag setup \
+npx -y -p @autorag/librarian@2.13.12 autorag setup \
   --search-paths "$HOME/Documents" --workspace ~/.autorag/workspace
-npx -y -p @autorag/librarian@2.13.11 autorag lite refresh
+npx -y -p @autorag/librarian@2.13.12 autorag lite refresh
 ```
 
 Hermes needs its MCP support (the `mcp` extra, part of Hermes's `[all]`
@@ -136,7 +136,7 @@ variable names, never values.
 ## Disclosure
 
 - **First run downloads software.** `npx` fetches the pinned
-  `@autorag/librarian@2.13.11` from npm (about 11 MB unpacked, plus its
+  `@autorag/librarian@2.13.12` from npm (about 11 MB unpacked, plus its
   dependencies). The first `autorag_refresh` (or `autorag lite refresh`) then
   provisions local helpers: `minsync` (`cargo install` when Rust is present,
   otherwise a sha256-verified GitHub release asset from NomaDamas/MinSync),
@@ -163,6 +163,10 @@ variable names, never values.
   changes only through a reviewed catalog SHA bump.
 - **No credentials.** The plugin does not read `.env` files, keychains, browser
   profiles, or another tool's token files.
+  Both the MCP process and the Finder force `AUTORAG_AUTH_MODE=environment`: stored model credentials,
+  Pi model/settings files and Codex config discovery are disabled. They also isolate `PI_CODING_AGENT_DIR`
+  under the plugin's data and do not reuse a Pi/Dazzi subscription login. Finder does not inherit provider
+  API keys; when no decision model is available it returns search hits without model filtering.
 - **Hermes approvals.** The server's tools are annotated `readOnlyHint` except
   `autorag_refresh` and `autorag_report`, which write only AutoRAG's own index
   and report state.
@@ -194,7 +198,7 @@ Health check without Hermes:
 
 ```bash
 printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"probe","version":"0"}}}' \
-  | npx -y -p @autorag/librarian@2.13.11 autorag-mcp
+  | npx -y -p @autorag/librarian@2.13.12 autorag-mcp
 ```
 
 Source of truth for the tools and schemas:
