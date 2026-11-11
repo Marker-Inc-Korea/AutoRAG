@@ -64,9 +64,10 @@ Discord staying keyword-only because discrawl's own config has embeddings off.
 
 ## Before opening the catalog PR
 
-1. Merge `plugins/hermes` to `Marker-Inc-Korea/AutoRAG` `main` (separate PR, DCO sign-off, squash).
-2. Copy the merged commit sha into `catalog/autorag.yaml` (`sha:` must be the 40-char commit that
-   contains `plugins/hermes`; the file ships with a `000...` placeholder on purpose).
+1. Done: `plugins/hermes` is on `Marker-Inc-Korea/AutoRAG` `main` (#2123), pinned to `@autorag/librarian@2.13.10` (#2136, #2137).
+2. `catalog/autorag.yaml` has `sha: 39889672400e58245d88975f47cc6311f7d7f73e`, the main commit with that pin. Checked with
+   Hermes's own `entry_from_mapping`, and `hermes plugins validate` / `doctor --ci` on the tree at that commit. If the
+   plugin changes again before the upstream PR is merged, set `sha:` to the new 40-char main commit (never a branch).
 3. In `NousResearch/hermes-agent`, add that one file as `plugin-catalog/autorag.yaml`.
 4. PR description must carry the rule-13 disclosure. Draft below.
 5. Check `requires_hermes` against the Hermes release current on submission day; it is `>=0.22.3`

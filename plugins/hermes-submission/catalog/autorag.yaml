@@ -1,10 +1,11 @@
-# Draft catalog entry for NousResearch/hermes-agent: plugin-catalog/autorag.yaml
-# Do NOT open the PR until `sha` is replaced with the 40-char commit of the merged
-# plugins/hermes tree on Marker-Inc-Korea/AutoRAG main (see plugins/hermes-submission/SUBMISSION.md).
+# Catalog entry for NousResearch/hermes-agent: plugin-catalog/autorag.yaml
+# `sha` is the commit on Marker-Inc-Korea/AutoRAG main that contains plugins/hermes with the pinned
+# @autorag/librarian below (see plugins/hermes-submission/SUBMISSION.md). Move it to a newer main commit whenever the
+# plugin changes before this entry is merged upstream; it must always be a 40-char commit that exists on main.
 name: autorag
 title: AutoRAG
 repo: https://github.com/Marker-Inc-Korea/AutoRAG
-sha: 0000000000000000000000000000000000000000
+sha: 39889672400e58245d88975f47cc6311f7d7f73e
 subdir: plugins/hermes
 version: "1.0.0"
 description: >-
