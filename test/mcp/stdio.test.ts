@@ -533,8 +533,9 @@ describe("AutoRAG Lite MCP stdio", () => {
 			name: "autorag.search",
 			arguments: { query: "Who approves refund exceptions?", topK: 3 },
 		});
-		// No config, no index: the search finds nothing (this is what the user saw after setup).
-		expect(resultsArray(before.structuredContent)).toHaveLength(0);
+		// No config, no index: the server answers "index-not-ready" (this is what the user saw after setup: nothing to search).
+		expect(before.isError).toBe(true);
+		expect(field(before.structuredContent, "errorCode")).toBe("index-not-ready");
 
 		writeFileSync(join(home, "config.json"), written);
 
