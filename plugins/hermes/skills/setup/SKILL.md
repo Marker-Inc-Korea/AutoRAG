@@ -28,20 +28,80 @@ and jump to step 4.
 
 `CLI` below means: `npx -y -p @autorag/librarian@2.13.9 autorag`.
 
-## 1. Folders
+## 1. Folders: index the documents that matter, not everything
 
 Use folders the user named. If none, propose the one or two most
 document-dense of `~/Documents`, `~/Desktop`, `~/Downloads` that exist, state
 them, and continue unless the user objects. Never index a system tree, app
-bundle, cache, `node_modules`, `.git`, or a credential store. Use absolute
-paths.
+bundle, cache, or a credential store. Use absolute paths.
+
+**1a. Make sure the folder can be read at all.** On macOS, `~/Documents`,
+`~/Desktop` and `~/Downloads` are privacy-protected: the first read from a
+background process raises a permission prompt, and until someone answers it every
+read of that folder hangs (measured: a plain `ls` stayed blocked for minutes and
+the tools timed out one after another). Probe first, with a short limit:
+
+```bash
+perl -e 'alarm 10; exec @ARGV' ls "$FOLDER" >/dev/null 2>&1; echo $?
+```
+
+Any non-zero result (alarm kill is 142, a refusal is 1) means do **not** keep
+retrying. Tell the user, in one message: "macOS is asking whether Hermes may read
+<folder>. Click Allow in the dialog, or choose a folder outside
+Documents/Desktop/Downloads, and say 'continue'." Then stop and wait. A folder
+that probes fine needs no message.
+
+**1b. Look before you index.** Run the read-only inventory for each folder. It
+opens no file and writes nothing:
+
+```bash
+python3 "${HERMES_SKILL_DIR}/scripts/autorag_inventory.py" "$FOLDER"
+```
+
+It prints how many files AutoRAG can index (by type), and two lists of folders:
+
+- `noise`: the file types alone say these are not documents (a project's source
+  code, exported media). Exclude them without asking; `recommended_excludes` holds
+  their absolute globs such as `/Users/me/projects/webapp/src/**`.
+- `ask`: a pile of small text files with one or two naming patterns (`IMG_0001.txt`,
+  `receipt_12.txt`, `weekly_w21.md`). The files cannot say whether this is an app's
+  output or the person's own numbered reports, so **do not exclude it on your own**.
+  Put it to the user in one line with the count and an example name, and leave it in
+  the index unless they say to skip it. If they say yes, add its `suggested_exclude`.
+
+Report in two or three lines, for example: "Documents has 4,200 files; 310 are
+real documents. I am skipping `projects/webapp/src` (source code, 3,900 files).
+`Downloads` has 180 text files named like `IMG_0116.txt` - skip it too?" Then:
+
+- Index the folders the inventory keeps; add every `recommended_excludes` entry
+  to the config's `excludePaths` (step 2 does this in one command).
+- A folder of distinctly named notes is never flagged, so a person's own notes are
+  not at risk. Keeping clutter is cheaper than hiding something the user wrote.
+- Ask only about `ask` folders, or when the inventory says `truncated`.
+  Skipped is not deleted: the user can include a folder later by removing its
+  exclude and refreshing.
+- Never exclude a folder the user named by hand.
+
+`node_modules`, `.git`, `dist`, `build`, `target` and other cache folders are
+already skipped by AutoRAG; the inventory lists them under `skipped_dirs`
+without scanning them.
 
 ## 2. Config in one command
 
 ```bash
 mkdir -p "$WORKSPACE"
+# No config yet, and the inventory recommended excludes: write the config with them first.
+CLI init --search-paths "/abs/one,/abs/two" --workspace "$WORKSPACE" \
+  --exclude '/abs/one/Downloads/**' --exclude '/abs/one/projects/webapp/src/**'
+# Then probe and record the embedding model. It keeps the excludes.
 CLI setup --search-paths "/abs/one,/abs/two" --workspace "$WORKSPACE" --format json
 ```
+
+Pass one `--exclude` per `recommended_excludes` entry, exactly as printed (a glob
+is kept as written; a plain folder path is resolved against the current
+directory). Skip `init` and run only `setup` when the inventory found nothing to
+exclude. If a config already existed (step 0), do not run `init`: merge the new
+entries into its `excludePaths`, keep the user's own, and back it up first.
 
 `setup` writes a default config when none exists, records the local embedding
 model, and reports what is ready. Pick `$WORKSPACE` outside the indexed folders
@@ -144,6 +204,14 @@ the user declines.
    it in the top results.
 3. For each connected archive, call its `autorag.search_datasource_<id>` tool
    with a phrase from it.
+
+**No model key is needed for any of this.** The MCP tools never call AutoRAG's
+own decision model (Jev/sLLM); your Hermes model reads the results. Measured on a
+clean machine with no provider key set for AutoRAG: setup, first index, and a
+search that returned the right file with its source all worked. Do not ask the
+user for an OpenRouter or OpenAI key, and do not treat a missing one as a failure.
+A decision model only matters for the desktop search pane's relevance filter, and
+when none is reachable the pane filters nothing out.
 
 Finish with one short report: folders indexed, archives connected, archives
 skipped (with reason), whether semantic search is on, and one example question
