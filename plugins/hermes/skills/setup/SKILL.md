@@ -58,19 +58,28 @@ opens no file and writes nothing:
 python3 "${HERMES_SKILL_DIR}/scripts/autorag_inventory.py" "$FOLDER"
 ```
 
-It prints how many files AutoRAG can index (by type), which folders are noise
-(a project's source code, a pile of screenshots or receipts, exported media),
-and `recommended_excludes`, absolute globs such as `/Users/me/Downloads/**`.
-Report it to the user in two lines, for example: "Documents has 4,200 files; 310
-are real documents (PDF, Word, Hangul, Markdown). I will skip `projects/webapp`
-(source code, 3,900 files) and `Downloads` (180 screenshots)." Then:
+It prints how many files AutoRAG can index (by type), and two lists of folders:
+
+- `noise`: the file types alone say these are not documents (a project's source
+  code, exported media). Exclude them without asking; `recommended_excludes` holds
+  their absolute globs such as `/Users/me/projects/webapp/src/**`.
+- `ask`: a pile of small text files with one or two naming patterns (`IMG_0001.txt`,
+  `receipt_12.txt`, `weekly_w21.md`). The files cannot say whether this is an app's
+  output or the person's own numbered reports, so **do not exclude it on your own**.
+  Put it to the user in one line with the count and an example name, and leave it in
+  the index unless they say to skip it. If they say yes, add its `suggested_exclude`.
+
+Report in two or three lines, for example: "Documents has 4,200 files; 310 are
+real documents. I am skipping `projects/webapp/src` (source code, 3,900 files).
+`Downloads` has 180 text files named like `IMG_0116.txt` - skip it too?" Then:
 
 - Index the folders the inventory keeps; add every `recommended_excludes` entry
   to the config's `excludePaths` (step 2 does this in one command).
-- Do not ask the user to approve each exclude. Ask only when more than half of a
-  folder's files would be skipped, or when the inventory says `truncated`.
-- Skipped is not deleted: say the user can include a skipped folder later by
-  removing its exclude and refreshing.
+- A folder of distinctly named notes is never flagged, so a person's own notes are
+  not at risk. Keeping clutter is cheaper than hiding something the user wrote.
+- Ask only about `ask` folders, or when the inventory says `truncated`.
+  Skipped is not deleted: the user can include a folder later by removing its
+  exclude and refreshing.
 - Never exclude a folder the user named by hand.
 
 `node_modules`, `.git`, `dist`, `build`, `target` and other cache folders are

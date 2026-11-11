@@ -106,16 +106,17 @@ def test_a_suggested_glob_is_anchored_to_the_real_folder_not_a_bare_name(inv, tm
     assert "**/src/**" not in globs
 
 
-def test_a_folder_of_many_small_same_type_files_is_reported_as_bulk_even_if_the_type_is_indexable(inv, tmp_path):
-    """Receipts, logs and exports are .txt/.csv, which AutoRAG can parse, but 180 of them is a pile, not a library."""
+def test_a_pile_of_same_pattern_small_text_files_is_asked_about_not_decided(inv, tmp_path):
+    """Receipts and exports are .txt/.csv, which AutoRAG parses, so the files cannot say whether they matter."""
     root = tmp_path / "Documents"
     for i in range(60):
         touch(root / "Downloads" / f"receipt_{i}.txt", text="영수증")
     touch(root / "계약" / "lease.pdf")
     out = inv.inventory(root)
-    bulk = {n["folder"]: n for n in out["noise"] if n["reason"] == "bulk"}
-    assert bulk["Downloads"]["files"] == 60
-    assert out["keep"] == ["계약"] or "계약" in out["keep"]
+    assert {a["folder"]: a["files"] for a in out["ask"]} == {"Downloads": 60}
+    assert not [n for n in out["noise"] if n["folder"] == "Downloads"]
+    assert not [g for g in out["recommended_excludes"] if g.endswith("/Downloads/**")]
+    assert "계약" in out["keep"]
 
 
 def test_a_large_folder_of_varied_documents_is_not_called_bulk(inv, tmp_path):
@@ -125,6 +126,47 @@ def test_a_large_folder_of_varied_documents_is_not_called_bulk(inv, tmp_path):
         touch(root / "reports" / f"r{i}{kinds[i % len(kinds)]}")
     out = inv.inventory(root)
     assert not [n for n in out["noise"] if n["folder"] == "reports"]
+
+
+def test_a_folder_of_distinctly_named_notes_is_never_called_bulk(inv, tmp_path):
+    """60 .md files with 10 different titles are a person's notes, not an export."""
+    root = tmp_path / "Documents"
+    titles = ["회의 예산 논의", "독서노트", "여행 계획", "세금 신고", "이사 준비", "면접 복기", "아이디어", "운동 기록", "집 계약", "가족 행사"]
+    for i in range(60):
+        touch(root / "Notes" / f"{titles[i % 10]} {i}.md")
+    out = inv.inventory(root)
+    assert not [n for n in out["noise"] if n["folder"] == "Notes"]
+    assert not [a for a in out["ask"] if a["folder"] == "Notes"]
+
+
+def test_a_numbered_series_is_a_question_not_an_exclusion(inv, tmp_path):
+    """`weekly_01.md` .. `weekly_52.md` could be a person's reports or a program's output; the files cannot tell."""
+    root = tmp_path / "Documents"
+    for i in range(52):
+        touch(root / "Reports" / f"weekly_2026_w{i + 1:02d}.md")
+    touch(root / "계약" / "lease.pdf")
+    out = inv.inventory(root)
+    assert "Reports" in {a["folder"] for a in out["ask"]}
+    assert not [n for n in out["noise"] if n["folder"] == "Reports"]
+    assert not [g for g in out["recommended_excludes"] if g.endswith("/Reports/**")]
+
+
+def test_asked_folders_say_how_many_files_and_what_the_names_look_like(inv, tmp_path):
+    root = tmp_path / "Documents"
+    for i in range(40):
+        touch(root / "Downloads" / f"IMG_{i:04d}.txt")
+    ask = {a["folder"]: a for a in inv.inventory(root)["ask"]}
+    assert ask["Downloads"]["files"] == 40
+    assert ask["Downloads"]["name_patterns"] == 1
+    assert ask["Downloads"]["example"].startswith("IMG_")
+    assert ask["Downloads"]["suggested_exclude"] == f"{root.resolve().as_posix()}/Downloads/**"
+
+
+def test_code_and_media_are_still_excluded_without_asking(inv, tree):
+    out = inv.inventory(tree)
+    reasons = {n["reason"] for n in out["noise"]}
+    assert {"source-code", "media"} & reasons
+    assert all(n["confidence"] == "high" for n in out["noise"])
 
 
 def test_the_recommendation_leads_with_the_document_folders(inv, tree):

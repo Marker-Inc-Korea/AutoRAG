@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import threading
 from collections import Counter
@@ -44,6 +45,9 @@ DEFAULT_MAX_ENTRIES = 200_000
 # A folder is noise when it holds at least this many files and this share of them is not a document.
 NOISE_MIN_FILES = 20
 NOISE_SHARE = 0.8
+# How many file names per folder are kept to judge naming patterns, and how many patterns still count as one pile.
+NAME_SAMPLE = 200
+PILE_MAX_PATTERNS = 2
 # Plain-text-like types that pile up as exports, logs and receipts. PDF/DOCX/XLSX are not here: a folder of 60
 # PDFs is a real library.
 BULK_PRONE = {".txt", ".text", ".csv", ".tsv", ".eml", ".md", ".markdown"}
@@ -79,7 +83,14 @@ def _bounded_list(path: Path, timeout_s: float) -> list[os.DirEntry]:
     return box["entries"]
 
 
-def _classify_folder(files: Counter, total: int) -> str | None:
+def _name_patterns(names: list[str]) -> set[str]:
+    """The shapes of a set of file names: digits collapse to `N`, so `IMG_0001.txt` and `IMG_0002.txt` are one
+    pattern and `회의록 1.md` and `여행 계획.md` are two."""
+    return {re.sub(r"\d+", "N", os.path.splitext(n)[0]) for n in names}
+
+
+def _classify_folder(files: Counter, total: int, names: list[str]) -> str | None:
+    """`source-code` or `media` (sure), `ask` (cannot tell from the files), or None (keep)."""
     if total < NOISE_MIN_FILES:
         return None
     code = sum(n for ext, n in files.items() if ext in CODE_EXTENSIONS)
@@ -88,11 +99,11 @@ def _classify_folder(files: Counter, total: int) -> str | None:
         return "source-code"
     if media / total >= NOISE_SHARE:
         return "media"
-    # A pile of one small document type (receipts, logs, exports) parses fine but is not a library of documents:
-    # a varied folder has several types, a pile is nearly all one.
+    # A pile of one small text type whose names all follow one or two patterns looks generated; but it may also be
+    # a person's own numbered reports, so it is a question, not a verdict. Distinct names (notes) never qualify.
     ext, top = files.most_common(1)[0]
-    if top / total >= NOISE_SHARE and ext in BULK_PRONE:
-        return "bulk"
+    if top / total >= NOISE_SHARE and ext in BULK_PRONE and names and len(_name_patterns(names)) <= PILE_MAX_PATTERNS:
+        return "ask"
     return None
 
 
@@ -111,6 +122,7 @@ def inventory(root: Path, max_entries: int = DEFAULT_MAX_ENTRIES, per_dir_timeou
     unreadable: list[str] = []
     folder_files: dict[str, Counter] = {}
     folder_totals: Counter = Counter()
+    folder_names: dict[str, list[str]] = {}
 
     stack = [root]
     while stack and not truncated:
@@ -140,6 +152,9 @@ def inventory(root: Path, max_entries: int = DEFAULT_MAX_ENTRIES, per_dir_timeou
                 ext = os.path.splitext(entry.name)[1].lower()
                 folder_totals[rel] += 1
                 folder_files.setdefault(rel, Counter())[ext] += 1
+                names_here = folder_names.setdefault(rel, [])
+                if len(names_here) < NAME_SAMPLE:
+                    names_here.append(entry.name)
                 if ext in INDEXABLE:
                     if entry.stat(follow_symlinks=False).st_size > MAX_SOURCE_BYTES:
                         too_large += 1
@@ -150,41 +165,51 @@ def inventory(root: Path, max_entries: int = DEFAULT_MAX_ENTRIES, per_dir_timeou
             except OSError:
                 unreadable.append(f"{rel}/{entry.name}")
 
-    # Noise is judged per folder and reported at the shallowest folder that is noise, so `app/src` does not repeat
-    # for each of its subfolders.
+    # A folder is judged by everything under it, and reported at the shallowest folder that is flagged, so
+    # `app/src` does not repeat for each of its subfolders. Two outcomes:
+    #   noise: the file types say so (source code, media): excluded without asking, `confidence: high`.
+    #   ask:   the types cannot say (a pile of same-pattern .txt/.csv/.md: receipts, exports, logs, or one
+    #          person's numbered reports). The agent puts these to the user; nothing is excluded for them.
     noise: list[dict] = []
-    noisy: list[str] = []
+    ask: list[dict] = []
+    flagged: list[str] = []
     for folder in sorted(folder_totals, key=lambda f: (f.count("/"), f)):
-        if folder == "." or any(folder == n or folder.startswith(n + "/") for n in noisy):
+        if folder == "." or any(folder == n or folder.startswith(n + "/") for n in flagged):
             continue
-        # Judge a folder by everything under it, not only its direct files.
         counts: Counter = Counter()
+        names: list[str] = []
         total = 0
         for other, c in folder_files.items():
             if other == folder or other.startswith(folder + "/"):
                 counts.update(c)
                 total += folder_totals[other]
-        reason = _classify_folder(counts, total)
-        if reason:
-            noisy.append(folder)
-            noise.append(
-                {
-                    "folder": folder,
-                    "files": total,
-                    "reason": reason,
-                    # Anchored to this folder: a bare `**/src/**` would also drop an unrelated `src` folder.
-                    "suggested_exclude": f"{(root / folder).as_posix()}/**",
-                }
-            )
+                names.extend(folder_names.get(other, []))
+        verdict = _classify_folder(counts, total, names)
+        if verdict is None:
+            continue
+        flagged.append(folder)
+        entry = {
+            "folder": folder,
+            "files": total,
+            # Anchored to this folder: a bare `**/src/**` would also drop an unrelated `src` folder.
+            "suggested_exclude": f"{(root / folder).as_posix()}/**",
+        }
+        if verdict == "ask":
+            patterns = _name_patterns(names)
+            ask.append({**entry, "name_patterns": len(patterns), "example": names[0] if names else ""})
+        else:
+            noise.append({**entry, "reason": verdict, "confidence": "high"})
 
     keep = sorted(
         {
             f.split("/")[0]
             for f, c in folder_files.items()
-            if f != "." and not any(f == n or f.startswith(n + "/") for n in noisy) and any(e in INDEXABLE for e in c)
+            if f != "."
+            and not any(f == n or f.startswith(n + "/") for n in [x["folder"] for x in noise])
+            and any(e in INDEXABLE for e in c)
         }
     )
-    if any(c for e in folder_files.get(".", Counter()) if e in INDEXABLE for c in [1]):
+    if any(e in INDEXABLE for e in folder_files.get(".", Counter())):
         keep.insert(0, ".")
     excludes = sorted({n["suggested_exclude"] for n in noise})
 
@@ -199,6 +224,7 @@ def inventory(root: Path, max_entries: int = DEFAULT_MAX_ENTRIES, per_dir_timeou
         "too_large": too_large,
         "skipped_dirs": [{"dir": name, "count": count} for name, count in sorted(skipped.items())],
         "noise": noise,
+        "ask": ask,
         "keep": keep or ["."],
         "recommended_excludes": excludes,
         "unreadable": unreadable[:20],
