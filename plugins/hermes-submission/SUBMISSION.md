@@ -10,9 +10,10 @@ The plugin itself lives in [`../hermes`](../hermes) (the only tree the catalog i
 | `hermes plugins validate plugins/hermes` | passes (portable manifest, security scan `safe`) |
 | `hermes plugins doctor plugins/hermes --ci` | passes |
 | `plugin-catalog/autorag.yaml` parsed by upstream `entry_from_mapping` | accepted (with a syntactically valid sha) |
-| `hermes plugins install file://...` then `enable` | installs, MCP server `autorag` registers 10 tools |
+| `hermes plugins install file://...` then `enable` | installs, MCP server `autorag` registers its tools (10 on the first pin; 16 with a full config and 2.13.9, as the app showed) |
 | Real Hermes gateway turn (`-t autorag -z`) with `glm-5p3-flash` | calls `mcp__autorag__*` tools and answers from files, Slack, Discord, Telegram |
 | `autorag.duplicates` through Hermes | finds the exact duplicate pair |
+| Upstream catalog CI, run locally on a throwaway branch of `NousResearch/hermes-agent` main (2026-11-11, `67fc279c`) with this entry and its contributor mapping | `validate_plugin_catalog.py plugin-catalog/` ok; `catalog_validate_pinned_entries.py` clones `Marker-Inc-Korea/AutoRAG` at the pinned sha and passes (`hermes plugins validate --install-deps`, payload scan); `check_contributor_emails.py` passes with the mapping and fails without it |
 | Real `~/.autorag/config.json` sha1 before and after | identical |
 | Model-driven setup on a first-time sandbox user (no `~/.autorag`, synthetic Documents + Slack/Telegram/Discord archives), prompt "Set up AutoRAG for my Documents folder." | finished in 12 min (722 s) with 57 tool calls; wrote the config, merged the Slack, Telegram and Discord entries with a backup, built the index, started the embedding daemon, and reported accurately. Its `mcp` tools only appeared after `hermes pm install --extra mcp` and a new session. |
 
@@ -68,8 +69,11 @@ Discord staying keyword-only because discrawl's own config has embeddings off.
 2. `catalog/autorag.yaml` has `sha: 39889672400e58245d88975f47cc6311f7d7f73e`, the main commit with that pin. Checked with
    Hermes's own `entry_from_mapping`, and `hermes plugins validate` / `doctor --ci` on the tree at that commit. If the
    plugin changes again before the upstream PR is merged, set `sha:` to the new 40-char main commit (never a branch).
-3. In `NousResearch/hermes-agent`, add that one file as `plugin-catalog/autorag.yaml`.
-4. PR description must carry the rule-13 disclosure. Draft below.
+3. In `NousResearch/hermes-agent` (from a fork; `vkehfdl1/k-hermes` is one but is 52k commits behind, so update or re-fork first), add two files: `plugin-catalog/autorag.yaml` (this entry) and
+   `contributors/emails/<commit-author email>` containing the GitHub login (`vkehfdl1@gmail.com` -> `vkehfdl1`). Without the second
+   file the `Contributor Attribution Check` fails; GitHub `noreply` addresses need no file. Title it `feat(plugin-catalog): add autorag plugin`
+   like the merged entries, and sign off the commit.
+4. The PR body follows `.github/PULL_REQUEST_TEMPLATE.md` and must carry the rule-13 disclosure. Draft below.
 5. Check `requires_hermes` against the Hermes release current on submission day; it is `>=0.22.3`
    here because the `servers.<name>.timeout` extension is only honoured from that release (the
    official `meshy` entry declares the same floor for the same key).
