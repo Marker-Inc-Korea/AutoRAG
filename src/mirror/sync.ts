@@ -55,6 +55,13 @@ export const DEFAULT_MAX_SCANNED_ENTRIES = 2_000_000;
 export const DEFAULT_MAX_WALK_DEPTH = 64;
 
 /**
+ * Sources parsed and committed per batch before {@link ParsedMirrorSyncOptions.onBatch}
+ * runs. Small enough that the first batch starts the index sync soon after parsing
+ * begins; later syncs fold every batch committed meanwhile into one run.
+ */
+export const DEFAULT_MIRROR_BATCH_SIZE = 25;
+
+/**
  * Files AutoRAG's own tooling writes into a search root. They are product output,
  * not corpus sources: Jikji rewrites its agent map after the parsed phase, so
  * indexing it made an otherwise untouched corpus report as stale forever.
@@ -96,6 +103,15 @@ export interface ParsedMirrorSyncOptions {
 	readonly maxSourceBytes?: number;
 	/** Absolute source paths omitted from parsed mirrors (for example exact duplicate copies). */
 	readonly excludeSourcePaths?: ReadonlySet<string>;
+	/**
+	 * Read-only freshness checks only: omit the sources the last refresh already recorded as
+	 * `duplicate-excluded` instead of requiring a fresh duplicate scan. Duplicate selection needs
+	 * a content scan of every root, which is the dominant cost of a status or retrieve call.
+	 * A recorded copy is only omitted while its mtime and size still match the record, so an
+	 * edited copy is still reported stale. Copies that became duplicates after the last refresh
+	 * are not known here; see `AutoRAGAgent.scanMirrorStaleness`.
+	 */
+	readonly reuseRecordedDuplicateExclusions?: boolean;
 	/** Absolute source paths or directories omitted by the user. */
 	readonly userExcludedSourcePaths?: ReadonlySet<string>;
 	/**
@@ -110,6 +126,23 @@ export interface ParsedMirrorSyncOptions {
 	readonly signal?: AbortSignal;
 	/** Called before each file and once more with `processed === total` when the parse phase ends. */
 	readonly onProgress?: (progress: ParsedMirrorProgress) => void;
+	/**
+	 * Most sources parsed and committed per batch before {@link ParsedMirrorSyncOptions.onBatch}
+	 * runs; a batch ends sooner when a cloud placeholder would exceed its download budget.
+	 * Default {@link DEFAULT_MIRROR_BATCH_SIZE}.
+	 */
+	readonly batchSize?: number;
+	/**
+	 * Runs after each batch of sources is parsed and committed to the mirror, so
+	 * a caller can make the batch's results searchable (sync the index). The next
+	 * batch is read once the returned promise settles: a caller that wants parsing
+	 * to carry on returns at once and indexes in the background, and waits only on
+	 * the final batch. A thrown error aborts the
+	 * refresh; returning `stop` ends the loop after this batch. Deletions of
+	 * genuinely-removed sources wait for the final batch, so a mid-refresh call
+	 * never drops a not-yet-reached document from the index.
+	 */
+	readonly onBatch?: (batch: ParsedMirrorBatch) => Promise<ParsedMirrorBatchOutcome | undefined>;
 	/**
 	 * Largest share of previously indexed documents one refresh may delete because their source
 	 * disappeared. A larger deletion (above 100 documents) is suppressed with `mass-delete-suppressed`
@@ -134,9 +167,15 @@ export interface ParsedMirrorSyncOptions {
 	 * platforms read every file as before. Tests inject their own probe.
 	 */
 	readonly cloudProbe?: CloudFileProbe;
-	/** Most placeholders one refresh may download. Default {@link DEFAULT_CLOUD_MAX_FILES}. */
+	/**
+	 * Most placeholders one batch may download; the next placeholder starts a new batch, so every placeholder is
+	 * still read in the same refresh. Default {@link DEFAULT_CLOUD_MAX_FILES}.
+	 */
 	readonly cloudMaxFiles?: number;
-	/** Most placeholder bytes one refresh may download; the first file is always allowed. Default {@link DEFAULT_CLOUD_MAX_BYTES}. */
+	/**
+	 * Most placeholder bytes one batch may download; a batch's first placeholder is always allowed, and the next
+	 * one over the budget starts a new batch. Default {@link DEFAULT_CLOUD_MAX_BYTES}.
+	 */
 	readonly cloudMaxBytes?: number;
 	/** Release a downloaded cloud file again once it is parsed and indexed. Default true. */
 	readonly cloudEvictAfterParse?: boolean;
@@ -191,7 +230,6 @@ export type ParsedMirrorDiagnosticCode =
 	| "mass-delete-suppressed"
 	| "walk-truncated"
 	| "directory-unreadable"
-	| "cloud-download-deferred"
 	| "cloud-placeholder-skipped"
 	| "cloud-evict-failed"
 	| "cloud-fingerprint-failed";
@@ -215,6 +253,29 @@ export interface ParsedMirrorSyncResult {
 	readonly skipped: number;
 	readonly indexPath: string;
 	readonly diagnostics: readonly ParsedMirrorDiagnostic[];
+}
+
+/**
+ * One batch of the source listing, parsed and committed to the mirror before
+ * {@link ParsedMirrorSyncOptions.onBatch} runs. The last batch is the only one
+ * whose run reflects deletions of genuinely-removed sources.
+ */
+export interface ParsedMirrorBatch {
+	/** 1-based index of this batch among the batches handed to `onBatch`. */
+	readonly index: number;
+	/** Virtual paths the refresh attempted in this batch. */
+	readonly virtualPaths: readonly string[];
+	/** The last batch: genuine deletions have by now been applied to the mirror. */
+	readonly final: boolean;
+}
+
+/**
+ * What {@link ParsedMirrorSyncOptions.onBatch} asks the refresh to do next.
+ * A thrown error aborts the refresh; `stop` ends the loop after this batch, so a
+ * systemic index failure never reads sources it knows it cannot index.
+ */
+export interface ParsedMirrorBatchOutcome {
+	readonly stop?: boolean;
 }
 
 interface CurrentEntry {
@@ -373,6 +434,7 @@ function sourcePlan(
 	current: readonly CurrentEntry[],
 	registry: ParserRegistry,
 	options: ParsedMirrorSyncOptions,
+	recordedDuplicateSources?: ReadonlySet<string>,
 ): {
 	versions: Map<string, string>;
 	omitted: Map<string, SourceOmission>;
@@ -383,7 +445,7 @@ function sourcePlan(
 		const parser = registry.getForVirtualPath(entry.virtualPath);
 		if (isPathExcluded(entry.sourcePath, options.userExcludedSourcePaths))
 			omitted.set(entry.virtualPath, { reason: "user-excluded" });
-		else if (options.excludeSourcePaths?.has(entry.sourcePath))
+		else if (options.excludeSourcePaths?.has(entry.sourcePath) || recordedDuplicateSources?.has(entry.virtualPath))
 			omitted.set(entry.virtualPath, {
 				reason: "duplicate-excluded",
 				diagnostic: {
@@ -561,226 +623,268 @@ async function syncWithRegistry(
 		const deferred = new Map(
 			plan.decisions.filter((decision) => decision.deferred === true).map((decision) => [decision.key, decision]),
 		);
-		for (const decision of plan.decisions) {
-			if (decision.action !== "delete") continue;
-			const path = pathsByKey.get(decision.key);
-			await session.delete(decision.key);
-			if (path === undefined) continue;
-			if (previous.entries[path]) deleted += 1;
-			if (!currentPaths.has(path))
-				diagnostics.push({
-					code: "deleted-mirror",
-					severity: "info",
-					message: "A previously indexed document is gone; its parsed mirror was removed.",
-					source: path,
-				});
-		}
+		const applyDeleteDecisions = async (): Promise<void> => {
+			for (const decision of plan.decisions) {
+				if (decision.action !== "delete") continue;
+				const path = pathsByKey.get(decision.key);
+				await session.delete(decision.key);
+				if (path === undefined) continue;
+				if (previous.entries[path]) deleted += 1;
+				if (!currentPaths.has(path))
+					diagnostics.push({
+						code: "deleted-mirror",
+						severity: "info",
+						message: "A previously indexed document is gone; its parsed mirror was removed.",
+						source: path,
+					});
+			}
+		};
+		// A batch caller stages and syncs after every batch, so genuine deletions
+		// wait for the final batch: an earlier staging pass would otherwise drop a
+		// removed source from the index before the rest of the listing was read.
+		const deferDeletions = options.onBatch !== undefined;
+		const batchSize = Math.max(1, Math.floor(options.batchSize ?? DEFAULT_MIRROR_BATCH_SIZE));
+		let batchIndex = 0;
+		let batchStopped = false;
+		const runBatch = async (virtualPaths: readonly string[], final: boolean): Promise<void> => {
+			if (options.onBatch === undefined) return;
+			batchIndex += 1;
+			const outcome = await options.onBatch({ index: batchIndex, virtualPaths, final });
+			if (outcome?.stop === true) batchStopped = true;
+		};
+		if (!deferDeletions) await applyDeleteDecisions();
 		await gate.classify(
 			current.filter((entry) => pending.has(mirrorStageKey(entry.virtualPath))).map((entry) => entry.sourcePath),
 		);
-		for (const [position, entry] of current.entries()) {
-			options.onProgress?.({
-				processed: position,
-				total: current.length,
-				written,
-				deleted,
-				skipped,
-				currentVirtualPath: entry.virtualPath,
-			});
-			if (options.signal?.aborted) throw abortReason(options.signal);
-			const omission = omitted.get(entry.virtualPath);
-			if (omission !== undefined) {
-				if (pending.has(mirrorStageKey(entry.virtualPath))) {
-					if (previous.entries[entry.virtualPath]) deleted += 1;
-					await session.skip(mirrorStageKey(entry.virtualPath), versions.get(entry.virtualPath)!, omission.reason);
-				}
-				skipped += 1;
-				if (omission.diagnostic) diagnostics.push({ ...omission.diagnostic, source: entry.virtualPath });
-				continue;
-			}
-			const deferredFailure = deferred.get(mirrorStageKey(entry.virtualPath));
-			if (deferredFailure !== undefined) {
-				skipped += 1;
-				const code = deferredFailure.error === "source-unreadable" ? "source-unreadable" : "parser-failed";
-				diagnostics.push({
-					code,
-					severity: "warning",
-					source: entry.virtualPath,
-					message:
-						code === "parser-failed"
-							? PARSER_FAILURE_MESSAGE
-							: "The source could not be read; retry is deferred until the source or settings change, or an explicit retry is requested.",
+		let batchStart = 0;
+		for (;;) {
+			const batchLimit = Math.min(batchStart + batchSize, current.length);
+			// Ends early, before the placeholder that would exceed this batch's download budget.
+			let batchEnd = batchLimit;
+			const changedBefore = written + deleted;
+			gate.startBatch();
+			for (let position = batchStart; position < batchLimit; position += 1) {
+				const entry = current[position];
+				options.onProgress?.({
+					processed: position,
+					total: current.length,
+					written,
+					deleted,
+					skipped,
+					currentVirtualPath: entry.virtualPath,
 				});
-				continue;
-			}
-			const parser = registry.getForVirtualPath(entry.virtualPath)!;
-			const outputPath = parsedOutputPath(options.root, entry.virtualPath);
-			const cloudDecision = pending.has(mirrorStageKey(entry.virtualPath))
-				? await gate.decide(entry.sourcePath, entry.sizeBytes, dirname(entry.sourcePath))
-				: ({ kind: "local" } as const);
-			if (cloudDecision.kind === "skip") {
-				skipped += 1;
-				diagnostics.push({
-					code: "cloud-placeholder-skipped",
-					severity: "info",
-					message: `The file is not downloaded and its provider has no verified release path, so it was not read; its last indexed copy was kept. Make it available offline to index it.`,
-					source: entry.virtualPath,
-					...(cloudDecision.provider === undefined ? {} : { reason: cloudDecision.provider }),
-				});
-				continue;
-			}
-			if (cloudDecision.kind === "defer") {
-				skipped += 1;
-				diagnostics.push({
-					code: "cloud-download-deferred",
-					severity: "info",
-					message: "The download budget for this refresh is used up; the file stays queued for the next refresh.",
-					source: entry.virtualPath,
-				});
-				continue;
-			}
-			if (pending.has(mirrorStageKey(entry.virtualPath))) {
-				let bytes: Awaited<ReturnType<typeof readFile>>;
-				try {
-					bytes = await withTransientRetry(() => readFile(entry.sourcePath), transientRetries, transientBackoffMs);
-				} catch (error) {
-					const failure = sourceReadFailure(error);
-					await skipFile(entry, failure, failure.code === "source-unreadable" ? "source-unreadable" : undefined);
-					continue;
-				}
-				const tooSmallImage = standaloneImageTooSmallMessage(entry.virtualPath, bytes);
-				if (tooSmallImage !== undefined) {
-					await skipFile(
-						entry,
-						{ code: "parser-skipped", severity: "warning", message: tooSmallImage },
-						"parser-skipped",
-					);
-					continue;
-				}
-				let parsed: ParseOutput;
-				try {
-					const input = { virtualPath: entry.virtualPath, sourcePath: entry.sourcePath, bytes };
-					parsed =
-						isolated !== undefined && ISOLATED_PARSER_NAMES.has(parser.name)
-							? await isolated.parse(parser.name, input, options.signal)
-							: await parser.parse(input);
-				} catch (error) {
-					if (options.signal?.aborted) throw abortReason(options.signal);
-					if (error instanceof ParseError)
-						await skipFile(
-							entry,
-							{
-								code: "parser-failed",
-								severity: "warning",
-								message:
-									error.cause instanceof ParseIsolationError
-										? `${PARSER_FAILURE_MESSAGE} ${error.cause.message}.`
-										: PARSER_FAILURE_MESSAGE,
-							},
-							"parser-failed",
+				if (options.signal?.aborted) throw abortReason(options.signal);
+				const omission = omitted.get(entry.virtualPath);
+				if (omission !== undefined) {
+					if (pending.has(mirrorStageKey(entry.virtualPath))) {
+						if (previous.entries[entry.virtualPath]) deleted += 1;
+						await session.skip(
+							mirrorStageKey(entry.virtualPath),
+							versions.get(entry.virtualPath)!,
+							omission.reason,
 						);
-					else
-						await skipFile(entry, {
-							code: "parser-crashed",
-							severity: "warning",
-							message: PARSER_CRASH_MESSAGE,
-							...(error instanceof Error ? { reason: error.name } : {}),
-						});
+					}
+					skipped += 1;
+					if (omission.diagnostic) diagnostics.push({ ...omission.diagnostic, source: entry.virtualPath });
 					continue;
 				}
-				let info: BigIntStats;
-				try {
-					info = await stat(entry.sourcePath, { bigint: true });
-				} catch (error) {
-					await skipFile(entry, sourceReadFailure(error));
+				const deferredFailure = deferred.get(mirrorStageKey(entry.virtualPath));
+				if (deferredFailure !== undefined) {
+					skipped += 1;
+					const code = deferredFailure.error === "source-unreadable" ? "source-unreadable" : "parser-failed";
+					diagnostics.push({
+						code,
+						severity: "warning",
+						source: entry.virtualPath,
+						message:
+							code === "parser-failed"
+								? PARSER_FAILURE_MESSAGE
+								: "The source could not be read; retry is deferred until the source or settings change, or an explicit retry is requested.",
+					});
 					continue;
 				}
-				const unchanged =
-					cloudDecision.kind === "download"
-						? contentIdentity(info) === entry.contentIdentity
-						: statIdentity(info) === entry.statIdentity;
-				if (!unchanged) {
+				const parser = registry.getForVirtualPath(entry.virtualPath)!;
+				const outputPath = parsedOutputPath(options.root, entry.virtualPath);
+				const cloudDecision = pending.has(mirrorStageKey(entry.virtualPath))
+					? await gate.decide(entry.sourcePath, entry.sizeBytes, dirname(entry.sourcePath))
+					: ({ kind: "local" } as const);
+				if (cloudDecision.kind === "skip") {
 					skipped += 1;
 					diagnostics.push({
-						code: "source-changed",
-						severity: "warning",
-						message:
-							"The source changed while parsing; its last good mirror was kept and it will be retried on the next refresh.",
+						code: "cloud-placeholder-skipped",
+						severity: "info",
+						message: `The file is not downloaded and its provider has no verified release path, so it was not read; its last indexed copy was kept. Make it available offline to index it.`,
 						source: entry.virtualPath,
-					});
-					await session.fail(
-						mirrorStageKey(entry.virtualPath),
-						versions.get(entry.virtualPath)!,
-						"source-changed",
-					);
-					continue;
-				}
-				const markdown = normalizeMarkdown(parsed.markdown);
-				try {
-					await withTransientRetry(
-						() => writeFileAtomic(outputPath, markdown),
-						transientRetries,
-						transientBackoffMs,
-					);
-				} catch (error) {
-					const code = errorCode(error);
-					if (code !== undefined && Object.hasOwn(WORKSPACE_ERROR_CODES, code))
-						throw new MirrorWorkspaceError(options.root, error);
-					await skipFile(entry, {
-						code: "mirror-write-failed",
-						severity: "warning",
-						message: error instanceof Error ? error.message : String(error),
-						...(code !== undefined ? { reason: code } : {}),
+						...(cloudDecision.provider === undefined ? {} : { reason: cloudDecision.provider }),
 					});
 					continue;
 				}
-				await session.commit(mirrorStageKey(entry.virtualPath), versions.get(entry.virtualPath)!, {
-					path: basename(outputPath),
-					size: Buffer.byteLength(markdown),
-				});
-				for (const diagnostic of parsed.diagnostics ?? [])
-					diagnostics.push({ ...diagnostic, source: entry.virtualPath });
-				written += 1;
-				if (fingerprintCloud && cloudFilePaths.has(entry.sourcePath)) {
-					const existing = cloudFingerprintEntries[entry.sourcePath];
-					// An unchanged file keeps its stored fingerprint without being read; a new or changed one is
-					// fingerprinted now, while it is on disk, before the release below drops the local copy.
-					if (existing === undefined || existing.sourceVersion !== entry.sourceVersion) {
-						try {
-							const fingerprintResult = await fingerprintWithDupey(
-								entry.sourcePath,
-								options.cloudFingerprints?.dupey ?? {},
+				if (cloudDecision.kind === "next-batch") {
+					batchEnd = position;
+					break;
+				}
+				if (pending.has(mirrorStageKey(entry.virtualPath))) {
+					let bytes: Awaited<ReturnType<typeof readFile>>;
+					try {
+						bytes = await withTransientRetry(
+							() => readFile(entry.sourcePath),
+							transientRetries,
+							transientBackoffMs,
+						);
+					} catch (error) {
+						const failure = sourceReadFailure(error);
+						await skipFile(
+							entry,
+							failure,
+							failure.code === "source-unreadable" ? "source-unreadable" : undefined,
+						);
+						continue;
+					}
+					const tooSmallImage = standaloneImageTooSmallMessage(entry.virtualPath, bytes);
+					if (tooSmallImage !== undefined) {
+						await skipFile(
+							entry,
+							{ code: "parser-skipped", severity: "warning", message: tooSmallImage },
+							"parser-skipped",
+						);
+						continue;
+					}
+					let parsed: ParseOutput;
+					try {
+						const input = { virtualPath: entry.virtualPath, sourcePath: entry.sourcePath, bytes };
+						parsed =
+							isolated !== undefined && ISOLATED_PARSER_NAMES.has(parser.name)
+								? await isolated.parse(parser.name, input, options.signal)
+								: await parser.parse(input);
+					} catch (error) {
+						if (options.signal?.aborted) throw abortReason(options.signal);
+						if (error instanceof ParseError)
+							await skipFile(
+								entry,
+								{
+									code: "parser-failed",
+									severity: "warning",
+									message:
+										error.cause instanceof ParseIsolationError
+											? `${PARSER_FAILURE_MESSAGE} ${error.cause.message}.`
+											: PARSER_FAILURE_MESSAGE,
+								},
+								"parser-failed",
 							);
-							cloudFingerprintEntries[entry.sourcePath] = {
-								sourceVersion: entry.sourceVersion,
-								exact: fingerprintResult.exact,
-								chars: fingerprintResult.chars,
-								modified: fingerprintResult.modified,
-								revision: fingerprintResult.revision,
-							};
-							cloudFingerprintsDirty = true;
-						} catch (error) {
-							diagnostics.push({
-								code: "cloud-fingerprint-failed",
+						else
+							await skipFile(entry, {
+								code: "parser-crashed",
 								severity: "warning",
-								message: `The cloud or network file was indexed but its duplicate fingerprint could not be read, so it will not take part in exact-duplicate exclusion: ${error instanceof Error ? error.message : String(error)}`,
+								message: PARSER_CRASH_MESSAGE,
+								...(error instanceof Error ? { reason: error.name } : {}),
+							});
+						continue;
+					}
+					let info: BigIntStats;
+					try {
+						info = await stat(entry.sourcePath, { bigint: true });
+					} catch (error) {
+						await skipFile(entry, sourceReadFailure(error));
+						continue;
+					}
+					const unchanged =
+						cloudDecision.kind === "download"
+							? contentIdentity(info) === entry.contentIdentity
+							: statIdentity(info) === entry.statIdentity;
+					if (!unchanged) {
+						skipped += 1;
+						diagnostics.push({
+							code: "source-changed",
+							severity: "warning",
+							message:
+								"The source changed while parsing; its last good mirror was kept and it will be retried on the next refresh.",
+							source: entry.virtualPath,
+						});
+						await session.fail(
+							mirrorStageKey(entry.virtualPath),
+							versions.get(entry.virtualPath)!,
+							"source-changed",
+						);
+						continue;
+					}
+					const markdown = normalizeMarkdown(parsed.markdown);
+					try {
+						await withTransientRetry(
+							() => writeFileAtomic(outputPath, markdown),
+							transientRetries,
+							transientBackoffMs,
+						);
+					} catch (error) {
+						const code = errorCode(error);
+						if (code !== undefined && Object.hasOwn(WORKSPACE_ERROR_CODES, code))
+							throw new MirrorWorkspaceError(options.root, error);
+						await skipFile(entry, {
+							code: "mirror-write-failed",
+							severity: "warning",
+							message: error instanceof Error ? error.message : String(error),
+							...(code !== undefined ? { reason: code } : {}),
+						});
+						continue;
+					}
+					await session.commit(mirrorStageKey(entry.virtualPath), versions.get(entry.virtualPath)!, {
+						path: basename(outputPath),
+						size: Buffer.byteLength(markdown),
+					});
+					for (const diagnostic of parsed.diagnostics ?? [])
+						diagnostics.push({ ...diagnostic, source: entry.virtualPath });
+					written += 1;
+					if (fingerprintCloud && cloudFilePaths.has(entry.sourcePath)) {
+						const existing = cloudFingerprintEntries[entry.sourcePath];
+						// An unchanged file keeps its stored fingerprint without being read; a new or changed one is
+						// fingerprinted now, while it is on disk, before the release below drops the local copy.
+						if (existing === undefined || existing.sourceVersion !== entry.sourceVersion) {
+							try {
+								const fingerprintResult = await fingerprintWithDupey(
+									entry.sourcePath,
+									options.cloudFingerprints?.dupey ?? {},
+								);
+								cloudFingerprintEntries[entry.sourcePath] = {
+									sourceVersion: entry.sourceVersion,
+									exact: fingerprintResult.exact,
+									modified: fingerprintResult.modified,
+									revision: fingerprintResult.revision,
+								};
+								cloudFingerprintsDirty = true;
+							} catch (error) {
+								diagnostics.push({
+									code: "cloud-fingerprint-failed",
+									severity: "warning",
+									message: `The cloud or network file was indexed but its duplicate fingerprint could not be read, so it will not take part in exact-duplicate exclusion: ${error instanceof Error ? error.message : String(error)}`,
+									source: entry.virtualPath,
+								});
+							}
+						}
+					}
+					if (cloudDecision.kind === "download" && gate.evictAfterParse) {
+						const released = await gate.release(entry.sourcePath);
+						if (!released.ok) {
+							diagnostics.push({
+								code: "cloud-evict-failed",
+								severity: "warning",
+								message: `The file was indexed but its local copy could not be released: ${released.message}`,
 								source: entry.virtualPath,
 							});
 						}
 					}
 				}
-				if (cloudDecision.kind === "download" && gate.evictAfterParse) {
-					const released = await gate.release(entry.sourcePath);
-					if (!released.ok) {
-						diagnostics.push({
-							code: "cloud-evict-failed",
-							severity: "warning",
-							message: `The file was indexed but its local copy could not be released: ${released.message}`,
-							source: entry.virtualPath,
-						});
-					}
-				}
 			}
+			const finalBatch = batchEnd >= current.length;
+			if (finalBatch && deferDeletions) await applyDeleteDecisions();
+			// A batch that changed no mirror output has nothing new to index; the
+			// final batch always runs so a previous failed sync is retried.
+			if (finalBatch || written + deleted !== changedBefore) {
+				await runBatch(
+					current.slice(batchStart, batchEnd).map((item) => item.virtualPath),
+					finalBatch,
+				);
+			}
+			if (finalBatch || batchStopped) break;
+			batchStart = batchEnd;
 		}
 		await session.finish();
 		if (fingerprintCloud) {
@@ -821,6 +925,24 @@ async function syncWithRegistry(
 	}
 }
 
+/**
+ * Virtual paths the last refresh recorded as `duplicate-excluded` whose file is unchanged since
+ * (same mtime and size). A changed copy is left out so the normal freshness check reports it.
+ */
+function recordedDuplicateSources(previous: ParsedMirrorIndex, current: readonly CurrentEntry[]): ReadonlySet<string> {
+	const recorded = new Set<string>();
+	for (const entry of current) {
+		const skip = previous.skipped?.[entry.virtualPath];
+		if (
+			skip?.reason === "duplicate-excluded" &&
+			skip.sourceMtimeNs === entry.mtimeNs &&
+			skip.sourceSizeBytes === entry.sizeBytes
+		)
+			recorded.add(entry.virtualPath);
+	}
+	return recorded;
+}
+
 /** Ask MinSync's read-only plan which current source revisions still need work. */
 export async function detectMirrorStaleness(options: ParsedMirrorSyncOptions): Promise<ParsedMirrorDiagnostic[]> {
 	const registry = options.registry ?? createDefaultParserRegistry(options.parserOptions);
@@ -847,7 +969,10 @@ export async function detectMirrorStaleness(options: ParsedMirrorSyncOptions): P
 				output_root: join(parsedMirrorRoot(options.root), "files"),
 			}),
 		);
-		const { versions, omitted } = sourcePlan(current, registry, options);
+		const recordedDuplicates = options.reuseRecordedDuplicateExclusions
+			? recordedDuplicateSources(previous, current)
+			: undefined;
+		const { versions, omitted } = sourcePlan(current, registry, options, recordedDuplicates);
 		const fingerprint = parseFingerprint(options);
 		const plan = await session.plan({
 			stage: "parse",

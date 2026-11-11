@@ -7,7 +7,7 @@ import { isDazziSignedIn } from "../cloud/credential.ts";
 import { DazziJevBackend } from "../cloud/jev-backend.ts";
 import { DECISION_PROVIDER_ORDER, PiDecisionBackend } from "./decision-backends.ts";
 import { toToolDefinition } from "./pi-session.ts";
-import type { SllmDecisionModel } from "./sllm-decision.ts";
+import { SLLM_BACKEND, SllmDecisionBackend, type SllmDecisionModel } from "./sllm-decision.ts";
 
 /** `jev` tool name, kept in AutoRAG's reserved set and system prompt. */
 export const JEV_TOOL_NAME = "jev";
@@ -21,7 +21,9 @@ export const JEV_TOOL_NAME = "jev";
 export interface JevToolOptions {
 	/**
 	 * The decision backend: `dazzi`, or any pi provider whose catalog carries decision models
-	 * (`openrouter`, `openai`, `typesafe`, `vercel-ai-gateway`, `cloudflare-workers-ai`, or `opencode`).
+	 * (`openrouter`, `openai`, `typesafe`, `vercel-ai-gateway`, `cloudflare-workers-ai`, or `opencode`),
+	 * or `"sllm"` to decide with the small chat LLM in {@link JevToolOptions.sllm} and never
+	 * call Jev.
 	 * Omit to take the Dazzi plan when signed in, else the first of
 	 * {@link DECISION_PROVIDER_ORDER} whose API key is set. A ready-made `jev-use` backend instance is a
 	 * programmatic seam (tests, custom transports); config only accepts names.
@@ -32,10 +34,11 @@ export interface JevToolOptions {
 	/** Escalate verdicts below this confidence. Default: per-source thresholds. */
 	readonly confidenceThreshold?: number;
 	/**
-	 * Small chat LLM (sLLM) the session moves to when the session check finds the decision model
-	 * unavailable; a `jev-use` backend instance is the programmatic seam. Omit for no fallback.
+	 * The small chat LLM (sLLM): the decision model when `backend` is `"sllm"`, otherwise the
+	 * fallback the session moves to when the session check finds the decision model unavailable. A
+	 * `jev-use` backend instance is the programmatic seam. Omit for no fallback.
 	 */
-	readonly fallback?: SllmDecisionModel | JevBackend;
+	readonly sllm?: SllmDecisionModel | JevBackend;
 }
 
 /** {@link JevToolOptions} plus where credentials are read from. */
@@ -57,10 +60,23 @@ export type JevJudge = (
 	options?: { readonly confidenceThreshold?: number },
 ) => Promise<Judgment>;
 
+/** The `jev-use` backend for the small chat LLM: a ready-made backend instance is used as is. */
+export function sllmBackend(sllm: SllmDecisionModel | JevBackend): JevBackend {
+	return "judge" in sllm ? sllm : new SllmDecisionBackend(sllm);
+}
+
 /** The backend named by `options.backend`, or the first one with a credential. Throws when there is none. */
 function resolveBackend(options: JevJudgeOptions): JevBackend {
 	const { backend, agentDir } = options;
 	if (backend !== undefined && typeof backend !== "string") return backend;
+	if (backend === SLLM_BACKEND) {
+		if (options.sllm === undefined) {
+			throw new Error(
+				`jev.backend "${SLLM_BACKEND}" has no sllm model: set jev.sllm.model, or sign in so the default resolves.`,
+			);
+		}
+		return sllmBackend(options.sllm);
+	}
 	const env = options.env ?? process.env;
 	const providerEnv = Object.fromEntries(
 		Object.entries(env).filter((entry): entry is [string, string] => entry[1] !== undefined),

@@ -3,6 +3,7 @@ import { Type } from "typebox";
 import { datasourceSearchToolName } from "../datasource/tool-naming.ts";
 import type { RetrievalDiagnostic, RetrievalResult } from "../retrieval/types.ts";
 import { EvidenceLedger } from "./evidence-ledger.ts";
+import { type RecordCutToolOptions, registerAndRender } from "./result-render.ts";
 import { type SearchDocumentRetrievalTraceResult, toRetrievalTraceResults } from "./search-documents.ts";
 
 /**
@@ -63,8 +64,9 @@ export function createSingleDatasourceSearchTools(
 	provider: SingleDatasourceSearchProvider,
 	specs: readonly SingleDatasourceToolSpec[],
 	ledger: EvidenceLedger = new EvidenceLedger(),
+	options: RecordCutToolOptions = {},
 ): AgentTool<typeof searchSingleDatasourceSchema, SearchSingleDatasourceDetails>[] {
-	return specs.map((spec) => createTool(provider, spec, ledger));
+	return specs.map((spec) => createTool(provider, spec, ledger, options));
 }
 
 const searchSingleDatasourceSchema = Type.Object({
@@ -79,6 +81,7 @@ function createTool(
 	provider: SingleDatasourceSearchProvider,
 	spec: SingleDatasourceToolSpec,
 	ledger: EvidenceLedger,
+	options: RecordCutToolOptions,
 ): AgentTool<typeof searchSingleDatasourceSchema, SearchSingleDatasourceDetails> {
 	const scopeLine = spec.instanceScopes.length > 0 ? ` Instance scopes: ${spec.instanceScopes.join(", ")}.` : "";
 	return {
@@ -108,11 +111,15 @@ function createTool(
 				scope: params.scope,
 				...(signal === undefined ? {} : { signal }),
 			});
-			const evidenceIds = results.map((result) =>
-				ledger.registerResult(`search_datasource_${spec.datasourceId}`, result),
+			const { text } = registerAndRender(
+				ledger,
+				`search_datasource_${spec.datasourceId}`,
+				results,
+				(result) => `${result.source} score=${result.score.toFixed(4)}`,
+				options.recordCut,
 			);
 			return {
-				content: [{ type: "text", text: formatDatasourceResults(results, diagnostics, evidenceIds) }],
+				content: [{ type: "text", text: datasourceResultsText(text, results.length, diagnostics) }],
 				details: {
 					method: "datasource",
 					datasource: spec.datasourceId,
@@ -126,20 +133,24 @@ function createTool(
 	};
 }
 
+function datasourceResultsText(rows: string, resultCount: number, diagnostics: readonly RetrievalDiagnostic[]): string {
+	const diagnosticSummary =
+		diagnostics.length > 0
+			? `\n\nDiagnostics: ${diagnostics.map((d) => `${d.source ?? "datasource"}:${d.code}`).join(", ")}`
+			: "";
+	if (resultCount === 0) return `No datasource results.${diagnosticSummary}`;
+	return `Datasource results (cite evidence by its [eN] id):\n\n${rows}${diagnosticSummary}`;
+}
+
 /** Shared rendering for datasource search tool results (fan-out removed). */
 export function formatDatasourceResults(
 	results: readonly RetrievalResult[],
 	diagnostics: readonly RetrievalDiagnostic[],
 	evidenceIds: readonly string[],
 ): string {
-	const diagnosticSummary =
-		diagnostics.length > 0
-			? `\n\nDiagnostics: ${diagnostics.map((d) => `${d.source ?? "datasource"}:${d.code}`).join(", ")}`
-			: "";
-	if (results.length === 0) return `No datasource results.${diagnosticSummary}`;
 	const rows = results.map((result, index) => {
 		const line = result.content.replace(/\s+/gu, " ");
 		return `[${evidenceIds[index]}] ${result.source} score=${result.score.toFixed(4)}\n${line}`;
 	});
-	return `Datasource results (cite evidence by its [eN] id):\n\n${rows.join("\n\n")}${diagnosticSummary}`;
+	return datasourceResultsText(rows.join("\n\n"), results.length, diagnostics);
 }

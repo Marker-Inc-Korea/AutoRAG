@@ -18,12 +18,12 @@ auto-install fails, `autorag search`, `autorag refresh`, `autorag lite retrieve`
 and the MCP tools fail with a `MinSyncRequiredError` message and a non-zero exit;
 AutoRAG never answers from the other retrieval paths instead. `minSync: false`
 and `minSync.enabled: false` are rejected as config errors. Install the binary
-yourself with `cargo install minsync --version 0.6.0 --locked` when
+yourself with `cargo install minsync --version 0.7.3 --locked` when
 auto-install cannot run. MinSync on Apple Silicon and Linux needs rustc
 1.96 or newer, because its dependency candle-core requires NEON f16 support;
 with an older toolchain the cargo install fails and AutoRAG falls back to the
-GitHub release binary. AutoRAG's installer pins MinSync 0.6.0 from crates.io.
-A `minsync` older than 0.6.0 is never run; see
+GitHub release binary. AutoRAG's installer pins MinSync 0.7.3 from crates.io.
+A `minsync` older than 0.7.1 is never run; see
 [Upgrading a BM25 workspace](#upgrading-a-bm25-workspace).
 
 Existing executables are not silently replaced. New installations, including
@@ -309,7 +309,7 @@ and rebuilds the index with a full sync.
 
 ### Upgrading a BM25 workspace
 
-AutoRAG requires MinSync 0.6.0 or newer. A `minsync` on `PATH` or in the
+AutoRAG requires MinSync 0.7.1 or newer. A `minsync` on `PATH` or in the
 workspace cache that reports an older version is never run: one later on
 `PATH` is used instead, a cached one is replaced by the next install (`autorag
 refresh` with `minSync.autoInstall`), and a query with no usable binary fails
@@ -404,7 +404,7 @@ daemon or the in-process engine.
 ## Durable incremental parsing
 
 Parsed mirrors require the **extended MinSync stage protocol (protocol 2)**,
-including a refresh that selects only `parsed`. MinSync 0.5.1 and later — AutoRAG installs 0.6.0 — ship it; published binaries up to 0.5.0 have the original
+including a refresh that selects only `parsed`. MinSync 0.5.1 and later — AutoRAG installs 0.7.3 — ship it; published binaries up to 0.5.0 have the original
 durable stage, but not `capabilities`, `plan`, `inspect`, deliberate skips or
 deferred-failure policy. AutoRAG probes capabilities before opening a run and
 refuses an older build before mutating stage state. Parsing itself uses no
@@ -484,7 +484,6 @@ refresh continues:
 | `parser-crashed` | warning | The parser threw a plain `Error` or non-`ParseError` value; `reason` carries the error name. The message is withheld because it may contain a path. |
 | `mirror-write-failed` | warning | Writing the parsed mirror for this file failed; `reason` carries the errno code. |
 | `cloud-placeholder-skipped` | info | A File Provider placeholder whose provider has no verified release path was not read; `reason` carries the provider. |
-| `cloud-download-deferred` | info | A cloud placeholder is over this refresh's download budget and waits for the next refresh. |
 | `cloud-evict-failed` | warning | The file was indexed but its local copy could not be released after the retries; the message is the release helper's own error text and the attempt count. |
 | `cloud-fingerprint-failed` | warning | A cloud or network file was indexed but its duplicate fingerprint could not be read or saved; it stays indexed and does not take part in exact-duplicate exclusion. |
 
@@ -637,8 +636,11 @@ Any **other File Provider** has no verified release path, so a placeholder is no
 copy back and would otherwise leave every document on disk. A previously indexed copy is
 kept. Make the file or folder available offline in the provider's app to index it.
 
-Downloads per refresh are bounded; the rest wait for the next refresh
-(`cloud-download-deferred`, one diagnostic per deferred file). A refused release is
+Downloads are bounded per batch: a placeholder that would exceed the batch's budget ends
+the batch, which is handed to MinSync (searchable once that sync reaches it), and is read
+first in the next batch with a fresh budget, so every placeholder is indexed in the same
+refresh. Each downloaded file is released right after it is parsed, before its batch is
+handed to MinSync. A refused release is
 retried with doubling waits (500 ms, 1 s, 2 s); the provider briefly holding a
 just-downloaded file is the usual cause. A file still uploading to the cloud cannot be
 released yet — the refusal names that state. When the retries are spent the file is
@@ -671,7 +673,7 @@ rounded time from the start and is not re-downloaded.
 ```
 
 `cloudMaxFiles` (default `200`) and `cloudMaxBytes` (default 512 MiB) bound what one
-refresh downloads; the first file is always allowed, so one large file cannot starve.
+batch downloads; a batch's first placeholder is always allowed, so one large file cannot starve.
 `cloudEvictAfterParse: false` keeps downloaded cloud files on disk. `cloudEvictRetries` (default `3`, `0` tries once) is the number of retries after the first failed release. These
 keys apply on Windows too (below); Linux reads every file as before.
 
@@ -689,7 +691,7 @@ and network folders (see *Cloud and network folders* above) and keep their defau
   under one by its name (`--exclude-dir`, measured to skip reads under it entirely).
   A cloud or network file instead joins the exact-duplicate exclusion through a **stored fingerprint**:
   while the file is on disk during its single read (before a downloaded placeholder is released), a refresh
-  runs `dupey fingerprint` on it once and keeps `{sourceVersion, exact, chars, modified, revision}`
+  runs `dupey fingerprint` on it once and keeps `{sourceVersion, exact, modified, revision}`
   under `.autorag/cloud-fingerprints.json` in the workspace (an AutoRAG-owned store; the
   MinSync stage schema is unchanged). An unchanged file keeps that fingerprint without being
   read; a changed file gets a new one; a removed file drops it. A file whose provider has no
@@ -701,13 +703,19 @@ Exact-duplicate exclusion then groups the cloud fingerprints with the scanned, n
 files by exact hash and keeps one keeper — the newest by dupey's own ranking for scanned
 files, and the fingerprint's recorded `modified` time for a cloud file (falling back to a
 filesystem `stat`, which reports metadata without downloading the placeholder). The other
-copies are excluded through the normal `duplicate-excluded` path. A file dupey extracted no
-text from (`chars` 0; a binary HWP5 document with dupey 0.1.2, for one) is never part of a
-duplicate group, scanned or fingerprinted: every such file shares one hash, so the hash says
-nothing about which document it is. Because the fingerprints
+copies are excluded through the normal `duplicate-excluded` path. A file dupey extracts no
+text from (an image-only PDF, for one) is grouped by dupey's hash of its bytes, so only
+byte-identical copies match. Because the fingerprints
 are written during a refresh, a cloud file first fingerprinted this refresh can be excluded
 on the *next* one; that is expected and still never reads the released original. The parsed
 mirror, MinSync, and fsearch passes never re-download.
+
+AutoRAG requires **dupey 0.2.0 or later** (`cargo install dupey`) and refuses an older binary
+with a message naming its version: dupey 0.1.2 hashed incomplete text for HWP documents and
+empty text in `fingerprint` for files without text, so its hashes disagree with 0.2.0's. A
+store written by 0.1.2 (version 1) keeps every fingerprint except its HWP files and its files
+without text; those take part in exact-duplicate exclusion again once they change and are
+fingerprinted by 0.2.0.
 
 ### Cloud Files folders (Windows)
 

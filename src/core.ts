@@ -193,6 +193,20 @@ export function createAutoRAGLite(options: AutoRAGLiteOptions = {}): AutoRAGLite
 }
 
 export type {
+	IndexSchedule,
+	PowerPolicy,
+	PowerSource,
+	ScheduleDay,
+	ScheduleDecision,
+	ScheduleDenyReason,
+} from "./agent/index-schedule.ts";
+export {
+	checkIndexSchedule,
+	detectPowerSource,
+	evaluateIndexSchedule,
+	validateIndexSchedule,
+} from "./agent/index-schedule.ts";
+export type {
 	AgentModelAuth,
 	AgentModelConfig,
 	AgentModelResolutionSource,

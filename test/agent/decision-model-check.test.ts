@@ -260,7 +260,7 @@ describe("createDecisionModels (Jev, then the sLLM fallback)", () => {
 
 	it("keeps Jev when it answers and never asks the fallback", async () => {
 		const fallback = counting();
-		const models = createDecisionModels({ backend: new BaselineDecisionBackend(), fallback });
+		const models = createDecisionModels({ backend: new BaselineDecisionBackend(), sllm: fallback });
 		const status = await models.check();
 		expect(status.backend).toBe("baseline");
 		expect(status.fallbackFrom).toBeUndefined();
@@ -271,7 +271,7 @@ describe("createDecisionModels (Jev, then the sLLM fallback)", () => {
 	it("moves the session to the fallback when Jev is unavailable, and says why", async () => {
 		const jev = denied();
 		const fallback = counting();
-		const models = createDecisionModels({ backend: jev, fallback });
+		const models = createDecisionModels({ backend: jev, sllm: fallback });
 
 		const status = await models.check();
 
@@ -292,7 +292,7 @@ describe("createDecisionModels (Jev, then the sLLM fallback)", () => {
 				return new BaselineDecisionBackend().judge(request);
 			},
 		};
-		const models = createDecisionModels({ backend: jev, fallback: counting() });
+		const models = createDecisionModels({ backend: jev, sllm: counting() });
 		expect((await models.check()).backend).toBe("counting");
 		down = false;
 		expect((await models.check()).backend).toBe("flaky");
@@ -302,12 +302,35 @@ describe("createDecisionModels (Jev, then the sLLM fallback)", () => {
 	it("reports Jev's failure first and the fallback's after it when both are unavailable", async () => {
 		const models = createDecisionModels({
 			backend: denied(),
-			fallback: failing(new BackendError("sllm", "request timed out after 30000ms")),
+			sllm: failing(new BackendError("sllm", "request timed out after 30000ms")),
 		});
 		const error = await unavailable(models.check());
 		expect(error.reason).toBe("unauthorized");
 		expect(error.attempts.map((attempt) => attempt.reason)).toEqual(["unauthorized", "unreachable"]);
 		expect(error.message).toMatch(/sLLM fallback .*unreachable/u);
+	});
+
+	it('with backend "sllm", decides on the sLLM alone and never calls Jev', async () => {
+		const sllm = counting();
+		const models = createDecisionModels({ backend: "sllm", sllm });
+		const status = await models.check();
+		expect(status.backend).toBe("counting");
+		expect(status.fallbackFrom).toBeUndefined();
+		expect((await models.judge("x", [{ id: "q", type: "noul", question: "ok?" }])).backend).toBe("counting");
+	});
+
+	it('with backend "sllm" and the sLLM down, stops with its own failure and no second attempt', async () => {
+		const sllm = failing(new BackendError("sllm", "request timed out after 30000ms"));
+		const error = await unavailable(createDecisionModels({ backend: "sllm", sllm }).check());
+		expect(error.reason).toBe("unreachable");
+		expect(error.attempts).toHaveLength(1);
+		expect(sllm.calls).toBe(1);
+	});
+
+	it('with backend "sllm" and no sLLM model, names what to set', async () => {
+		const error = await unavailable(createDecisionModels({ backend: "sllm" }).check());
+		expect(error.reason).toBe("missing-credential");
+		expect(error.detail).toMatch(/jev\.sllm\.model/u);
 	});
 
 	it("without a fallback, reports Jev's own failure", async () => {
@@ -346,7 +369,7 @@ describe("first question with the sLLM fallback", () => {
 			model: fauxModel([]),
 			jev: {
 				backend: failing(new BackendError("openrouter", "HTTP 402: Insufficient credits", 402)),
-				fallback: { model: registration.getModel() },
+				sllm: { model: registration.getModel() },
 			},
 		});
 

@@ -328,42 +328,52 @@ describe("iCloud placeholders are indexed, then released", () => {
 });
 
 describe("download budget", () => {
-	it("downloads at most cloudMaxFiles placeholders per refresh and finishes the rest on the next one", async () => {
+	/** Runs a batched refresh and records each batch's paths and how many files were released before it ran. */
+	async function batchedSync(cloud: FakeCloud, extra: Partial<ParsedMirrorSyncOptions> = {}) {
+		const batches: { paths: readonly string[]; evictedBefore: number }[] = [];
+		const result = await sync(cloud, {
+			...extra,
+			onBatch: async (batch) => {
+				batches.push({ paths: batch.virtualPaths, evictedBefore: cloud.evicted.length });
+				return undefined;
+			},
+		});
+		return { result, batches };
+	}
+
+	it("ends a batch at cloudMaxFiles and reads the rest in the next batch of the same refresh", async () => {
 		const cloud = new FakeCloud();
 		for (const name of ["a.txt", "b.txt", "c.txt"]) cloud.markDataless(write(name), "icloud");
 
-		const first = await sync(cloud, { cloudMaxFiles: 2 });
+		const { result, batches } = await batchedSync(cloud, { cloudMaxFiles: 2 });
 
-		expect(first.written).toBe(2);
-		expect(first.diagnostics.filter((diagnostic) => diagnostic.code === "cloud-download-deferred")).toHaveLength(1);
-		expect(Object.keys(loadMirrorIndex(root).entries)).toHaveLength(2);
-
-		const second = await sync(cloud, { cloudMaxFiles: 2 });
-
-		expect(second.written).toBe(1);
-		expect(codes(second)).not.toContain("cloud-download-deferred");
+		expect(result.written).toBe(3);
 		expect(Object.keys(loadMirrorIndex(root).entries).sort()).toEqual(["/docs/a.txt", "/docs/b.txt", "/docs/c.txt"]);
+		expect(batches.map((batch) => batch.paths)).toEqual([["/docs/a.txt", "/docs/b.txt"], ["/docs/c.txt"]]);
+		// Every file a batch downloaded is released before that batch is handed on.
+		expect(batches.map((batch) => batch.evictedBefore)).toEqual([2, 3]);
 	});
 
-	it("stops downloading once cloudMaxBytes would be exceeded", async () => {
+	it("ends a batch before the placeholder that would exceed cloudMaxBytes", async () => {
 		const cloud = new FakeCloud();
 		cloud.markDataless(write("a.txt", "x".repeat(600)), "icloud");
 		cloud.markDataless(write("b.txt", "y".repeat(600)), "icloud");
 
-		const result = await sync(cloud, { cloudMaxBytes: 1000 });
+		const { result, batches } = await batchedSync(cloud, { cloudMaxBytes: 1000 });
 
-		expect(result.written).toBe(1);
-		expect(codes(result)).toContain("cloud-download-deferred");
+		expect(result.written).toBe(2);
+		expect(batches.map((batch) => batch.paths)).toEqual([["/docs/a.txt"], ["/docs/b.txt"]]);
 	});
 
-	it("always downloads one file per refresh even when it alone exceeds cloudMaxBytes", async () => {
+	it("always downloads a batch's first placeholder even when it alone exceeds cloudMaxBytes", async () => {
 		const cloud = new FakeCloud();
 		cloud.markDataless(write("big.txt", "z".repeat(600)), "icloud");
+		cloud.markDataless(write("huge.txt", "z".repeat(900)), "icloud");
 
-		const result = await sync(cloud, { cloudMaxBytes: 100 });
+		const { result, batches } = await batchedSync(cloud, { cloudMaxBytes: 100 });
 
-		expect(result.written).toBe(1);
-		expect(codes(result)).not.toContain("cloud-download-deferred");
+		expect(result.written).toBe(2);
+		expect(batches.map((batch) => batch.paths)).toEqual([["/docs/big.txt"], ["/docs/huge.txt"]]);
 	});
 
 	it("does not spend the budget on files that are already local", async () => {
@@ -371,29 +381,20 @@ describe("download budget", () => {
 		for (const name of ["l1.txt", "l2.txt", "l3.txt"]) write(name);
 		cloud.markDataless(write("remote.txt"), "icloud");
 
-		const result = await sync(cloud, { cloudMaxFiles: 1 });
+		const { result, batches } = await batchedSync(cloud, { cloudMaxFiles: 1 });
 
 		expect(result.written).toBe(4);
-		expect(codes(result)).not.toContain("cloud-download-deferred");
+		expect(batches).toHaveLength(1);
 	});
 
-	it("keeps the last good mirror of a changed file whose download was deferred", async () => {
+	it("bounds each batch without onBatch too, and still reads every placeholder", async () => {
 		const cloud = new FakeCloud();
-		const changed = write("z.txt", "version one\n");
-		await sync(cloud);
-		const outputPath = loadMirrorIndex(root).entries["/docs/z.txt"]?.outputPath;
-		if (outputPath === undefined) throw new Error("z.txt was not indexed");
-		write("z.txt", "version two, which is longer\n");
-		cloud.markDataless(changed, "icloud");
-		cloud.markDataless(write("a.txt"), "icloud");
+		for (const name of ["a.txt", "b.txt", "c.txt"]) cloud.markDataless(write(name), "icloud");
 
 		const result = await sync(cloud, { cloudMaxFiles: 1 });
 
-		expect(result.diagnostics.find((diagnostic) => diagnostic.code === "cloud-download-deferred")?.source).toBe(
-			"/docs/z.txt",
-		);
-		expect(readFileSync(outputPath, "utf8")).toContain("version one");
-		expect(loadMirrorIndex(root).entries["/docs/z.txt"]).toBeDefined();
+		expect(result.written).toBe(3);
+		expect(cloud.evicted).toHaveLength(3);
 	});
 });
 
@@ -583,5 +584,31 @@ describe("cloud fingerprints", () => {
 		await sync(cloud, { cloudFingerprints: { dupey: { run: fakeDupey([]).run } } });
 
 		expect(loadCloudFingerprints(root).entries).toEqual({});
+	});
+
+	it("drops dupey 0.1.2 fingerprints whose hash 0.2.0 computes differently and keeps the rest", () => {
+		const entry = (exact: string, chars: number) => ({
+			sourceVersion: "1:1",
+			exact,
+			chars,
+			modified: null,
+			revision: null,
+		});
+		mkdirSync(join(root, ".autorag"), { recursive: true });
+		writeFileSync(
+			join(root, ".autorag", "cloud-fingerprints.json"),
+			JSON.stringify({
+				version: 1,
+				entries: {
+					"/cloud/plan.HWP": entry("truncated-hwp-text", 45),
+					"/cloud/scan.pdf": entry("empty-text-hash", 0),
+					"/cloud/report.docx": entry("docx-hash", 120),
+				},
+			}),
+		);
+
+		expect(loadCloudFingerprints(root).entries).toEqual({
+			"/cloud/report.docx": { sourceVersion: "1:1", exact: "docx-hash", modified: null, revision: null },
+		});
 	});
 });

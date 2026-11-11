@@ -20,7 +20,10 @@ uses the same client for the query pipeline described below. Jev
 is **required**: routing, the follow-up check, citation and evidence judgment,
 and the `auto` permission gate all ask it, so there is no mode that runs
 without it. It uses the hosted Dazzi Models backend when you are signed in
-(`/login`) and OpenRouter otherwise.
+(`/login`) and OpenRouter otherwise. The decision model can also be the small
+chat LLM (`jev.backend: "sllm"`, see [the sLLM as the decision
+model](#the-sllm-as-the-decision-model)); either way there is exactly one, and
+no mode runs without it.
 
 ## Session check: `decision-model-unavailable`
 
@@ -156,19 +159,41 @@ verdicts:
   per-call fallback. A request fails as a whole only when no answer could be
   read from either attempt or the provider returned an error.
 
-The fallback model defaults to the question-decomposition model (its configured
+The sLLM defaults to the question-decomposition model (its configured
 `queryDecomposition.model`, else `dazzi/openai/gpt-6-luna` when signed in, else
-`openrouter/qwen/qwen3.7-flash`). Set `jev.fallback.model` to any catalog chat
+`openrouter/qwen/qwen3.7-flash`). Set `jev.sllm.model` to any catalog chat
 model, or set `jev.fallback: false` to fail outright when Jev is unavailable.
+
+### The sLLM as the decision model
+
+The decision model is **Jev or the sLLM**. With `"jev": { "backend": "sllm" }`
+the sLLM decides from the start: the session check probes it alone, Jev is never
+called and needs no credential, and no `decision-model-fallback` warning is
+raised, because nothing degraded. Use it when you have a chat-model credential
+but no access to a Jev backend. The same caveat holds: a chat model's
+probabilities are its own estimate, not a calibrated decision head. If the sLLM
+fails the check, the run stops with `decision-model-unavailable` and one entry in
+`attempts`. `jev.model` and `jev.fallback` do not apply to this mode and are
+rejected; name the model with `jev.sllm.model`.
+
+```json
+{
+  "jev": {
+    "backend": "sllm",
+    "sllm": { "model": { "provider": "openrouter", "id": "qwen/qwen3.7-flash" } }
+  }
+}
+```
 
 ### Configuration fields
 
 | Field                 | Meaning                                                                  |
 | --------------------- | ------------------------------------------------------------------------ |
-| `backend`             | `dazzi` when signed in, else `openrouter` (default); or any provider above. |
+| `backend`             | `dazzi` when signed in, else `openrouter` (default); any provider above; or `sllm` to decide with the small chat LLM and never call Jev. |
 | `model`               | Decision model id within the backend. Omit for the backend default.      |
 | `confidenceThreshold` | Escalate verdicts below this confidence (0-1). Default: per-source.      |
-| `fallback`            | `{ "model": { "provider": …, "id": … } }`, `{}` (the default), or `false`. |
+| `sllm`                | `{ "model": { "provider": …, "id": … } }` or `{}` (the default: the decomposition model). The sLLM: Jev's fallback, or the decision model with `backend: "sllm"`. |
+| `fallback`            | `true` (the default) moves the session to the sLLM when Jev is unavailable; `false` fails instead. Not valid with `backend: "sllm"`. |
 
 Example: GPT-6 Luna as the decision model, natively on OpenAI, falling back to a
 small Qwen model on OpenRouter:
@@ -178,7 +203,7 @@ small Qwen model on OpenRouter:
   "jev": {
     "backend": "openai",
     "model": "gpt-6-luna",
-    "fallback": { "model": { "provider": "openrouter", "id": "qwen/qwen3.7-flash" } }
+    "sllm": { "model": { "provider": "openrouter", "id": "qwen/qwen3.7-flash" } }
   }
 }
 ```
@@ -446,8 +471,8 @@ shared-fund ledger lives in one of two Discord servers). Over 3 runs, 30/30
 passed. Required datasources scored 0.71-0.96, and datasources the question
 excluded scored at most 0.38
 (`scripts/manual-qa/run-qa-jev-datasource-selection-live.ts`). With memory, a
-similar past question sharpens the choice: for "dependabot PR 알림", Discord,
-Spotlight, and NomaDamas dropped from 0.53-0.56 to at most 0.35 once memory
+similar past question sharpens the choice: for "dependabot PR 알림", Discord
+and NomaDamas dropped from 0.53-0.56 to at most 0.35 once memory
 showed the earlier answer came from Slack, and the KakaoTalk choice for "구봉님
 랄프톤 공지" rose from 0.91 to 0.98.
 
@@ -456,7 +481,7 @@ real datasources (web tools enabled). A recent public fact ("What is the latest
 stable Node.js LTS version right now?") scored the web at 0.95 with every
 datasource at 0.24 or below, and a question about the user's own records ("내
 릴리즈 플랜 노트에 Q3 런치 날짜가 뭐라고 적혀 있어?") scored it 0.05 and selected
-KakaoTalk (0.61), Slack (0.57), Spotlight (0.88), and NomaDamas (0.58) instead
+KakaoTalk (0.61), Slack (0.57), and NomaDamas (0.58) instead
 (`bun src/cli/index.ts search "<q>" --json --debug`, plus
 `test/live-e2e/jev-web-datasource.test.ts` for the prefetch end to end).
 

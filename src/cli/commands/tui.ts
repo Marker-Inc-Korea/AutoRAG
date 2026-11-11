@@ -6,8 +6,8 @@ import { warmFileeBinary } from "../../convert/index.ts";
 import {
 	buildAgentOptions,
 	resolveConfig,
-	resolveDecisionFallbackModel,
 	resolveQueryDecompositionModel,
+	resolveSllmDecisionModel,
 	resolveTuiAgentModel,
 } from "../config.ts";
 import { openCitationTarget } from "../open-target.ts";
@@ -83,8 +83,8 @@ async function createTuiAgent(ctx: CommandContext): Promise<AutoRAGAgent> {
 	}
 	const decompositionModel = await resolveQueryDecompositionModel(config);
 	if (decompositionModel !== undefined) options.queryDecomposition = decompositionModel;
-	const fallback = await resolveDecisionFallbackModel(config);
-	if (fallback !== undefined) options.jev = { ...options.jev, fallback };
+	const sllm = await resolveSllmDecisionModel(config);
+	if (sllm !== undefined) options.jev = { ...options.jev, sllm };
 	// Installed together with the agent: fetch filee-cli in the background so the first conversion is instant.
 	if (options.filee !== undefined) void warmFileeBinary(options.filee);
 	return new AutoRAGAgent(options);

@@ -11,7 +11,7 @@ import { outdatedMinSyncVersion } from "./version.ts";
 
 const LATEST_RELEASE_URL = "https://api.github.com/repos/NomaDamas/MinSync/releases/latest";
 const SHA256_HEX_PATTERN = /^[a-f0-9]{64}$/;
-export const MINSYNC_VERSION = "0.6.0";
+export const MINSYNC_VERSION = "0.7.3";
 export const MINSYNC_CARGO_INSTALL_TIMEOUT_MS = 10 * 60 * 1_000;
 const CARGO_PROBE_TIMEOUT_MS = 5_000;
 

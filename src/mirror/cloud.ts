@@ -1,10 +1,10 @@
 import { setTimeout as sleepFor } from "node:timers/promises";
 import { type CloudFileProbe, type CloudProvider, defaultCloudProbe } from "../filesystem/cloud-placeholder.ts";
 
-/** Placeholders one refresh may download before the rest wait for the next refresh. */
+/** Placeholders one batch may download; a placeholder over the budget starts the next batch. */
 export const DEFAULT_CLOUD_MAX_FILES = 200;
 
-/** Placeholder bytes one refresh may download. The first file is always allowed so a large one cannot starve. */
+/** Placeholder bytes one batch may download. A batch's first file is always allowed, so a large one cannot starve. */
 export const DEFAULT_CLOUD_MAX_BYTES = 512 * 1024 * 1024;
 
 /**
@@ -34,15 +34,16 @@ export type CloudReleaseResult = { readonly ok: true } | { readonly ok: false; r
 /**
  * What a refresh does with one file that needs parsing:
  * - `local`: not a placeholder; read it as always.
- * - `download`: a placeholder the probe can release, inside the budget; read it, then release it again.
+ * - `download`: a placeholder the probe can release, inside the batch's budget; read it, then release it again.
  * - `skip`: a placeholder whose provider the probe cannot release; do not read it.
- * - `defer`: a releasable placeholder over this refresh's budget; leave it for the next refresh.
+ * - `next-batch`: a releasable placeholder over this batch's budget; end the batch before it and read it first
+ *   in the next one, whose budget starts fresh.
  */
 export type CloudDecision =
 	| { readonly kind: "local" }
 	| { readonly kind: "download" }
 	| { readonly kind: "skip"; readonly provider: CloudProvider | undefined }
-	| { readonly kind: "defer" };
+	| { readonly kind: "next-batch" };
 
 const LOCAL: CloudDecision = { kind: "local" };
 
@@ -84,14 +85,20 @@ export class CloudGate {
 		return this.placeholders.has(path);
 	}
 
-	/** Decide, and when the answer is `download`, spend this refresh's budget on `sizeBytes`. */
+	/** Give the next batch a fresh download budget. */
+	startBatch(): void {
+		this.downloadedFiles = 0;
+		this.downloadedBytes = 0;
+	}
+
+	/** Decide, and when the answer is `download`, spend this batch's budget on `sizeBytes`. */
 	async decide(path: string, sizeBytes: number, directory: string): Promise<CloudDecision> {
 		if (this.probe === undefined || !this.placeholders.has(path)) return LOCAL;
 		const provider = await this.providerIn(directory, path);
 		if (!this.probe.canRelease(provider)) return { kind: "skip", provider };
 		const overFiles = this.downloadedFiles >= this.maxFiles;
 		const overBytes = this.downloadedFiles > 0 && this.downloadedBytes + sizeBytes > this.maxBytes;
-		if (overFiles || overBytes) return { kind: "defer" };
+		if (overFiles || overBytes) return { kind: "next-batch" };
 		this.downloadedFiles += 1;
 		this.downloadedBytes += sizeBytes;
 		return { kind: "download" };

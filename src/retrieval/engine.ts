@@ -13,6 +13,7 @@
 
 import { filterDatasourceScope } from "../datasource/scope.ts";
 import { ParallelRetriever, ResultMerger } from "./merger.ts";
+import type { RecordCut } from "./record-cut.ts";
 import { RetrievalMethodRegistry } from "./registry.ts";
 import { DEFAULT_RERANK_TOP_N, type Reranker } from "./rerank.ts";
 import { derivedDatasourceIds, type RetrievalSelection, resolveSelectedMethods } from "./selection.ts";
@@ -62,6 +63,11 @@ export interface RetrievalEngineOptions {
 	 * Only applies when {@link reranker} is set. @default DEFAULT_RERANK_TOP_N
 	 */
 	readonly rerankTopN?: number;
+	/**
+	 * Cut the merged pool to `topK` spread across documents instead of by chunk, so one long document cannot
+	 * take every slot (see {@link RecordCut}). Unset keeps the plain top-`topK` cut.
+	 */
+	readonly recordCut?: RecordCut;
 }
 
 /**
@@ -94,6 +100,7 @@ export class RetrievalEngine {
 	private readonly datasourceIdsProvider: (() => readonly string[]) | undefined;
 	private readonly reranker: Reranker | undefined;
 	private readonly rerankTopN: number;
+	private readonly recordCut: RecordCut | undefined;
 
 	constructor(options: RetrievalEngineOptions = {}) {
 		this.registry = new RetrievalMethodRegistry();
@@ -104,6 +111,7 @@ export class RetrievalEngine {
 		this.datasourceIdsProvider = options.datasourceIds;
 		this.reranker = options.reranker;
 		this.rerankTopN = options.rerankTopN ?? DEFAULT_RERANK_TOP_N;
+		this.recordCut = options.recordCut;
 	}
 
 	/** The underlying method registry. Intentionally public for tooling. */
@@ -163,7 +171,11 @@ export class RetrievalEngine {
 			unsearched,
 		} = await this.retriever.retrieveWithDiagnostics(methods, query, options);
 		const filtered = filterDatasourceScope(byMethod, methods, options.scope);
-		const merged = this.merger.merge(filtered, { topK, dedup: this.defaultDedup });
+		const merged = this.merger.merge(filtered, {
+			topK,
+			dedup: this.defaultDedup,
+			...(this.recordCut === undefined ? {} : { recordCut: this.recordCut }),
+		});
 		const results = await this.applyRerank(query, merged, diagnostics, options);
 		return { results, diagnostics, unsearched };
 	}
@@ -251,7 +263,11 @@ export class RetrievalEngine {
 		} = await this.retriever.retrieveWithDiagnostics(methods, query, options);
 		const filtered = filterDatasourceScope(byMethod, methods, options.scope);
 		return {
-			results: this.merger.merge(filtered, { topK, dedup: this.defaultDedup }),
+			results: this.merger.merge(filtered, {
+				topK,
+				dedup: this.defaultDedup,
+				...(this.recordCut === undefined ? {} : { recordCut: this.recordCut }),
+			}),
 			diagnostics,
 			unsearched,
 		};

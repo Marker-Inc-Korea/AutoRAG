@@ -14,6 +14,7 @@ import {
 	ANSWER_UNCONFIRMED_FAST_RULE,
 	ANSWER_UNCONFIRMED_FINAL_RULE,
 } from "./answer-guidelines.ts";
+import { CALCULATOR_PROMPT_RULE } from "./calculator-tool.ts";
 import type { DatasourceAgentSkill } from "./datasource-skill.ts";
 import { buildDatasourceSkillsPrompt } from "./datasource-skill.ts";
 
@@ -78,6 +79,11 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 		),
 		toolLine(
 			config,
+			"calculator",
+			"exact arithmetic, percentages, statistics, date differences and offsets, weekdays, business days, the current date and time, and time zone conversion — always compute these with this tool, never in your head",
+		),
+		toolLine(
+			config,
 			"manage_automations",
 			"create, list, change, delete, and test file-triggered automations, and start or stop their background daemon",
 		),
@@ -125,6 +131,7 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 						"convert_files",
 						"list_file_conversions",
 						"manage_automations",
+						"calculator",
 						"web_search",
 						"web_fetch",
 						"jev",
@@ -168,6 +175,20 @@ This is the conversion map. Use it to plan any conversion immediately, including
 ${renderConversionGuide()}
 `
 		: "";
+	const calculations = toolAvailable(config, "calculator")
+		? `## Calculations
+
+${CALCULATOR_PROMPT_RULE}
+
+- \`calculator\` operations: \`evaluate\` (arithmetic, percentages, totals, averages, roots, logs, trig; independent results in one list), \`date_diff\` (days between dates, or exact elapsed time between two times), \`date_add\` (a date plus or minus years, months, weeks, days, hours, minutes), \`date_info\` (weekday, day of year, ISO week, leap year), \`business_days_between\` and \`add_business_days\` (weekdays, with a holiday list), \`now\`, and \`convert_timezone\`.
+- Pass dates as the user wrote them when they are clear (2026-11-08, 2026년 11월 8일, today); the tool reads them. Never convert a relative date such as "next Friday" yourself: compute it from \`now\` or \`today\` with \`date_add\`.
+- A time without an offset needs its time zone. Ask the user through the ask tool when it matters and is unknown; never assume one. The tool names the zone it used.
+- A time zone abbreviation is a fixed offset, not a place: PST is UTC-8 all year, PDT is UTC-7, EST is UTC-5, EDT is UTC-4. Pass that offset (for example "-08:00") as the time zone. Never replace an abbreviation with a region such as America/Los_Angeles: the region follows daylight saving, so in summer it is an hour off what the abbreviation says. Use a region only when the user names a place or city. An abbreviation used for several zones (CST, IST, BST) is the user's to settle: ask.
+- Report the result as the tool printed it. When it says \`exact: false\`, the digits were rounded; say so only when that matters to the answer.
+
+`
+		: "";
+
 	const webResearch =
 		toolAvailable(config, "web_search") || toolAvailable(config, "web_fetch")
 			? `## Web Research
@@ -259,7 +280,7 @@ ${fileOrganization}
 ${duplicateManagement}
 ${fileConversion}
 ${automations}
-${webResearch}
+${calculations}${webResearch}
 ## External Datasource Skills
 
 Datasource connections come from trusted server config, and every configured connection is searchable. Model arguments cannot add or remove connections; a requested \`scope\` only narrows results within a datasource for the current query.

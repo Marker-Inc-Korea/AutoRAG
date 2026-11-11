@@ -22,7 +22,6 @@ import {
 	DupeyCliError,
 	type DupeyCliOptions,
 	type DupeyScanResult,
-	planDupeyScans,
 	scanWithDupey,
 	selectExactDuplicateExclusions,
 } from "../dupey/index.ts";
@@ -84,6 +83,7 @@ import { EVIDENCE_SUPPORT_THRESHOLD, type JudgedEvidenceRecord } from "../memory
 import { RetrievalMemory } from "../memory/memory.ts";
 import { memoryVectorStorePath } from "../memory/similar-queries.ts";
 import { resolveMinSyncBinary } from "../minsync/binary.ts";
+import { unionChannelResults } from "../minsync/channel-union.ts";
 import { MinSyncRequiredError, minSyncBinaryMissingError } from "../minsync/errors.ts";
 import {
 	isSparseOnlyEmbedder,
@@ -103,6 +103,8 @@ import {
 	detectMirrorStaleness,
 	isPathExcluded,
 	MirrorWorkspaceError,
+	type ParsedMirrorBatch,
+	type ParsedMirrorBatchOutcome,
 	type ParsedMirrorDiagnostic,
 	type ParsedMirrorSyncOptions,
 	type ParsedMirrorSyncResult,
@@ -113,6 +115,7 @@ import { type DefaultParserRegistryOptions, resolveParserOptions } from "../pars
 import { locationSuffix } from "../retrieval/chunk-location.ts";
 import { RetrievalEngine } from "../retrieval/engine.ts";
 import { ParallelRetriever, ResultMerger } from "../retrieval/merger.ts";
+import { type RecordCut, type RecordCutOptions, recordCutFromOptions } from "../retrieval/record-cut.ts";
 import { RetrievalMethodRegistry } from "../retrieval/registry.ts";
 import { createReranker, DEFAULT_RERANK_TOP_N, type Reranker } from "../retrieval/rerank.ts";
 import {
@@ -122,6 +125,7 @@ import {
 	resolveRetrievalScope,
 } from "../retrieval/scope.ts";
 import type { DatasourceCatalogEntry } from "../retrieval/selection.ts";
+import { describeRetrievalError } from "../retrieval/skip.ts";
 import type { RetrievalDiagnostic, RetrievalOptions, RetrievalResult } from "../retrieval/types.ts";
 import { executeWebSearch } from "../web/search/index.ts";
 import { type ModelNativeSearchAuth, modelNativeAuthFromAgentModel } from "../web/search/model-auth.ts";
@@ -143,6 +147,12 @@ import {
 } from "./answer-guidelines.ts";
 import { ASK_USER_TOOL_NAME, resolveAskUserExtensionPath } from "./ask-user.ts";
 import { createManageAutomationsTool, MANAGE_AUTOMATIONS_TOOL_NAME } from "./automation-tool.ts";
+import {
+	CALCULATOR_FAST_PHASE_RULE,
+	CALCULATOR_PROMPT_RULE,
+	CALCULATOR_TOOL_NAME,
+	createCalculatorTool,
+} from "./calculator-tool.ts";
 import { createCitationLinks } from "./citation-links.ts";
 import { CitationNumbers } from "./citation-numbers.ts";
 import { CITATION_RELEVANCE_FLOOR, judgeCitationRelevance } from "./citation-relevance.ts";
@@ -180,6 +190,14 @@ import { EvidenceLedger } from "./evidence-ledger.ts";
 import { EvidenceOriginIndex } from "./evidence-origins.ts";
 import { createEvidencePersistence } from "./evidence-persistence.ts";
 import { createFSearchSearchTool, FSEARCH_SEARCH_TOOL_NAME } from "./fsearch-search-tool.ts";
+import {
+	detectPowerSource,
+	evaluateIndexSchedule,
+	type IndexSchedule,
+	type PowerSource,
+	type ScheduleDecision,
+	validateIndexSchedule,
+} from "./index-schedule.ts";
 import { intentOfMessage } from "./intent-tracing.ts";
 import { createJevExtension, JEV_TOOL_NAME, type JevJudge, type JevToolOptions } from "./jev-extension.ts";
 import {
@@ -202,6 +220,7 @@ import {
 	createAutoRAGPiSession,
 	PI_BUILTIN_TOOL_NAMES,
 } from "./pi-session.ts";
+import { PipelinedSync } from "./pipelined-sync.ts";
 import { createModelDecompositionCompleter, type DecompositionModel, decomposeQuery } from "./query-decomposition.ts";
 import {
 	type DatasourceCandidate,
@@ -317,12 +336,12 @@ export interface AutoRAGRefreshLimits {
 	/** Retries for a transient per-file I/O error (EMFILE/EBUSY/EIO/ETIMEDOUT) before the file is skipped. Default 3. */
 	readonly transientRetries?: number;
 	/**
-	 * Most cloud-file placeholders (files whose data is not on disk) one refresh may download.
-	 * Reading a placeholder downloads it, so this bounds disk and network use per refresh; the rest wait
-	 * for the next one. Default 200.
+	 * Most cloud-file placeholders (files whose data is not on disk) one refresh batch may download.
+	 * Reading a placeholder downloads it; the next one over the budget starts a new batch, so every
+	 * placeholder is still read in the same refresh. Default 200.
 	 */
 	readonly cloudMaxFiles?: number;
-	/** Most placeholder bytes one refresh may download; the first file is always allowed. Default 536870912 (512 MiB). */
+	/** Most placeholder bytes one refresh batch may download; a batch's first file is always allowed. Default 536870912 (512 MiB). */
 	readonly cloudMaxBytes?: number;
 	/** Release a downloaded cloud file again once it is parsed and indexed. Default true. */
 	readonly cloudEvictAfterParse?: boolean;
@@ -332,6 +351,12 @@ export interface AutoRAGRefreshLimits {
 	 * disk and `cloud-evict-failed` is reported. `0` tries once. Default 3.
 	 */
 	readonly cloudEvictRetries?: number;
+	/**
+	 * When background indexing (auto-refresh, fs watch, `autorag watch`) may run: power (`any`/`ac`),
+	 * local-time `windows` (`HH:MM-HH:MM`) and weekdays. Omitted = always.
+	 * An explicit `refresh()` call is never gated. See {@link IndexSchedule}.
+	 */
+	readonly schedule?: IndexSchedule;
 }
 
 /**
@@ -367,6 +392,13 @@ export interface AutoRAGRetrievalLimits {
 		/** Max results rendered per baseline section. Default 100. */
 		readonly sectionLimit?: number;
 	};
+	/**
+	 * Spread each search's hits across documents instead of cutting by chunk, so one long document cannot take
+	 * every slot (PipesHub's FUSION_RECORD_CUT). Off unless `enabled` is true: when on, MinSync and the merger ask
+	 * for `depth` x the requested count, a chunk shown earlier in the run is not resent, and each search result
+	 * is held to `resultChars` with the budget split fairly across its chunks.
+	 */
+	readonly recordCut?: RecordCutOptions;
 }
 
 /** Ship defaults for every {@link AutoRAGRetrievalLimits} field. */
@@ -403,6 +435,7 @@ type ResolvedRetrievalLimits = {
 		readonly jikjiPathLimit: number;
 		readonly sectionLimit: number;
 	};
+	readonly recordCut: RecordCut | undefined;
 };
 
 /** What the local branch searches alongside Jikji and MinSync: Jev's datasource ids and, when selected, the web. */
@@ -443,6 +476,7 @@ function validateRefreshLimits(limits: AutoRAGRefreshLimits | undefined): AutoRA
 		cloudMaxBytes,
 		cloudEvictAfterParse,
 		cloudEvictRetries,
+		schedule,
 	} = limits;
 	if (
 		maxDeleteRatio !== undefined &&
@@ -465,7 +499,9 @@ function validateRefreshLimits(limits: AutoRAGRefreshLimits | undefined): AutoRA
 	if (cloudEvictRetries !== undefined && (!Number.isInteger(cloudEvictRetries) || cloudEvictRetries < 0)) {
 		throw new Error("refresh.cloudEvictRetries must be a non-negative integer");
 	}
+	const validatedSchedule = schedule === undefined ? undefined : validateIndexSchedule(schedule);
 	return {
+		...(validatedSchedule !== undefined ? { schedule: validatedSchedule } : {}),
 		...(maxDeleteRatio !== undefined ? { maxDeleteRatio } : {}),
 		...(maxScannedEntries !== undefined ? { maxScannedEntries } : {}),
 		...(maxDepth !== undefined ? { maxDepth } : {}),
@@ -525,6 +561,7 @@ function resolveRetrievalLimits(
 				"limits.prefetch.sectionLimit",
 			),
 		},
+		recordCut: recordCutFromOptions(limits?.recordCut),
 	};
 }
 
@@ -647,6 +684,10 @@ export interface AutoRAGWatchRefreshOptions {
 	readonly debounceMs?: number;
 	readonly force?: boolean;
 	readonly maxWatchers?: number;
+	/** Replaces the configured `refresh.schedule` for this watcher. */
+	readonly schedule?: IndexSchedule;
+	/** How often a watcher with a closed schedule re-checks it (default 60000). */
+	readonly scheduleRecheckMs?: number;
 	/** Injectable watcher factory (defaults to a recursive fs.watch). Primarily for tests. */
 	readonly watcherFactory?: WatcherFactory;
 }
@@ -1037,6 +1078,8 @@ export class AutoRAGAgent {
 	private readonly rerankTopN: number | undefined;
 
 	private readonly minSyncMethod: MinSyncVectorMethod;
+	/** SPLADE channel of the fast-answer baseline; absent on a sparse-only index, where the one channel already is SPLADE. */
+	private readonly minSyncSparseMethod: MinSyncVectorMethod | undefined;
 	private readonly minSyncEmbedderConfig: MinSyncEmbedderConfig | undefined;
 	private readonly minSyncBinaryPath: string | undefined;
 	private readonly jikjiClient: JikjiClient | undefined;
@@ -1206,12 +1249,16 @@ export class AutoRAGAgent {
 			root: this.workspaceProjectRoot,
 			defaultTopK: this.limits.minSyncTopK,
 			scopedTopK: this.limits.minSyncScopedQueryTopK,
+			...(this.limits.recordCut === undefined ? {} : { recordCut: this.limits.recordCut }),
 		};
 		// The vector method owns sync, readiness and the dedicated semantic tool, but is not part of the
 		// fan-out: the hybrid method already fuses SPLADE sparse and dense vectors over the same chunks and
 		// degrades to sparse by itself, so registering both would search the workspace twice and let the
 		// merger count one index as two corroborating methods.
 		this.minSyncMethod = new MinSyncVectorMethod(minSyncDefaults);
+		this.minSyncSparseMethod = isSparseOnlyEmbedder(options.minSync?.embedder)
+			? undefined
+			: new MinSyncVectorMethod({ ...minSyncDefaults, mode: "sparse" });
 		this.methodRegistry.register(new MinSyncHybridMethod(minSyncDefaults));
 		const registeredDatasourceIds = new Set<string>();
 		for (const skill of this.datasourceSkills) {
@@ -1268,6 +1315,7 @@ export class AutoRAGAgent {
 			this,
 			this.singleDatasourceToolSpecs(),
 			this.evidenceLedger,
+			{ recordCut: this.limits.recordCut },
 		);
 		this.searchToolNames = new Set([...SEARCH_TOOLS, ...singleDatasourceTools.map((tool) => tool.name)]);
 
@@ -1275,14 +1323,18 @@ export class AutoRAGAgent {
 			() => this.remoteFilteredRetrievalMethod(this.minSyncMethod),
 			(scope) => this.resolveRetrievalScope(scope),
 			this.evidenceLedger,
+			{ recordCut: this.limits.recordCut },
 		);
-		const searchAllTool = createSearchAllDocumentsTool(this, this.evidenceLedger);
+		const searchAllTool = createSearchAllDocumentsTool(this, this.evidenceLedger, {
+			recordCut: this.limits.recordCut,
+		});
 		const loadDatasourceSkillTool = createLoadDatasourceSkillTool(this);
 		const scanDuplicateDocumentsTool =
 			this.dupeyOptions === false ? undefined : createScanDuplicateDocumentsTool(this);
 		const convertFilesTool = this.fileeOptions === false ? undefined : createConvertFilesTool(this);
 		const listFileConversionsTool = this.fileeOptions === false ? undefined : createListFileConversionsTool(this);
 		const manageAutomationsTool = createManageAutomationsTool();
+		const calculatorTool = createCalculatorTool();
 		this.decisionModels = createDecisionModels({ ...options.jev, agentDir: options.piAgentDir });
 		this.jevJudge = this.decisionModels.judge;
 		this.jevExtension = createJevExtension(this.jevJudge);
@@ -1343,6 +1395,7 @@ export class AutoRAGAgent {
 			SCAN_DUPLICATE_DOCUMENTS_TOOL_NAME,
 			CONVERT_FILES_TOOL_NAME,
 			LIST_FILE_CONVERSIONS_TOOL_NAME,
+			CALCULATOR_TOOL_NAME,
 			MANAGE_AUTOMATIONS_TOOL_NAME,
 			JEV_TOOL_NAME,
 			WEB_SEARCH_TOOL_NAME,
@@ -1371,6 +1424,7 @@ export class AutoRAGAgent {
 			...(scanDuplicateDocumentsTool !== undefined ? [scanDuplicateDocumentsTool] : []),
 			...(convertFilesTool !== undefined ? [convertFilesTool] : []),
 			...(listFileConversionsTool !== undefined ? [listFileConversionsTool] : []),
+			calculatorTool,
 			manageAutomationsTool,
 			...(jikjiFindTool !== undefined ? [jikjiFindTool] : []),
 			...(everythingSearchTool !== undefined ? [everythingSearchTool] : []),
@@ -1426,11 +1480,23 @@ export class AutoRAGAgent {
 
 	async scanDuplicateDocuments(): Promise<ScanDuplicateDocumentsDetails> {
 		if (this.dupeyOptions === false) {
-			return { scans: [], skippedRoots: [], familyCount: 0, exactDuplicateCount: 0 };
+			return { scans: [], familyCount: 0, exactDuplicateCount: 0 };
 		}
-		const { targets, skipped } = planDupeyScans(this.searchPaths, await this.cloudRoots());
+		// A search root inside a cloud or network folder is skipped whole and a cloud or network folder nested
+		// under a root is excluded by name: `dupey scan` opens file contents, which would re-download a released
+		// placeholder and re-read a network file over the wire.
+		const cloudRoots = await this.cloudRoots();
+		const scanRoots: { readonly path: string; readonly excludeDirs: string[] }[] = [];
+		for (const searchPath of this.searchPaths) {
+			const scope = cloudScope(searchPath, cloudRoots);
+			if (scope.insideCloudRoot) continue;
+			scanRoots.push({
+				path: searchPath,
+				excludeDirs: scope.nestedCloudRoots.map((root) => basename(root.path)),
+			});
+		}
 		const scans = await Promise.all(
-			targets.map(({ path, excludeDirs }) =>
+			scanRoots.map(({ path, excludeDirs }) =>
 				scanWithDupey(path, {
 					...(this.dupeyOptions || {}),
 					...(excludeDirs.length === 0 ? {} : { excludeDirs }),
@@ -1446,7 +1512,7 @@ export class AutoRAGAgent {
 			}
 			return count + [...hashes.values()].reduce((sum, size) => sum + Math.max(0, size - 1), 0);
 		}, 0);
-		return { scans, skippedRoots: skipped, familyCount, exactDuplicateCount };
+		return { scans, familyCount, exactDuplicateCount };
 	}
 
 	/**
@@ -2198,10 +2264,21 @@ export class AutoRAGAgent {
 		this.autoRefreshTimer = undefined;
 	}
 
+	/**
+	 * Whether the configured index schedule lets a background refresh run now. `override` replaces the
+	 * configured schedule (CLI flags). Probes the power source only when the policy depends on it.
+	 */
+	async indexScheduleDecision(override?: IndexSchedule, now: Date = new Date()): Promise<ScheduleDecision> {
+		const schedule = override ?? this.refreshLimits.schedule;
+		const source: PowerSource = schedule?.power === "ac" ? await detectPowerSource() : "unknown";
+		return evaluateIndexSchedule(schedule, now, source);
+	}
+
 	private async runAutoRefreshTick(): Promise<void> {
 		if (this.refreshing) return;
 		this.refreshing = true;
 		try {
+			if (!(await this.indexScheduleDecision()).allowed) return;
 			await this.refresh(false);
 		} catch {
 			// Background auto-refresh is best-effort; keep the interval alive.
@@ -2271,6 +2348,8 @@ export class AutoRAGAgent {
 			this.citationNumbers.reset();
 			this.conversationQueries.reset();
 		}
+		// "Already shown" is per run: an earlier run's tool output may have been compacted away.
+		this.evidenceLedger.beginRun();
 		if (!conversational) this.evidenceOrigins.clear();
 		this.searchToolQueries.clear();
 		this.memoryContextCache = undefined;
@@ -3239,20 +3318,7 @@ export class AutoRAGAgent {
 		const perQuery = await Promise.all(
 			searchQueries.map((searchQuery) =>
 				Promise.all([
-					this.searchProgress
-						.track(
-							"minsync",
-							"MinSync semantic search",
-							this.minSyncMethod.retrieve(searchQuery, retrieveOptions),
-							{
-								count: (found) => found.length,
-							},
-						)
-						.catch((error: unknown) => {
-							// MinSync is required: its absence fails the run, anything else is one empty source.
-							if (error instanceof MinSyncRequiredError) throw error;
-							return [];
-						}),
+					this.prefetchMinSyncCandidates(searchQuery, retrieveOptions),
 					Promise.all(
 						datasources.map((datasourceId) =>
 							this.searchProgress
@@ -3412,6 +3478,40 @@ export class AutoRAGAgent {
 	}
 
 	/**
+	 * MinSync candidates for one baseline query. A reranker decides the final order, so it is shown what either
+	 * MinSync channel found: dense and SPLADE are queried separately (MinSync's own `hybrid` fuses them by RRF
+	 * and cuts the list before the reranker sees it) and the two lists are unioned by rank. Without a reranker the
+	 * baseline is the order itself, so it stays the dense list alone. A failing channel is reported and the other
+	 * channel's candidates still count; MinSync being absent still fails the run.
+	 */
+	private async prefetchMinSyncCandidates(searchQuery: string, options: RetrievalOptions): Promise<RetrievalResult[]> {
+		const sparse = this.reranker === undefined ? undefined : this.minSyncSparseMethod;
+		const run = (id: string, label: string, method: MinSyncVectorMethod): Promise<RetrievalResult[]> =>
+			this.searchProgress
+				.track(id, label, method.retrieve(searchQuery, options), { count: (found) => found.length })
+				.catch((error: unknown) => {
+					// MinSync is required: its absence fails the run, anything else is one empty source.
+					if (error instanceof MinSyncRequiredError) throw error;
+					if (sparse !== undefined) {
+						this.routingDiagnostics.push({
+							code: "retrieval-method-failed",
+							severity: "warning",
+							message: `MinSync ${id === "minsync" ? "dense" : "SPLADE"} search failed and its candidates were skipped; the other channel's were used: ${describeRetrievalError(error)}`,
+							source: id,
+						});
+					}
+					return [];
+				});
+		const dense = run("minsync", "MinSync semantic search", this.minSyncMethod);
+		if (sparse === undefined) return dense;
+		const [vector, splade] = await Promise.all([dense, run("minsync-sparse", "MinSync SPLADE search", sparse)]);
+		return unionChannelResults([
+			{ channel: "vector", results: vector },
+			{ channel: "sparse", results: splade },
+		]);
+	}
+
+	/**
 	 * One web search for the baseline, on the same provider chain, ordering, and
 	 * credentials as the `web_search` tool. Hits carry the URL as their source
 	 * and the title plus snippet as their content, so they merge, rerank, and
@@ -3534,7 +3634,7 @@ export class AutoRAGAgent {
 		return (
 			`Answer this original query immediately: ${query}${limit}${scope}\n\n` +
 			`Baseline retrieval evidence (already gathered for you):\n${baseline}\n\n` +
-			`Produce the best complete, self-contained answer you can RIGHT NOW from this evidence. Do NOT call any local search, retrieval, datasource, or file-reading tool and do NOT wait for more evidence.${this.fastPhaseWebHint()} ${this.askUserException()}` +
+			`Produce the best complete, self-contained answer you can RIGHT NOW from this evidence. Do NOT call any local search, retrieval, datasource, or file-reading tool and do NOT wait for more evidence.${this.fastPhaseWebHint()} ${CALCULATOR_FAST_PHASE_RULE} ${this.askUserException()}` +
 			`If the query is answerable from general knowledge alone, answer directly.\n\n` +
 			`Formatting and content rules for the answer:\n` +
 			`- Unless the user explicitly requests a different format or length, provide the core answer to the user's question in at most 5 bullet points. If additional explanation is necessary, append it after the bullet points.\n` +
@@ -3643,6 +3743,7 @@ export class AutoRAGAgent {
 			`How to handle it:\n` +
 			`- Answer from your own knowledge when that reliably settles the question: stable general knowledge, a definition, simple reasoning, or small talk.\n` +
 			`- Look it up first when the answer depends on the user's own records (their files, chats, mail, notes, calendar, or history) or on facts that may be recent, specific, or changed${lookupHint}.\n` +
+			`- Any arithmetic, date, time, or time zone question: ${CALCULATOR_PROMPT_RULE}\n` +
 			`- Otherwise carry the task out with the tools.\n\n` +
 			`Rules for your reply:\n` +
 			`- ${ANSWER_LEAD_RULE}\n` +
@@ -3755,7 +3856,7 @@ export class AutoRAGAgent {
 			(jikjiStartingPoints.length === 0
 				? ""
 				: `Jikji's file discovery found these local files for the query. They are unverified candidates, not evidence: start exploring from them.\n${jikjiStartingPoints.map((path) => `- ${path}`).join("\n")}\n\n`) +
-			`Now verify it rigorously. ${this.discoveryHint((tools) => `Actively use ${tools} when discovering or exploring local files and folders. `)}Check important claims against source files with bash when needed, correct anything wrong or unsupported, fill gaps with retrieval tools, and resolve conflicts and freshness. ${this.webFallbackHint()}\n\n` +
+			`Now verify it rigorously. ${this.discoveryHint((tools) => `Actively use ${tools} when discovering or exploring local files and folders. `)}Check important claims against source files with bash when needed, correct anything wrong or unsupported, fill gaps with retrieval tools, and resolve conflicts and freshness. ${this.webFallbackHint()} ${CALCULATOR_PROMPT_RULE} Recompute every number or date in the first answer with it when you have not already.\n\n` +
 			`${answerRules}\n\n` +
 			`Do not use broad grep/find or recursive filesystem scans: only inspect a path or narrow neighborhood surfaced by retrieval, and only when evidence clearly points there. ` +
 			`Avoid spinning repeated near-identical queries against the same datasource; once additional attempts stop surfacing new evidence, conclude from the evidence available. ` +
@@ -3788,6 +3889,7 @@ export class AutoRAGAgent {
 			`- ${ANSWER_RELEVANCE_RULE}\n` +
 			`- ${ANSWER_UNCONFIRMED_FINAL_RULE}\n` +
 			`- ${ANSWER_UNCERTAINTY_RULE}\n\n` +
+			`${CALCULATOR_PROMPT_RULE}\n` +
 			`${this.discoveryHint((tools) => `When exploring local files and folders, actively use ${tools} rather than exploratory bash commands. `)}Do not use broad grep/find or recursive filesystem scans: only inspect a path or narrow neighborhood surfaced by retrieval, and only when evidence clearly points there. ` +
 			`Avoid spinning repeated near-identical queries against the same datasource; once additional attempts stop surfacing new evidence, conclude from the evidence available. ` +
 			`When finished, reply with the final answer and no tool call: that last reply is what the user receives, so keep progress notes out of it.`
@@ -3827,14 +3929,89 @@ export class AutoRAGAgent {
 			inFlight: true,
 			lastStartedAt: startedAt,
 		};
+		// Syncs run alongside parsing, so a refresh that fails must stop the one in flight rather than leave it
+		// running unattended; a caller's abort reaches it the same way.
+		const syncAbort = new AbortController();
+		const forwardAbort = (): void => syncAbort.abort(signal?.reason);
+		signal?.addEventListener("abort", forwardAbort, { once: true });
+		let minSyncPipeline: PipelinedSync | undefined;
 		try {
 			writeRefreshProgress(this.workspaceProjectRoot, progress);
+			// MinSync indexes the parsed mirrors. When both run, the first committed batch starts a sync while
+			// parsing carries on, and each later sync covers every batch committed meanwhile: the first batch is
+			// searchable long before the last, and a large corpus costs a few syncs instead of one per batch.
+			const batchedMinSync = needsParsed && wants("minsync");
+			const minSyncBatches: MinSyncSyncResult[] = [];
+			const minSyncBatchFailures: SearchDocumentDiagnostic[] = [];
+			// Cumulative offsets keep the persisted MinSync counters monotonic
+			// across syncs instead of restarting at zero per sync.
+			let minSyncSyncedBase = 0;
+			let minSyncTotalBase = 0;
+			minSyncPipeline = batchedMinSync
+				? new PipelinedSync({
+						sync: async ({ index, virtualPaths }) => {
+							syncAbort.signal.throwIfAborted();
+							let syncTotal = minSyncTotalBase;
+							const result = await this.syncMinSync(
+								force && index === 1,
+								syncAbort.signal,
+								(minsyncProgress) => {
+									syncTotal = minSyncTotalBase + minsyncProgress.total;
+									progress = updateRefreshProgress(progress, {
+										minsync: { synced: minSyncSyncedBase + minsyncProgress.processed, total: syncTotal },
+									});
+									writeRefreshProgress(this.workspaceProjectRoot, progress);
+									emitProgress({
+										phase: "minsync",
+										processed: minSyncSyncedBase + minsyncProgress.processed,
+										total: syncTotal,
+									});
+								},
+							);
+							minSyncBatches.push(result);
+							// Every sync indexes the whole staged mirror, so a successful one also
+							// indexes the files of any earlier failed sync: only failures after
+							// the last success are still real. A failed sync's content stays
+							// staged, so a later sync retries it and the pipeline moves on.
+							if (result.ok) minSyncBatchFailures.length = 0;
+							else if (result.reason !== "lock-held") {
+								for (const virtualPath of virtualPaths) {
+									minSyncBatchFailures.push({
+										code: "minsync-sync-failed",
+										severity: "warning",
+										message: `This file stayed at its previous index entry: the sync that covered it could not index it and the next sync retries it. ${sanitizeDiagnosticMessage(result.diagnostic?.message ?? result.reason ?? "MinSync sync failed.")}`,
+										source: virtualPath,
+									});
+								}
+							}
+							minSyncSyncedBase = syncTotal;
+							minSyncTotalBase = syncTotal;
+							// A held lock means another sync owns the index: stop the pipeline instead
+							// of failing every remaining sync against the same lock.
+							return !result.ok && result.reason === "lock-held" ? { stop: true } : undefined;
+						},
+					})
+				: undefined;
+			const pipeline = minSyncPipeline;
 			const summary = needsParsed
 				? await this.syncParsedMirrors(force, {
 						...(opts?.retrySkipped === true ? { retrySkipped: true } : {}),
 						...(signal === undefined ? {} : { signal }),
+						...(pipeline === undefined
+							? {}
+							: {
+									onBatch: (batch: ParsedMirrorBatch): Promise<ParsedMirrorBatchOutcome | undefined> => {
+										if (batch.final) {
+											// Parsing is over: what is left is waiting for the last sync.
+											progress = updateRefreshProgress(progress, { phase: "minsync" });
+											writeRefreshProgress(this.workspaceProjectRoot, progress);
+										}
+										return pipeline.batch(batch);
+									},
+								}),
 						onProgress: (parsedProgress) => {
 							progress = updateRefreshProgress(progress, {
+								phase: "parsed",
 								sourceFiles: { total: parsedProgress.total },
 								parsedCounts: {
 									scanned: parsedProgress.processed,
@@ -3863,13 +4040,7 @@ export class AutoRAGAgent {
 				: await this.scanMirrorStaleness();
 			signal?.throwIfAborted();
 			progress = updateRefreshProgress(progress, {
-				phase: wants("minsync")
-					? "minsync"
-					: wants("datasources")
-						? "datasources"
-						: wants("jikji")
-							? "jikji"
-							: "finalizing",
+				phase: wants("datasources") ? "datasources" : wants("jikji") ? "jikji" : "finalizing",
 				sourceFiles: { total: summary.scanned },
 				parsedCounts: {
 					scanned: summary.scanned,
@@ -3879,26 +4050,12 @@ export class AutoRAGAgent {
 				},
 			});
 			writeRefreshProgress(this.workspaceProjectRoot, progress);
-			const minsync = wants("minsync")
-				? await this.syncMinSync(force, signal, (minsyncProgress: MinSyncSyncProgress) => {
-						progress = updateRefreshProgress(progress, {
-							minsync: { synced: minsyncProgress.processed, total: minsyncProgress.total },
-						});
-						writeRefreshProgress(this.workspaceProjectRoot, progress);
-						emitProgress({
-							phase: "minsync",
-							processed: minsyncProgress.processed,
-							total: minsyncProgress.total,
-						});
-					})
-				: undefined;
-			signal?.throwIfAborted();
+			const minsync = batchedMinSync ? aggregateMinSyncBatches(minSyncBatches) : undefined;
 			if (minsync !== undefined) {
 				progress = updateRefreshProgress(progress, {
-					phase: wants("datasources") ? "datasources" : wants("jikji") ? "jikji" : "finalizing",
 					minsync: {
-						...progress.minsync,
 						synced: minsync.synced,
+						total: Math.max(minSyncTotalBase, minsync.synced),
 						...(minsync.filesFailed !== undefined && minsync.filesFailed.length > 0
 							? { filesSkipped: minsync.filesFailed.length }
 							: {}),
@@ -3984,7 +4141,7 @@ export class AutoRAGAgent {
 				finishedAt: new Date().toISOString(),
 			});
 			writeRefreshProgress(this.workspaceProjectRoot, progress);
-			const minsyncDiagnostics = minSyncRefreshDiagnostics(minsync);
+			const minsyncDiagnostics = [...minSyncRefreshDiagnostics(minsync), ...minSyncBatchFailures];
 			const publicMinsync: AutoRAGMinSyncRefreshResult | undefined = minsync
 				? {
 						ok: minsync.ok,
@@ -4024,6 +4181,7 @@ export class AutoRAGAgent {
 				...(fsearch !== undefined ? { fsearch } : {}),
 			};
 		} catch (error) {
+			syncAbort.abort(error);
 			this.refreshState = {
 				...this.refreshState,
 				lastOutcome: "failed",
@@ -4042,6 +4200,8 @@ export class AutoRAGAgent {
 			writeRefreshProgress(this.workspaceProjectRoot, progress);
 			throw error;
 		} finally {
+			signal?.removeEventListener("abort", forwardAbort);
+			await minSyncPipeline?.settle();
 			this.refreshState = {
 				...this.refreshState,
 				inFlight: false,
@@ -4249,18 +4409,46 @@ export class AutoRAGAgent {
 		this.refreshState = { ...this.refreshState, watchLimited: false, watchFailed: false };
 		const dirs = this.searchPaths.map((searchPath) => resolve(searchPath));
 		const watcherFactory = options.watcherFactory ?? this.defaultWatcherFactory();
-		return createWatchRefresh({
+		const recheckMs = options.scheduleRecheckMs ?? 60_000;
+		let stopped = false;
+		let recheckTimer: ReturnType<typeof setInterval> | undefined;
+		// Changes seen while the schedule is closed are not lost: one deferred refresh runs when it opens.
+		const runWhenAllowed = async (): Promise<void> => {
+			if (stopped) return;
+			if (!(await this.indexScheduleDecision(options.schedule)).allowed) {
+				if (recheckTimer === undefined) {
+					recheckTimer = setInterval(() => {
+						void runWhenAllowed().catch(() => {});
+					}, recheckMs);
+					recheckTimer.unref();
+				}
+				return;
+			}
+			if (recheckTimer !== undefined) {
+				clearInterval(recheckTimer);
+				recheckTimer = undefined;
+			}
+			await this.refresh(options.force ?? false);
+		};
+		const handle = createWatchRefresh({
 			dirs,
 			debounceMs: options.debounceMs ?? 200,
 			maxWatchers: options.maxWatchers ?? 64,
 			watcherFactory,
-			runRefresh: async () => {
-				await this.refresh(options.force ?? false);
-			},
+			runRefresh: runWhenAllowed,
 			onLimit: () => {
 				this.refreshState = { ...this.refreshState, watchLimited: true };
 			},
 		});
+		return {
+			trigger: () => handle.trigger(),
+			stop(): void {
+				stopped = true;
+				if (recheckTimer !== undefined) clearInterval(recheckTimer);
+				recheckTimer = undefined;
+				handle.stop();
+			},
+		};
 	}
 
 	private defaultWatcherFactory(): WatcherFactory {
@@ -4282,7 +4470,7 @@ export class AutoRAGAgent {
 
 	async syncParsedMirrors(
 		force = false,
-		options: Pick<ParsedMirrorSyncOptions, "signal" | "onProgress" | "retrySkipped"> = {},
+		options: Pick<ParsedMirrorSyncOptions, "signal" | "onProgress" | "retrySkipped" | "onBatch" | "batchSize"> = {},
 	): Promise<ParsedMirrorSyncResult> {
 		const duplicateFilter = await this.exactDuplicateExclusions();
 		return syncParsedMirrors({
@@ -4304,20 +4492,25 @@ export class AutoRAGAgent {
 	}
 
 	/**
-	 * Lightweight stat-only staleness scan used when `refresh` is called with
+	 * Lightweight stat-only staleness scan used by status and when `refresh` is called with
 	 * methods that exclude parsed mirrors (e.g. only `datasources` or `jikji`).
 	 * Returns a zero-count `ParsedMirrorSyncResult` carrying fresh diagnostics
 	 * so the refresh result and status remain consistent.
+	 *
+	 * It never runs a duplicate scan: that reads every file under every root and costs seconds
+	 * on a large corpus. It reuses the exclusions the last refresh recorded instead, so it
+	 * differs from a fresh scan in two narrow ways: an indexed file that has since become an
+	 * older exact duplicate is not reported (the next refresh drops it), and a newly added file
+	 * that is already a duplicate is reported stale until the next refresh excludes it.
 	 */
 	private async scanMirrorStaleness(): Promise<ParsedMirrorSyncResult> {
-		const duplicateFilter = await this.exactDuplicateExclusions();
 		const diagnostics = await detectMirrorStaleness({
 			...this.refreshLimits,
 			root: this.workspaceProjectRoot,
 			searchPaths: this.searchPaths,
 			minSyncBinaryPath: this.minSyncBinaryPath,
 			parserOptions: this.parserOptions,
-			excludeSourcePaths: duplicateFilter.excluded,
+			reuseRecordedDuplicateExclusions: true,
 			userExcludedSourcePaths: new Set(this.excludePaths),
 			cloudProbe: this.cloudProbe,
 		});
@@ -4347,9 +4540,9 @@ export class AutoRAGAgent {
 		// same hash groups as the scanned, non-cloud copies.
 		const fingerprints = cloudFingerprintExclusions(loadCloudFingerprints(this.workspaceProjectRoot));
 		for (const searchPath of this.searchPaths) {
-			const target = planDupeyScans([searchPath], cloudRoots).targets[0];
+			const scope = cloudScope(searchPath, cloudRoots);
 			let scan: DupeyScanResult;
-			if (target === undefined) {
+			if (scope.insideCloudRoot) {
 				// `dupey scan` opens file contents, which would re-download every released placeholder (and
 				// re-read every network file), so such a search root is never scanned. Its cloud and network
 				// files still join the merge through their stored fingerprints, so an exact duplicate among
@@ -4359,7 +4552,9 @@ export class AutoRAGAgent {
 				try {
 					scan = await scanWithDupey(searchPath, {
 						...(this.dupeyOptions || {}),
-						...(target.excludeDirs.length === 0 ? {} : { excludeDirs: target.excludeDirs }),
+						...(scope.nestedCloudRoots.length === 0
+							? {}
+							: { excludeDirs: scope.nestedCloudRoots.map((root) => basename(root.path)) }),
 					});
 				} catch (error) {
 					if (!(error instanceof DupeyCliError)) throw error;
@@ -4737,6 +4932,7 @@ export class AutoRAGAgent {
 		const merged = this.merger.merge(filteredByMethod, {
 			topK: options.topK ?? this.limits.mergedEvidenceCeiling,
 			dedup: true,
+			...(this.limits.recordCut === undefined ? {} : { recordCut: this.limits.recordCut }),
 		});
 		const results = await this.applyRerank(query, merged, diagnostics);
 		return { results, diagnostics };
@@ -4788,6 +4984,7 @@ export class AutoRAGAgent {
 		const merged = this.merger.merge(filteredByMethod, {
 			topK: options.topK ?? this.limits.singleDatasourceTopK,
 			dedup: true,
+			...(this.limits.recordCut === undefined ? {} : { recordCut: this.limits.recordCut }),
 		});
 		// Single-datasource retrieval is intentionally NOT model-reranked: the
 		// caller already narrowed to one connection, so the merged order is kept.
@@ -4809,6 +5006,7 @@ export class AutoRAGAgent {
 		if (this.retrievalEngine === undefined) {
 			this.retrievalEngine = new RetrievalEngine({
 				defaultTopK: this.limits.mergedEvidenceCeiling,
+				...(this.limits.recordCut === undefined ? {} : { recordCut: this.limits.recordCut }),
 				...(this.reranker !== undefined ? { reranker: this.reranker } : {}),
 				...(this.rerankTopN !== undefined ? { rerankTopN: this.rerankTopN } : {}),
 				datasourceIds: () => this.listDatasources().map((entry) => entry.datasourceId),
@@ -5164,6 +5362,18 @@ function fsearchRefreshDiagnostics(fsearch: AutoRAGFSearchRefreshResult | undefi
 			source: "fsearch",
 		},
 	];
+}
+
+/**
+ * Fold the per-batch MinSync results of one refresh into the single result the
+ * public shape and `getRefreshStatus` expect. Every sync indexes the whole
+ * staged mirror, so the last batch's result describes the index (its status,
+ * staging exclusions and skipped files); only `synced` sums across batches.
+ */
+function aggregateMinSyncBatches(batches: readonly MinSyncSyncResult[]): MinSyncSyncResult | undefined {
+	const last = batches.at(-1);
+	if (last === undefined) return undefined;
+	return { ...last, synced: batches.reduce((total, batch) => total + batch.synced, 0) };
 }
 
 /**

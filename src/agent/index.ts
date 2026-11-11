@@ -1,6 +1,14 @@
 export type { AutoRAGAgentOptions, AutoRefreshOptions } from "./agent.ts";
 export { AutoRAGAgent } from "./agent.ts";
 export {
+	CALCULATOR_FAST_PHASE_RULE,
+	CALCULATOR_PROMPT_RULE,
+	CALCULATOR_TOOL_NAME,
+	type CalculatorDetails,
+	type CalculatorToolOptions,
+	createCalculatorTool,
+} from "./calculator-tool.ts";
+export {
 	CONVERT_FILES_TOOL_NAME,
 	type ConvertFilesDetails,
 	createConvertFilesTool,
@@ -87,5 +95,5 @@ export {
 	type SingleDatasourceToolSpec,
 	singleDatasourceToolName,
 } from "./search-single-datasource-tool.ts";
-export { SLLM_DECISION_TOOL_NAME, SllmDecisionBackend, type SllmDecisionModel } from "./sllm-decision.ts";
+export { SLLM_BACKEND, SLLM_DECISION_TOOL_NAME, SllmDecisionBackend, type SllmDecisionModel } from "./sllm-decision.ts";
 export { buildSystemPrompt, type SystemPromptConfig } from "./system-prompt.ts";

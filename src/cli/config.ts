@@ -5,6 +5,7 @@ import type { Api, Model } from "@earendil-works/pi-ai";
 import { findEnvKeys, getEnvApiKey } from "@earendil-works/pi-ai/compat";
 import { getAgentDir, ModelRuntime, SettingsManager } from "@earendil-works/pi-coding-agent";
 import type { AutoRAGAgentOptions, AutoRAGRefreshLimits, AutoRAGRetrievalLimits } from "../agent/agent.ts";
+import { type IndexSchedule, validateIndexSchedule } from "../agent/index-schedule.ts";
 import type { JevToolOptions } from "../agent/jev-extension.ts";
 import {
 	type LoadLocalAutoRAGModelOptions,
@@ -19,7 +20,7 @@ import {
 } from "../agent/permission-gate.ts";
 import type { DecompositionModel } from "../agent/query-decomposition.ts";
 import type { SearchDocumentDiagnostic } from "../agent/search-documents.ts";
-import type { SllmDecisionModel } from "../agent/sllm-decision.ts";
+import { SLLM_BACKEND, type SllmDecisionModel } from "../agent/sllm-decision.ts";
 import {
 	DAZZI_INPUT_LIMITS,
 	PROVIDER_ID as DAZZI_PROVIDER_ID,
@@ -37,6 +38,7 @@ import { acquireFileLock, type FileLockHandle } from "../filesystem/file-lock.ts
 import { LanguageError, type LanguageTag, normalizeLanguages } from "../language.ts";
 import type { EnsureMinSyncBinaryOptions, MinSyncEmbedderConfig } from "../minsync/index.ts";
 import { renameWithRetry } from "../mirror/atomic-write.ts";
+import { MAX_FUSION_DEPTH, MAX_PER_RECORD, type RecordCutOptions } from "../retrieval/record-cut.ts";
 import {
 	DEFAULT_RERANK_PROVIDER,
 	DEFAULT_RERANK_TOP_N,
@@ -111,8 +113,9 @@ export interface WebSearchCliConfig {
 }
 
 /**
- * Jev decision-model config. The decision model is required: an absent
- * section or `{}` uses {@link defaultJevBackend}, and there is no opt-out.
+ * Decision-model config. The decision model is required: an absent section or `{}` uses
+ * {@link defaultJevBackend}, and there is no opt-out. It is either Jev (`backend` names `dazzi` or a pi
+ * provider with decision models) or the small chat LLM (`backend: "sllm"`, see {@link JevCliConfig.sllm}).
  * Secrets never appear here: a pi provider's credential comes from its
  * environment variable (`OPENROUTER_API_KEY`, `OPENAI_API_KEY`, ...) or pi's
  * `auth.json`, and the hosted Dazzi Models `dazzi` backend uses the credential
@@ -122,21 +125,24 @@ export interface JevCliConfig {
 	/**
 	 * `dazzi`, or a pi provider with decision models: `openrouter`, `openai`, `typesafe`,
 	 * `vercel-ai-gateway`, `cloudflare-workers-ai`, or `opencode` (`autorag models list --decision`).
+	 * `sllm` decides with the small chat LLM ({@link JevCliConfig.sllm}) and never calls Jev.
 	 */
 	backend?: string;
-	/** Decision model id within the backend, e.g. `openai/gpt-6-luna-decisions` on OpenRouter. */
+	/** Jev model id within the backend, e.g. `openai/gpt-6-luna-decisions` on OpenRouter. Not valid with `backend: "sllm"`. */
 	model?: string;
 	/** Escalate verdicts below this confidence (0-1). Default: per-source thresholds. */
 	confidenceThreshold?: number;
 	/**
-	 * Small chat LLM the session moves to when Jev is unavailable. Absent or `{}` uses the
-	 * question-decomposition model; `false` turns the fallback off.
+	 * The small chat LLM (sLLM). It is the decision model when `backend` is `sllm`, and otherwise the
+	 * fallback a session moves to when Jev is unavailable. Absent or `{}` uses the question-decomposition model.
 	 */
-	fallback?: JevFallbackConfig | false;
+	sllm?: JevSllmConfig;
+	/** Move to the sLLM when Jev is unavailable. Default true; `false` fails the session instead. Ignored with `backend: "sllm"`. */
+	fallback?: boolean;
 }
 
-/** The sLLM fallback; same model reference shape and auth rules as the top-level `model`. */
-export interface JevFallbackConfig {
+/** The sLLM; same model reference shape and auth rules as the top-level `model`. */
+export interface JevSllmConfig {
 	model?: AgentModelConfig;
 }
 
@@ -798,6 +804,17 @@ const LIMITS_ALLOWLIST: Record<string, true> = {
 	minSyncScopedQueryTopK: true,
 	toolDescriptionInstanceScopes: true,
 	prefetch: true,
+	recordCut: true,
+};
+
+const LIMITS_RECORD_CUT_ALLOWLIST: Record<string, true> = {
+	enabled: true,
+	depth: true,
+	newRecordShare: true,
+	perRecordFloor: true,
+	perRecordDivisor: true,
+	resultChars: true,
+	minReadChars: true,
 };
 
 const LIMITS_PREFETCH_ALLOWLIST: Record<string, true> = {
@@ -815,6 +832,56 @@ function positiveLimitField(record: Record<string, unknown>, key: string, path: 
 		throw new ConfigError(`${path}.${key} must be a positive integer`);
 	}
 	return value;
+}
+
+function boundedIntegerField(
+	record: Record<string, unknown>,
+	key: string,
+	path: string,
+	low: number,
+	high: number,
+): number | undefined {
+	const value = record[key];
+	if (value === undefined) return undefined;
+	if (typeof value !== "number" || !Number.isInteger(value) || value < low || value > high) {
+		throw new ConfigError(`${path}.${key} must be an integer from ${low} to ${high}`);
+	}
+	return value;
+}
+
+/** Validate `limits.recordCut`: the switch plus bounded tuning. Unknown keys fail, like every other limits field. */
+function normalizeRecordCutConfig(raw: unknown): RecordCutOptions {
+	if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+		throw new ConfigError("limits.recordCut must be an object");
+	}
+	const record = raw as Record<string, unknown>;
+	for (const key of Object.keys(record)) {
+		if (!Object.hasOwn(LIMITS_RECORD_CUT_ALLOWLIST, key)) {
+			throw new ConfigError(`limits.recordCut.${key} is not a recognized field`);
+		}
+	}
+	const path = "limits.recordCut";
+	if (record.enabled !== undefined && typeof record.enabled !== "boolean") {
+		throw new ConfigError(`${path}.enabled must be a boolean`);
+	}
+	const share = record.newRecordShare;
+	if (share !== undefined && (typeof share !== "number" || !(share >= 0 && share <= 1))) {
+		throw new ConfigError(`${path}.newRecordShare must be a number from 0 to 1`);
+	}
+	const depth = boundedIntegerField(record, "depth", path, 1, MAX_FUSION_DEPTH);
+	const perRecordFloor = boundedIntegerField(record, "perRecordFloor", path, 1, MAX_PER_RECORD);
+	const perRecordDivisor = boundedIntegerField(record, "perRecordDivisor", path, 1, MAX_PER_RECORD);
+	const resultChars = positiveLimitField(record, "resultChars", path);
+	const minReadChars = positiveLimitField(record, "minReadChars", path);
+	return {
+		...(record.enabled !== undefined ? { enabled: record.enabled as boolean } : {}),
+		...(depth !== undefined ? { depth } : {}),
+		...(share !== undefined ? { newRecordShare: share as number } : {}),
+		...(perRecordFloor !== undefined ? { perRecordFloor } : {}),
+		...(perRecordDivisor !== undefined ? { perRecordDivisor } : {}),
+		...(resultChars !== undefined ? { resultChars } : {}),
+		...(minReadChars !== undefined ? { minReadChars } : {}),
+	};
 }
 
 /** Validate the `limits` section and map it onto the agent option. */
@@ -856,6 +923,7 @@ export function normalizeLimitsConfig(raw: unknown): AutoRAGRetrievalLimits {
 			...(sectionLimit !== undefined ? { sectionLimit } : {}),
 		};
 	}
+	const recordCut = record.recordCut === undefined ? undefined : normalizeRecordCutConfig(record.recordCut);
 	return {
 		...(mergedEvidenceCeiling !== undefined ? { mergedEvidenceCeiling } : {}),
 		...(singleDatasourceTopK !== undefined ? { singleDatasourceTopK } : {}),
@@ -863,6 +931,7 @@ export function normalizeLimitsConfig(raw: unknown): AutoRAGRetrievalLimits {
 		...(minSyncScopedQueryTopK !== undefined ? { minSyncScopedQueryTopK } : {}),
 		...(toolDescriptionInstanceScopes !== undefined ? { toolDescriptionInstanceScopes } : {}),
 		...(prefetch !== undefined ? { prefetch } : {}),
+		...(recordCut !== undefined ? { recordCut } : {}),
 	};
 }
 
@@ -875,6 +944,7 @@ const REFRESH_ALLOWLIST: Record<string, true> = {
 	cloudMaxBytes: true,
 	cloudEvictAfterParse: true,
 	cloudEvictRetries: true,
+	schedule: true,
 };
 
 /** Validate the `refresh` section and map it onto the agent option. */
@@ -921,7 +991,16 @@ export function normalizeRefreshConfig(raw: unknown): AutoRAGRefreshLimits {
 	) {
 		throw new ConfigError("refresh.cloudEvictRetries must be a non-negative integer");
 	}
+	let schedule: IndexSchedule | undefined;
+	if (record.schedule !== undefined) {
+		try {
+			schedule = validateIndexSchedule(record.schedule);
+		} catch (error) {
+			throw new ConfigError((error as Error).message);
+		}
+	}
 	return {
+		...(schedule !== undefined ? { schedule } : {}),
 		...(maxDeleteRatio !== undefined ? { maxDeleteRatio } : {}),
 		...(maxScannedEntries !== undefined ? { maxScannedEntries } : {}),
 		...(maxDepth !== undefined ? { maxDepth } : {}),
@@ -1100,11 +1179,11 @@ const JEV_CONFIG_FIELDS: Record<string, true> = {
 	backend: true,
 	model: true,
 	confidenceThreshold: true,
+	sllm: true,
 	fallback: true,
 };
 
-const JEV_REQUIRED_MESSAGE =
-	"AutoRAG requires its decision model (Jev) and cannot run without it; remove the setting, or point jev.backend at a backend you can reach";
+const JEV_REQUIRED_MESSAGE = `AutoRAG requires its decision model (Jev, or the sLLM with jev.backend "${SLLM_BACKEND}") and cannot run without it; remove the setting, or point jev.backend at a backend you can reach`;
 
 /** Validate and normalize the `jev` config section. */
 export function normalizeJevConfig(raw: unknown): JevCliConfig {
@@ -1131,18 +1210,31 @@ export function normalizeJevConfig(raw: unknown): JevCliConfig {
 			throw new ConfigError('jev.backend "vercel" is now "vercel-ai-gateway", its pi provider id');
 		out.backend = backend;
 	}
+	if (record.sllm !== undefined) {
+		if (typeof record.sllm !== "object" || record.sllm === null || Array.isArray(record.sllm)) {
+			throw new ConfigError("jev.sllm must be an object");
+		}
+		const sllm = record.sllm as Record<string, unknown>;
+		for (const key of Object.keys(sllm)) {
+			if (key !== "model") throw new ConfigError(`jev.sllm.${key} is not a recognized field`);
+		}
+		const model = modelReference(sllm.model, "jev.sllm.model");
+		out.sllm = model === undefined ? {} : { model };
+	}
 	if (record.fallback !== undefined) {
-		if (record.fallback === false) {
-			out.fallback = false;
-		} else if (typeof record.fallback === "object" && record.fallback !== null && !Array.isArray(record.fallback)) {
-			const fallback = record.fallback as Record<string, unknown>;
-			for (const key of Object.keys(fallback)) {
-				if (key !== "model") throw new ConfigError(`jev.fallback.${key} is not a recognized field`);
-			}
-			const model = modelReference(fallback.model, "jev.fallback.model");
-			out.fallback = model === undefined ? {} : { model };
-		} else {
-			throw new ConfigError("jev.fallback must be an object or false");
+		if (typeof record.fallback !== "boolean") {
+			throw new ConfigError("jev.fallback must be true or false; name the fallback model in jev.sllm.model");
+		}
+		out.fallback = record.fallback;
+	}
+	if (out.backend === SLLM_BACKEND) {
+		if (record.model !== undefined) {
+			throw new ConfigError(`jev.model picks a Jev model; with jev.backend "${SLLM_BACKEND}" use jev.sllm.model`);
+		}
+		if (record.fallback !== undefined) {
+			throw new ConfigError(
+				`jev.fallback has no meaning with jev.backend "${SLLM_BACKEND}": the sLLM is the decision model`,
+			);
 		}
 	}
 	if (record.model !== undefined) {
@@ -1211,8 +1303,8 @@ export function normalizeQueryDecompositionConfig(raw: unknown): QueryDecomposit
  * OpenRouter).
  */
 function buildJevAgentOption(raw: JevCliConfig | undefined, agentDir: string | undefined): JevToolOptions {
-	// The sLLM fallback needs its credential resolved; resolveDecisionFallbackModel adds it.
-	const { fallback: _fallback, ...fields } = normalizeJevConfig(raw ?? {});
+	// The sLLM needs its credential resolved; resolveSllmDecisionModel adds it.
+	const { sllm: _sllm, fallback: _fallback, ...fields } = normalizeJevConfig(raw ?? {});
 	return { backend: defaultJevBackend(agentDir), ...fields };
 }
 
@@ -1428,7 +1520,7 @@ export function buildAgentOptions(config: CliConfig, agentDir?: string): Omit<Au
 	const embedder = createEmbedderFromConfig({ embedder: config.minSync?.embedder });
 	opts.embedder = embedder;
 	if (config.datasources !== undefined) {
-		const { skills, unknown } = buildDatasourceSkills(config.datasources, config.workspacePath, {
+		const { skills, unknown, retired } = buildDatasourceSkills(config.datasources, config.workspacePath, {
 			embedder,
 			discrawl: async () => discrawlEmbeddingRuntimeFor(await embedder.describeEndpoint()),
 			cliEndpoint: embeddingEndpointSource(embedder),
@@ -1440,16 +1532,26 @@ export function buildAgentOptions(config: CliConfig, agentDir?: string): Omit<Au
 			},
 		});
 		if (skills.length > 0) opts.datasourceSkills = skills;
+		const diagnostics: SearchDocumentDiagnostic[] = [];
+		if (retired.length > 0) {
+			const names = retired.map((name) => name.replace(/[^A-Za-z0-9._-]/g, "?").slice(0, 80));
+			diagnostics.push({
+				code: "retired-datasource-skill",
+				severity: "warning",
+				message: `Datasource config ignored because the Spotlight datasource was removed: ${names.join(", ")}. Delete these entries; use fsearch/mirror search (searchPaths) instead.`,
+				source: "datasources",
+			});
+		}
 		if (unknown.length > 0) {
-			const safeNames = unknown.map((name) => name.replace(/[^A-Za-z0-9._-]/g, "?").slice(0, 80));
-			const diagnostic: SearchDocumentDiagnostic = {
+			const names = unknown.map((name) => name.replace(/[^A-Za-z0-9._-]/g, "?").slice(0, 80));
+			diagnostics.push({
 				code: "unknown-datasource-skill",
 				severity: "warning",
-				message: `Unknown datasource skill(s) in config were skipped: ${safeNames.join(", ")}`,
+				message: `Unknown datasource skill(s) in config were skipped: ${names.join(", ")}`,
 				source: "datasources",
-			};
-			opts.startupDiagnostics = [diagnostic];
+			});
 		}
+		if (diagnostics.length > 0) opts.startupDiagnostics = diagnostics;
 	}
 	return opts as Omit<AutoRAGAgentOptions, "model">;
 }
@@ -1976,19 +2078,19 @@ export async function resolveQueryDecompositionModel(
 }
 
 /**
- * Resolve Jev's sLLM fallback and its credential through the same chain as the
- * agent model. An absent `jev.fallback` or `{}` uses the question-decomposition
- * model (its configured one, else {@link defaultQueryDecompositionModel});
- * `jev.fallback: false` returns undefined, so a session without Jev fails.
+ * Resolve the sLLM and its credential through the same chain as the agent model. `jev.sllm.model` names it;
+ * absent, it is the question-decomposition model (its configured one, else {@link defaultQueryDecompositionModel}).
+ * It decides in Jev's place when `jev.backend` is `sllm`, and otherwise is Jev's fallback; `jev.fallback: false`
+ * returns undefined for the fallback, so a session without Jev fails.
  */
-export async function resolveDecisionFallbackModel(
+export async function resolveSllmDecisionModel(
 	config: CliConfig,
 	options: ResolveAgentModelOptions = {},
 ): Promise<SllmDecisionModel | undefined> {
-	const fallback = config.jev?.fallback;
-	if (fallback === false) return undefined;
+	if (config.jev?.backend !== SLLM_BACKEND && config.jev?.fallback === false) return undefined;
 	const decomposition = config.queryDecomposition === false ? undefined : config.queryDecomposition?.model;
-	const reference = fallback?.model ?? decomposition ?? defaultQueryDecompositionModel(resolveAgentDir(options));
+	const reference =
+		config.jev?.sllm?.model ?? decomposition ?? defaultQueryDecompositionModel(resolveAgentDir(options));
 	const resolved = await resolveAgentModel({ ...config, model: reference }, options);
 	const apiKey = resolved.apiKey ?? resolved.providerApiKeys?.[resolved.model.provider];
 	return { model: resolved.model, ...(apiKey !== undefined ? { apiKey } : {}) };

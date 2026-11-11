@@ -207,6 +207,7 @@ AutoRAG Agent orchestrates five integrated subsystems:
    - **Jikji Find-First Discovery:** Local CLI-backed fast discovery answer packs.
    - **Everything File-Name Search (Windows):** The bundled [voidtools Everything](https://www.voidtools.com/) indexes file and folder names under your search roots so the agent finds files by name, extension, path, size, or date instantly (`everything_search`).
    - **FSearch File-Name Search (macOS/Linux):** [fsearch-cli](https://github.com/NomaDamas/fsearch-mac) (FSearch) keeps a live, per-workspace name index of your search roots so the agent finds files by name, extension, path, size, or date instantly (`fsearch_search`); without fsearch-cli installed it degrades to a slow filesystem walk.
+   - **Calculator:** Exact decimal arithmetic (40 significant digits, no floating-point drift) plus calendar and clock math — days between dates, date offsets with month-end clamping, weekdays, ISO weeks, business days with holidays, the current time, and DST-aware time zone conversion — through the `calculator` tool. The system prompt, including the fast-answer phase, orders the model to compute every number and date with it instead of in its head. It runs in-process, reads no files, and needs no configuration.
    - **Datasource Skills:** Federated retrieval across every configured external datasource.
 3. **Result Merger & Scope Narrowing:** Cross-method deduplication, score normalization, and ordinary query-scope narrowing.
 4. **Direct Evidence Reading (`bash`):** The agent directly opens and inspects promising files with `cat`, `grep`, or `find` to verify facts against ground truth.
@@ -285,6 +286,20 @@ autorag refresh
 # Check indexing health
 autorag status
 ```
+
+### Indexing only when you want it (power and time schedule)
+
+Background indexing (`autorag watch`, auto-refresh, the fs watcher) can be limited by power source and local time. An explicit `autorag refresh` is never gated.
+
+```jsonc
+// ~/.autorag/config.json
+{ "refresh": { "schedule": { "power": "ac", "windows": ["22:00-07:00"], "days": ["mon","tue","wed","thu","fri"] } } }
+```
+
+- `power`: `any` (default) or `ac` (index only while plugged in; pauses on battery). An unknown power source (desktop, probe failure) counts as plugged in.
+- `windows`: local `HH:MM-HH:MM`, start inclusive, end exclusive; `22:00-07:00` wraps midnight and belongs to the day it starts on.
+- `days`: `sun`..`sat`. Omit for every day.
+- `autorag watch --power ac --window 22:00-07:00 --days mon,tue` overrides the config. `--once` while closed prints `skipped` and exits 0; a long-running watcher defers changes and indexes once the schedule opens.
 
 ### Excluding files and folders
 
@@ -779,7 +794,7 @@ Deep dive into AutoRAG Agent's architecture, security, and integration guides:
 - **[Telegram Remote Control](docs/telegram.md):** Ask the librarian from a Telegram chat through a running `autorag tui --telegram` session: setup, commands, and keeping it alive.
 - **[Datasource Skills Reference](docs/datasource-skills.md):** Full configuration contracts, connection aliases, and connector options.
 - **[Apple Calendar & Reminders via EventKit MCP](docs/eventkit-mcp.md):** macOS-only: read Calendar events and Reminders (Google/iCloud/Exchange accounts already in Calendar.app) by running `mcp-server-apple-events` beside `autorag-mcp`. Live, read-only; not indexed.
-- **[Jev Decisions](docs/jev-decisions.md):** Jev, the **required** decision model, via Dazzi Models when signed in (OpenRouter otherwise), or any decision model in pi's catalog: `jev.backend` names the provider (`openrouter`, `openai`, `typesafe`, `vercel-ai-gateway`, `cloudflare-workers-ai`, `opencode`, or `dazzi`) and `jev.model` the model (e.g. `openai/gpt-6-luna-decisions` on OpenRouter, `gpt-6-luna` on OpenAI); `autorag models list --decision` lists them. The first question of every session checks that it answers; when it cannot, the session moves to an sLLM fallback (the decomposition model by default, with a `decision-model-fallback` warning), and when that fails too it stops with `decision-model-unavailable` (exit 3 for `autorag search`). It routes each question to local search (everything needing more information, including the public web when the question needs recent public facts), `extra` (a knowledge answer or any other action such as committing code; one turn with every tool, no retrieval), `organize` (move, rename, convert, or sort files and folders), or its own `config` branch, and keeps a weakly-favored non-local verdict on local search through a 0.75 confidence floor. It also splits multi-part questions into up to five parallel searches (`dazzi/openai/gpt-6-luna` when signed in, else `openrouter/qwen/qwen3.7-flash`), picks which registered datasources to search before the fast answer, and ends the run after the fast answer when that answer is complete.
+- **[Jev Decisions](docs/jev-decisions.md):** Jev, the **required** decision model, via Dazzi Models when signed in (OpenRouter otherwise), or any decision model in pi's catalog: `jev.backend` names the provider (`openrouter`, `openai`, `typesafe`, `vercel-ai-gateway`, `cloudflare-workers-ai`, `opencode`, or `dazzi`) and `jev.model` the model (e.g. `openai/gpt-6-luna-decisions` on OpenRouter, `gpt-6-luna` on OpenAI); `autorag models list --decision` lists them. The first question of every session checks that it answers; when it cannot, the session moves to an sLLM fallback (`jev.sllm.model`, the decomposition model by default, with a `decision-model-fallback` warning), and `jev.backend: "sllm"` makes that small chat LLM the decision model with no Jev call, and when that fails too it stops with `decision-model-unavailable` (exit 3 for `autorag search`). It routes each question to local search (everything needing more information, including the public web when the question needs recent public facts), `extra` (a knowledge answer or any other action such as committing code; one turn with every tool, no retrieval), `organize` (move, rename, convert, or sort files and folders), or its own `config` branch, and keeps a weakly-favored non-local verdict on local search through a 0.75 confidence floor. It also splits multi-part questions into up to five parallel searches (`dazzi/openai/gpt-6-luna` when signed in, else `openrouter/qwen/qwen3.7-flash`), picks which registered datasources to search before the fast answer, and ends the run after the fast answer when that answer is complete.
 - **[Manual QA & Datasource Test Harnesses](docs/manual-qa-datasources.md):** Real-world testing guides for Discord, KakaoTalk, Slack, Notion, and email.
 - **[Supply Chain Security & License Audits](docs/supply-chain.md):** Software bill of materials (SBOM) and dependency gate policies.
 - **[Competitive Landscape Study](docs/competitive-landscape-2026-09.md):** In-depth analysis of why in-place federation outperforms centralized RAG.

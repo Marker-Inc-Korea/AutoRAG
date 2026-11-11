@@ -140,7 +140,7 @@ export class WombatSkill implements DatasourceSkill {
 		return {
 			name: "datasource-wombat",
 			description:
-				"Search past coding-agent conversations (Codex, Claude Code, OpenCode, pi, omp): what was asked, decided, or built.",
+				"Search past coding-agent conversations (Codex, Claude Code, OpenCode, pi, omp): what was asked, decided, or built. Each hit names its session. Load this skill to open that session's full conversation or its original log with the tool calls that the search does not index.",
 			content: [
 				"# wombat coding-agent session datasource",
 				"",
@@ -154,10 +154,10 @@ export class WombatSkill implements DatasourceSkill {
 				scopes,
 				"",
 				"The selectable retrieval modes are keyword (SPLADE), semantic, and hybrid. Scope arguments can only narrow trusted access. Source identifiers remain opaque and hierarchical.",
-				"Each result carries `agent`, `title`, `startedAt`, `startTurn`/`endTurn` and `sessionKey` (`<agent>:<session id>`).",
+				"Every result starts with a label line, `[<sessionKey> | turns A-B | date | title | project]`, followed by the snippet. `sessionKey` is `<agent>:<session id>`.",
 				"",
 				"## Native CLI",
-				"The external `wombat` CLI owns the mirror, the index and the session catalog. To read more than a snippet, call it through `bash` with the result's `sessionKey`:",
+				"The external `wombat` CLI owns the mirror, the index and the session catalog. To read more than a snippet, call it through `bash` with the `sessionKey` from the result's label:",
 				"- `wombat show <sessionKey> [--turn N]`: the full cleaned conversation, or one turn.",
 				"- `wombat trace <sessionKey> --turn N --context K`: the original session log around that turn, including the tool calls and outputs that the index leaves out.",
 				"- `wombat chunk context <chunk id> --json`: the turns before and after a result.",

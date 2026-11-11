@@ -88,6 +88,14 @@ The rerank client appends `/rerank` to the base URL, so an explicit
     warning on the response and a visible notice in the TUI, never shown to the
     model) and the baseline falls back to **retrieval order** cut to `topN`,
     taking ranks round-robin across the sources.
+    The MinSync part of that pool is the **union of two separate queries**, dense
+    vectors and SPLADE sparse, each asked for `limits.prefetch.minSyncTopK`
+    chunks (default 100), interleaved by rank with the repeated chunk kept once.
+    MinSync's own `hybrid` mode would fuse the two by reciprocal rank fusion and
+    cut the list before the reranker sees it. If one channel fails, a
+    `retrieval-method-failed` warning (source `minsync` or `minsync-sparse`)
+    names the cause and the other channel's chunks still go to the reranker. A
+    sparse-only index (`embedder: none`) has one channel, which already is SPLADE.
   - **Reranking off** (the default): nothing is reordered and the pool is not
     widened. Each source (Jikji, MinSync, and every selected datasource) is asked
     for its **own top 10** and shows those 10 in its own section, in retrieval
