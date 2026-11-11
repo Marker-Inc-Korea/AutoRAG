@@ -26,7 +26,7 @@ Call `autorag.status` and `autorag.datasources.list` first. If a config exists,
 inspect only `searchPaths`, `workspacePath`, and the datasource names, keep it,
 and jump to step 4.
 
-`CLI` below means: `npx -y -p @autorag/librarian@2.13.10 autorag`.
+`CLI` below means: `npx -y -p @autorag/librarian@2.13.11 autorag`.
 
 ## 1. Folders: index the documents that matter, not everything
 

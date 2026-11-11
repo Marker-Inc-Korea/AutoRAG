@@ -43,7 +43,7 @@ python3 "${HERMES_SKILL_DIR}/scripts/autorag_schedule.py" duplicates \
 
 The helper prints JSON. If it exits non-zero, show the user its `error` and stop; do not retry with guessed flags.
 If it says no AutoRAG CLI was found, run the plugin's search pane once (it installs a resident copy) or pass
-`--autorag-cli npx -y -p @autorag/librarian@2.13.10 autorag`.
+`--autorag-cli npx -y -p @autorag/librarian@2.13.11 autorag`.
 
 ## Check, list, remove
 
