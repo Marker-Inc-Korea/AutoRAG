@@ -44,7 +44,11 @@ jobs:
             # pi-coding-agent's grep tool needs ripgrep; preinstall it so tests
             # don't depend on its on-demand binary download.
             - name: Install ripgrep
-              run: sudo apt-get update && sudo apt-get install -y ripgrep
+              run: |
+                  # Match CI's official mirrors instead of the runner's Azure mirror.
+                  printf '%s\n' 'https://archive.ubuntu.com/ubuntu' 'https://security.ubuntu.com/ubuntu' | sudo tee /etc/apt/apt-mirrors.txt
+                  sudo apt-get update
+                  sudo apt-get install -y ripgrep
 
             - uses: oven-sh/setup-bun@v2
               with:

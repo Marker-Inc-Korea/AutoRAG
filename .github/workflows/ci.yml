@@ -46,6 +46,8 @@ jobs:
       - name: Install ripgrep and fd
         if: steps.filter.outputs.autorag == 'true'
         run: |
+          # Avoid the runner's Azure mirror DNS dependency; keep official Ubuntu sources.
+          printf '%s\n' 'https://archive.ubuntu.com/ubuntu' 'https://security.ubuntu.com/ubuntu' | sudo tee /etc/apt/apt-mirrors.txt
           sudo apt-get update
           sudo apt-get install -y ripgrep fd-find
 
