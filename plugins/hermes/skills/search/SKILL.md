@@ -47,14 +47,16 @@ with `tool_search` (query `autorag`) and read their schemas with `tool_describe`
    `method`, `score`, `metadata`, and `content`. Search with 2-3 differently
    worded queries when the first results do not contain the answer; retrieval
    is lexical + semantic, not a reasoning step.
-5. Answer from the returned content only. Cite as `[n]` using `results[].number`
-   and name the source (file path and page, channel and sender, email subject)
-   for each claim. If sources disagree, say so and show both values with their
-   sources and dates. If nothing relevant came back, say that; do not fill the
-   gap from memory.
+5. Answer from the returned content only. Name the source in plain words for each
+   claim: the file name (and page or section if the result has one), the channel
+   and sender, or the email subject, with the date when it matters. Do not number
+   citations (`[1]`, `[2]`), and do not write any special markup or directive for
+   sources: plain text only, since not every surface renders anything else. If
+   sources disagree, say so and show both values with their sources and dates. If
+   nothing relevant came back, say that; do not fill the gap from memory.
 6. Optional audit trail: `autorag.report` with the query and a report object
    persists the curated answer; `autorag.evidence` with the returned `sessionId`
-   re-reads the exact chunks behind each `[n]`. Use them when the user asks for
+   re-reads the exact chunks behind each result. Use them when the user asks for
    a verifiable answer. Read each tool's schema from the tool list; do not
    invent fields.
 

@@ -73,7 +73,7 @@ prefixed `mcp__autorag__` in Hermes:
 | `autorag_convert_formats` | What a source format can be converted to |
 | `autorag_report` / `autorag_evidence` | Persist and re-open cited evidence |
 
-Skills (namespaced `autorag:`): `search` (how to query, cite, and compare
+Skills (namespaced `autorag:`): `search` (how to query, name sources in plain text, and compare
 across sources), `setup` (folders, datasources, first index, verification),
 `automate` (run a Hermes agent task whenever files appear in a folder) and
 `schedule` (Hermes cron jobs that re-index on a schedule, only on AC power or inside time windows, and report new
