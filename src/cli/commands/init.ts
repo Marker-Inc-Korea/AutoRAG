@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
+import { isGlobExclusion } from "../../filesystem/path-exclusions.ts";
 import { LanguageError, parseLanguageList } from "../../language.ts";
 import {
 	type CliConfig,
@@ -44,7 +45,7 @@ export async function runInit(ctx: CommandContext): Promise<number> {
 			return 2;
 		}
 		// CLI paths are relative to the invocation, even when --workspace points elsewhere.
-		partial.excludePaths = excludedPaths.map((path) => resolve(ctx.cwd, path));
+		partial.excludePaths = excludedPaths.map((path) => (isGlobExclusion(path) ? path : resolve(ctx.cwd, path)));
 	}
 	if (typeof flags.workspace === "string") partial.workspacePath = flags.workspace;
 	if (typeof flags["memory-path"] === "string") partial.memoryPath = flags["memory-path"];

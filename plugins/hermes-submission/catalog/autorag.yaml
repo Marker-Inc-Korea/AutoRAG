@@ -1,0 +1,37 @@
+# Draft catalog entry for NousResearch/hermes-agent: plugin-catalog/autorag.yaml
+# Do NOT open the PR until `sha` is replaced with the 40-char commit of the merged
+# plugins/hermes tree on Marker-Inc-Korea/AutoRAG main (see plugins/hermes-submission/SUBMISSION.md).
+name: autorag
+title: AutoRAG
+repo: https://github.com/Marker-Inc-Korea/AutoRAG
+sha: 0000000000000000000000000000000000000000
+subdir: plugins/hermes
+version: "1.0.0"
+description: >-
+  Search your own files and chat/mail archives from Hermes. Indexing and retrieval run locally. Runs the model-free
+  AutoRAG Lite MCP server (pinned @autorag/librarian@2.13.9 over npx stdio) for hybrid
+  BM25 + dense + sparse retrieval over PDF, DOCX, PPTX, XLSX, Markdown, email and Korean HWP/HWPX,
+  plus Slack, Discord, Telegram, WhatsApp, KakaoTalk, email, Notion and Obsidian archives through
+  the local crawler CLIs you already have. Cited evidence, file-name search and duplicate detection;
+  it never edits your documents. Bundles search, setup and automate skills (automate runs a
+  Hermes cron job when files appear in a folder, through a standard-library Python helper the
+  agent runs only on request; macOS/Linux). Portable Agent Plugins v1 package (mcp.json +
+  skills/); needs Node.js 24+.
+  Disclosure - first start downloads the pinned server from npm through npx; the first refresh
+  provisions the local helpers minsync and jikji (cargo, or a sha256-verified GitHub release for
+  minsync) and downloads the local embedding models (Qwen3-Embedding-0.6B about 1.2 GB and
+  KURE-Sparse-nano about 290 MB, from Hugging Face). It reads only the folders and crawler archives
+  you configure, writes only its own index and report state, runs as a long-lived stdio child, sends
+  no analytics, and reads no credentials; a remote embedder is used only if you configure one.
+  Chunks a search returns are read by your Hermes model, so they reach whichever provider it uses.
+maintainer: Marker-Inc-Korea
+tier: community
+category: tools
+requires_hermes: ">=0.22.3"
+docs_url: https://github.com/Marker-Inc-Korea/AutoRAG/tree/main/plugins/hermes
+platforms: [macos, linux, windows]
+capabilities:
+  provides_tools: []
+  provides_hooks: []
+  provides_middleware: []
+  requires_env: []

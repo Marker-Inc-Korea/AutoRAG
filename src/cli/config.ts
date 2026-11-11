@@ -35,6 +35,7 @@ import { discrawlEmbeddingRuntimeFor } from "../datasource/skills/discrawl/embed
 import { buildDatasourceSkills, type DatasourcesConfig } from "../datasource/skills/factory.ts";
 import { createEmbedderFromConfig } from "../embedding/index.ts";
 import { acquireFileLock, type FileLockHandle } from "../filesystem/file-lock.ts";
+import { isGlobExclusion } from "../filesystem/path-exclusions.ts";
 import { LanguageError, type LanguageTag, normalizeLanguages } from "../language.ts";
 import type { EnsureMinSyncBinaryOptions, MinSyncEmbedderConfig } from "../minsync/index.ts";
 import { renameWithRetry } from "../mirror/atomic-write.ts";
@@ -443,7 +444,9 @@ function resolveExcludePaths(value: unknown, origin: string): string[] | undefin
 	if (!Array.isArray(value) || value.some((path) => typeof path !== "string" || path.length === 0)) {
 		throw new ConfigError("Config field 'excludePaths' must be a non-empty string array");
 	}
-	return resolveSearchPaths(value, origin);
+	// A glob (`**/node_modules/**`) matches absolute paths anywhere; resolving it against the workspace would pin it
+	// to one directory and it would silently stop matching.
+	return (value as string[]).map((entry) => (isGlobExclusion(entry) ? entry : resolvePersistedPath(entry, origin)));
 }
 
 function resolvePersistedPath(path: string, origin: string): string {
