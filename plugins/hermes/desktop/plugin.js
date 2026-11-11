@@ -138,9 +138,20 @@ function errorText(error) {
   return typeof detail === 'string' ? detail : String(detail?.message ?? JSON.stringify(detail))
 }
 
-/** The backend answers a search made before the librarian is installed with 503 and `{state, message}`. */
+/** Electron IPC preserves only the Error message, including the HTTP status and JSON body. */
 function notReadyState(error) {
-  const state = error?.detail?.state
+  let detail = error?.detail
+  if (!detail) {
+    const message = typeof error === 'string' ? error : error?.message
+    const body = typeof message === 'string' ? /(?:^|\s)503:\s*(\{[\s\S]*\})$/.exec(message) : null
+    if (!body) return null
+    try {
+      detail = JSON.parse(body[1]).detail
+    } catch {
+      return null
+    }
+  }
+  const state = detail?.state
   return state === 'installing' || state === 'idle' || state === 'failed' ? state : null
 }
 

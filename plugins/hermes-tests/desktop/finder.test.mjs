@@ -284,6 +284,43 @@ describe('preparing', () => {
     assert.equal(calls.filter(c => c[1] === '/find' && c[2] === 'POST').length, 2)
   })
 
+  for (const state of ['idle', 'installing', 'failed']) {
+    it(`resumes after Electron serializes a ${state} response into an Error message`, async () => {
+      let ready = false
+      const { finder } = harness({
+        rest: async (path, opts) => {
+          if (path === '/find' && opts.method === 'POST' && !ready) {
+            throw new Error(`Error invoking remote method 'hermes:api': Error: 503: ${JSON.stringify({ detail: { state, message: `the AutoRAG finder is ${state}` } })}`)
+          }
+          if (path === '/status') return { state: ready ? 'ready' : 'installing' }
+        }
+      })
+      const searching = finder.search('계약서')
+      await until(() => finder.getState().phase === 'preparing')
+      ready = true
+      await searching
+      await settled(finder)
+      assert.equal(finder.getState().phase, 'done')
+    })
+  }
+
+  it('does not retry a non-503 failure carrying an installing state', async () => {
+    const { finder, calls } = harness({ rest: async () => {
+      throw new Error('500: {"detail":{"state":"installing","message":"broken backend"}}')
+    } })
+    await finder.search('x')
+    assert.equal(finder.getState().phase, 'error')
+    assert.equal(calls.length, 1)
+  })
+
+  it('keeps malformed transport errors visible instead of waiting for an install', async () => {
+    const { finder, calls } = harness({ rest: async () => { throw new Error('503: {not JSON}') } })
+    await finder.search('x')
+    assert.equal(finder.getState().phase, 'error')
+    assert.match(finder.getState().error, /not JSON/)
+    assert.equal(calls.length, 1)
+  })
+
   it('a failed install is an error with the reason, not an endless wait', async () => {
     const { finder } = harness({
       rest: async (path, opts) => {
