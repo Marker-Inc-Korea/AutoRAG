@@ -34,7 +34,7 @@ requires_hermes: ">=0.22.3"
 docs_url: https://github.com/Marker-Inc-Korea/AutoRAG/tree/main/plugins/hermes
 platforms: [macos]
 known_issues:
-  - "Tested on macOS only. The MCP server (npx) is portable, but the setup, automate and schedule helpers are macOS/Linux and Linux and Windows are not verified."
+  - "Tested on macOS only. The MCP server (npx) is portable, but the setup, automate and schedule helpers target macOS and Linux, and Linux and Windows are not verified."
 capabilities:
   provides_tools: []
   provides_hooks: []
