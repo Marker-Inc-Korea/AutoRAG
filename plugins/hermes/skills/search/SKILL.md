@@ -52,24 +52,6 @@ with `tool_search` (query `autorag`) and read their schemas with `tool_describe`
    for each claim. If sources disagree, say so and show both values with their
    sources and dates. If nothing relevant came back, say that; do not fill the
    gap from memory.
-
-   **Clickable citations (Hermes Desktop only).** If your system prompt says you
-   are in the Hermes desktop app, put one card directive on its own line after the
-   claim it supports:
-
-   `::autorag-cite{n="2" id="/docs/contract.pdf" q="termination notice"}`
-
-   - `n` is the result's `number`.
-   - `id` is copied verbatim from the result: `metadata.virtualPath` for a file
-     (it starts with `/docs/` or another configured root, not the absolute disk
-     path), otherwise `source` (for example `/slack/default/chunks/C01-17`).
-     Never build or shorten an id yourself. A card for an id the index does not
-     know is shown to the user as unverified.
-   - `q` is two to four words from the claim; the card uses them to pick the
-     passage to quote.
-   - Keep `[n]` and the plain-text source in the sentence too. In the CLI,
-     messaging apps and anywhere else the directive is not rendered, do not write
-     it at all.
 6. Optional audit trail: `autorag.report` with the query and a report object
    persists the curated answer; `autorag.evidence` with the returned `sessionId`
    re-reads the exact chunks behind each `[n]`. Use them when the user asks for

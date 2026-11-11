@@ -6,10 +6,6 @@
 #   HERMES_REPO=~/.hermes/hermes-agent LIBRARIAN_CLI=/path/to/librarian/dist/cli/index.js \
 #   E2E_ROOT=/tmp/autorag-finder-e2e ./run.sh
 #
-# Runs autorag-finder.spec.ts (search pane) and autorag-cite.spec.ts (citation cards). A checkout without its own
-# .venv (Hermes keeps interpreters under ~/.hermes/installs) needs HERMES_DESKTOP_PYTHON=<python that imports hermes>,
-# or Desktop sits in first-run setup. Set AUTORAG_E2E_LOG_DIR to keep the sandbox logs of the cite spec.
-#
 # E2E_ROOT is built by ../../hermes-submission/demo/setup-demo.sh.
 set -eu
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -20,8 +16,7 @@ PLUGIN="$(cd "$HERE/../../hermes" && pwd)"
 case "$E2E_ROOT" in /tmp/*|/private/tmp/*) ;; *) echo "E2E_ROOT must be under /tmp" >&2; exit 1;; esac
 
 DESKTOP="$HERMES_REPO/apps/desktop"
-SPECS="autorag-finder.spec.ts autorag-cite.spec.ts"
-for spec in $SPECS; do cp "$HERE/$spec" "$DESKTOP/e2e/$spec"; done
+cp "$HERE/autorag-finder.spec.ts" "$DESKTOP/e2e/autorag-finder.spec.ts"
 
 # tests-js/scripts import @playwright/test and zod, which pnpm hoists to node_modules/.pnpm/node_modules but does
 # not link into the repo root, and ESM resolution ignores NODE_PATH. Link them for this run, remove only what we made.
@@ -32,7 +27,7 @@ for rel in @playwright/test zod; do
   [ -e "$HERMES_REPO/node_modules/$rel" ] || { ln -s "$HOIST/$rel" "$HERMES_REPO/node_modules/$rel"; LINKED="$LINKED $rel"; }
 done
 cleanup() {
-  for spec in $SPECS; do rm -f "$DESKTOP/e2e/$spec"; done
+  rm -f "$DESKTOP/e2e/autorag-finder.spec.ts"
   for rel in $LINKED; do rm -f "$HERMES_REPO/node_modules/$rel"; done
   rmdir "$HERMES_REPO/node_modules/@playwright" 2>/dev/null || true
 }
@@ -40,4 +35,4 @@ trap cleanup EXIT
 
 cd "$DESKTOP"
 AUTORAG_E2E_ROOT="$E2E_ROOT" AUTORAG_LIBRARIAN_CLI="$LIBRARIAN_CLI" AUTORAG_PLUGIN_SRC="$PLUGIN" \
-  node_modules/.bin/playwright test $(for spec in $SPECS; do printf 'e2e/%s ' "$spec"; done) --reporter=list --workers=1 "$@"
+  node_modules/.bin/playwright test e2e/autorag-finder.spec.ts --reporter=list --workers=1 "$@"

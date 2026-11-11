@@ -21,8 +21,6 @@ async function loadPlugin() {
       if (name) named.add(name)
     }
   }
-  // Names read off the namespace import (`sdk.NAME`), which the plugin feature-detects.
-  for (const m of source.matchAll(/\bsdk\.([A-Za-z_]\w*)/g)) named.add(m[1])
   const dir = mkdtempSync(join(tmpdir(), 'finder-plugin-'))
   const sdk = join(dir, 'sdk.mjs')
   writeFileSync(
@@ -604,89 +602,5 @@ describe('plugin contract', () => {
       { width: '20rem', minWidth: '10rem', maxWidth: '20rem' }
     )
     assert.ok(!('defaultCollapsed' in pane.data) || pane.data.defaultCollapsed === false)
-  })
-})
-
-describe('citations', () => {
-  const { citeAttrs, canOpenDirectly, createEvidence } = mod
-
-  it('keeps only a rooted id, a numeric tag and a bounded query from model-written attributes', () => {
-    assert.deepEqual(citeAttrs({ id: ' /docs/a.pdf ', n: '2', q: 'unit price' }), { id: '/docs/a.pdf', n: '2', q: 'unit price' })
-    assert.equal(citeAttrs({ id: 'docs/a.pdf' }).id, '')
-    assert.equal(citeAttrs({ id: 'https://evil.example/x' }).id, '')
-    assert.equal(citeAttrs({ id: '/' + 'a'.repeat(1100) }).id, '')
-    assert.equal(citeAttrs({ n: '<img onerror=x>' }).n, '')
-    assert.equal(citeAttrs({ q: 'x'.repeat(500) }).q.length, 200)
-    assert.deepEqual(citeAttrs(undefined), { id: '', n: '', q: '' })
-  })
-
-  it('only hands documents and images to the OS default app, never programs or archives', () => {
-    for (const ok of ['/a/계약서.PDF', '/a/b.docx', '/a/b.hwpx', '/a/b.md', '/a/b.png']) assert.equal(canOpenDirectly(ok), true, ok)
-    for (const bad of ['/a/run.sh', '/a/App.app', '/a/x.command', '/a/x.exe', '/a/x.zip', '/a/x.pdf.sh', '/a/noext', null, 5]) {
-      assert.equal(canOpenDirectly(bad), false, String(bad))
-    }
-  })
-
-  it('looks a source up once and serves repeats from memory, in flight or settled', async () => {
-    const urls = []
-    const rest = async path => { urls.push(path); return { id: '/slack/x', kind: 'message', content: 'hi' } }
-    const ev = createEvidence({ rest })
-    const [a, b] = await Promise.all([ev.load('/slack/x', 'price'), ev.load('/slack/x', 'price')])
-    await ev.load('/slack/x', 'price')
-    assert.equal(urls.length, 1)
-    assert.equal(a.status, 'ready')
-    assert.equal(b, a)
-    assert.equal(urls[0], '/evidence?id=%2Fslack%2Fx&q=price')
-  })
-
-  it('encodes ids that contain spaces, quotes and Korean text', async () => {
-    const urls = []
-    const ev = createEvidence({ rest: async path => { urls.push(path); return {} } })
-    await ev.load('/docs/한글 계약서 "final".pdf')
-    assert.equal(decodeURIComponent(new URL(urls[0], 'http://x').searchParams.get('id')), '/docs/한글 계약서 "final".pdf')
-  })
-
-  it('recognizes "not in the index" in the shape the live Desktop bridge throws, and nothing else', () => {
-    const { notInIndex } = mod
-    // Seen in the real app: an Error whose message is `<status>: <body>`.
-    assert.equal(notInIndex(new Error('Error invoking remote method \'hermes:api\': Error: 404: {"detail":"not-in-index"}')), true)
-    assert.equal(notInIndex(new Error('404: {"detail":"not-in-index"}')), true)
-    assert.equal(notInIndex({ detail: 'not-in-index' }), true)
-    assert.equal(notInIndex(new Error('404: {"detail":"unknown find job"}')), false)
-    assert.equal(notInIndex(new Error('503: {"detail":"not-in-index"}')), false)
-    assert.equal(notInIndex(new Error('502: librarian crashed, not-in-index mentioned in its stderr')), false)
-    assert.equal(notInIndex(undefined), false)
-  })
-
-  it('remembers a source that is not in the index but retries a transient failure', async () => {
-    let calls = 0
-    const ev = createEvidence({ rest: async () => { calls += 1; throw new Error('404: {"detail":"not-in-index"}') } })
-    assert.equal((await ev.load('/nope')).status, 'unknown')
-    await ev.load('/nope')
-    assert.equal(calls, 1)
-
-    let n = 0
-    const flaky = createEvidence({ rest: async () => { n += 1; if (n === 1) throw new Error('503: {"detail":{"state":"installing"}}'); return { id: '/a' } } })
-    assert.equal((await flaky.load('/a')).status, 'error')
-    assert.equal((await flaky.load('/a')).status, 'ready')
-    assert.equal(n, 2)
-  })
-
-  it('registers the cite directive only on a host that has the directive area', async () => {
-    const registerOn = async area => {
-      globalThis.__sdk.TRANSCRIPT_DIRECTIVE_AREA = area
-      const fresh = await loadPlugin()
-      const items = []
-      fresh.default.register({ i18n: { register() {} }, onDispose() {}, rest: async () => ({}), registerMany: list => items.push(...list) })
-      return items
-    }
-    try {
-      assert.equal((await registerOn(undefined)).some(r => r.id === 'cite'), false)
-      const cite = (await registerOn('transcript.directives')).find(r => r.id === 'cite')
-      assert.equal(cite.area, 'transcript.directives')
-      assert.equal(cite.data.name, 'autorag-cite')
-    } finally {
-      delete globalThis.__sdk.TRANSCRIPT_DIRECTIVE_AREA
-    }
   })
 })
