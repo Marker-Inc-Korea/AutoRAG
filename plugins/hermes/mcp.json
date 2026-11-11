@@ -7,12 +7,14 @@
       "args": [
         "-y",
         "-p",
-        "@autorag/librarian@2.13.11",
+        "@autorag/librarian@2.13.12",
         "autorag-mcp"
       ],
       "cwd": "${PLUGIN_DATA}",
       "env": {
         "npm_config_allow_remote": "all",
+        "PI_CODING_AGENT_DIR": "${PLUGIN_DATA}/model-runtime",
+        "AUTORAG_AUTH_MODE": "environment",
         "AUTORAG_HOME": "${AUTORAG_HOME}",
         "AUTORAG_CONFIG": "${AUTORAG_CONFIG}",
         "AUTORAG_SEARCH_PATHS": "${AUTORAG_SEARCH_PATHS}",

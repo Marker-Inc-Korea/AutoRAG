@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
-import type { Api, Model } from "@earendil-works/pi-ai";
+import { type Api, InMemoryCredentialStore, type Model } from "@earendil-works/pi-ai";
 import { findEnvKeys, getEnvApiKey } from "@earendil-works/pi-ai/compat";
 import { getAgentDir, ModelRuntime, SettingsManager } from "@earendil-works/pi-coding-agent";
 import type { AutoRAGAgentOptions, AutoRAGRefreshLimits, AutoRAGRetrievalLimits } from "../agent/agent.ts";
@@ -1667,9 +1667,19 @@ function resolveAgentDir(options: ResolveAgentModelOptions): string {
  * refresh is disabled so model resolution stays fast and offline-safe.
  */
 function getModelRuntime(agentDir: string): Promise<ModelRuntime> {
-	const cached = modelRuntimeCache.get(agentDir);
+	const environmentOnly = process.env.AUTORAG_AUTH_MODE === "environment";
+	const cacheKey = `${environmentOnly ? "environment" : "stored"}:${agentDir}`;
+	const cached = modelRuntimeCache.get(cacheKey);
 	if (cached !== undefined) return cached;
 	const created = (async () => {
+		if (environmentOnly) {
+			return ModelRuntime.create({
+				credentials: new InMemoryCredentialStore(),
+				modelsPath: null,
+				allowModelNetwork: false,
+				refreshOnCreate: false,
+			});
+		}
 		const runtime = await ModelRuntime.create({
 			authPath: join(agentDir, "auth.json"),
 			modelsPath: join(agentDir, "models.json"),
@@ -1681,9 +1691,9 @@ function getModelRuntime(agentDir: string): Promise<ModelRuntime> {
 		await registerDazziProvider(runtime);
 		return runtime;
 	})();
-	modelRuntimeCache.set(agentDir, created);
+	modelRuntimeCache.set(cacheKey, created);
 	created.catch(() => {
-		modelRuntimeCache.delete(agentDir);
+		modelRuntimeCache.delete(cacheKey);
 	});
 	return created;
 }
@@ -1797,6 +1807,7 @@ async function resolvePiDefaultModel(
 	runtime: ModelRuntime,
 	options: ResolveAgentModelOptions,
 ): Promise<Model<Api> | undefined> {
+	if (process.env.AUTORAG_AUTH_MODE === "environment") return undefined;
 	let provider: string | undefined;
 	let id: string | undefined;
 	try {
