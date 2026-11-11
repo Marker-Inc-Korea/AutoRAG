@@ -5,7 +5,7 @@
 name: autorag
 title: AutoRAG
 repo: https://github.com/Marker-Inc-Korea/AutoRAG
-sha: 39889672400e58245d88975f47cc6311f7d7f73e
+sha: 8b0ea0ab9bf5860676ce097cf0854ea915afe7ff
 subdir: plugins/hermes
 version: "1.0.0"
 description: >-
