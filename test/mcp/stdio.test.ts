@@ -77,6 +77,7 @@ async function connect(
 	config: string,
 	binDir: string,
 	envOverrides: Record<string, string> = {},
+	cwd?: string,
 ): Promise<StdioConnection> {
 	// Windows spells the variable `Path`; reuse the existing key so the child
 	// env has no case-duplicate entry and the fake stays first on the lookup path.
@@ -91,6 +92,7 @@ async function connect(
 		command: process.execPath,
 		args: [join(process.cwd(), "src/mcp/index.ts")],
 		env,
+		...(cwd === undefined ? {} : { cwd }),
 		stderr: "pipe",
 	});
 	const client = new Client({ name: "autorag-stdio-qa", version: "1.0.0" });
@@ -527,7 +529,11 @@ describe("AutoRAG Lite MCP stdio", () => {
 		// so the server resolves <AUTORAG_HOME>/config.json, which is absent, like the Hermes plugin on a fresh machine.
 		const home = join(root, "home");
 		mkdirSync(home, { recursive: true });
-		const connection = await connect(config, binDir, { AUTORAG_CONFIG: "", AUTORAG_HOME: home });
+		const emptyCwd = join(root, "cwd");
+		mkdirSync(emptyCwd, { recursive: true });
+		// An empty working directory: with no config the server falls back to indexing its cwd, so the repo checkout the
+		// tests run from would be indexed and the search would not fail the way a fresh machine's does.
+		const connection = await connect(config, binDir, { AUTORAG_CONFIG: "", AUTORAG_HOME: home }, emptyCwd);
 
 		const before = await connection.client.callTool({
 			name: "autorag.search",
