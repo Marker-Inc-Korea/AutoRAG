@@ -402,8 +402,8 @@ def test_pinned_spec_follows_the_dash_p_argument_even_for_a_tarball(api, tmp_pat
 
 
 def test_pinned_spec_still_reads_a_registry_pin(api, tmp_path, monkeypatch):
-    monkeypatch.setattr(api, "PLUGIN_ROOT", _plugin_root_with(tmp_path, "@autorag/librarian@2.13.10"))
-    assert api.pinned_librarian_spec() == "@autorag/librarian@2.13.10"
+    monkeypatch.setattr(api, "PLUGIN_ROOT", _plugin_root_with(tmp_path, "@autorag/librarian@2.13.11"))
+    assert api.pinned_librarian_spec() == "@autorag/librarian@2.13.11"
 
 
 def test_pinned_spec_without_dash_p_is_unavailable(api, tmp_path, monkeypatch):
@@ -475,8 +475,8 @@ def test_ensure_installs_once_and_records_the_spec(api, tmp_path):
 def test_a_changed_pin_reinstalls(api, tmp_path):
     inst = FakeInstaller(tmp_path)
     api.Runtime(tmp_path, spec="@autorag/librarian@2.13.8", installer=inst).ensure()
-    api.Runtime(tmp_path, spec="@autorag/librarian@2.13.10", installer=inst).ensure()
-    assert inst.calls == ["@autorag/librarian@2.13.8", "@autorag/librarian@2.13.10"]
+    api.Runtime(tmp_path, spec="@autorag/librarian@2.13.11", installer=inst).ensure()
+    assert inst.calls == ["@autorag/librarian@2.13.8", "@autorag/librarian@2.13.11"]
 
 
 def test_concurrent_ensure_shares_one_install(api, tmp_path):
@@ -558,7 +558,7 @@ class FakeRun:
 
 
 def _install(api, tmp_path, run):
-    api.default_installer("@autorag/librarian@2.13.10", tmp_path, {"PATH": "/bin"}, run=run, which=lambda n, path=None: "/x/npm")
+    api.default_installer("@autorag/librarian@2.13.11", tmp_path, {"PATH": "/bin"}, run=run, which=lambda n, path=None: "/x/npm")
 
 
 def test_npm_12_gets_allow_remote_so_the_xlsx_tarball_dependency_can_install(api, tmp_path):
@@ -597,7 +597,7 @@ def test_a_failed_npm_install_surfaces_npms_own_error_text(api, tmp_path):
 
 def test_status_reports_the_install_failure_instead_of_idle(api, tmp_path, client):
     bad = FakeInstaller(tmp_path, fail=True)
-    rt = api.Runtime(tmp_path, spec="@autorag/librarian@2.13.10", installer=bad)
+    rt = api.Runtime(tmp_path, spec="@autorag/librarian@2.13.11", installer=bad)
     api.set_runtime(rt)
     with pytest.raises(api.FinderUnavailable):
         rt.ensure()

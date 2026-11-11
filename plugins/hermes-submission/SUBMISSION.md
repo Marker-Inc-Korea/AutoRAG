@@ -64,7 +64,7 @@ Discord staying keyword-only because discrawl's own config has embeddings off.
 
 ## Before opening the catalog PR
 
-1. Done: `plugins/hermes` is on `Marker-Inc-Korea/AutoRAG` `main` (#2123), pinned to `@autorag/librarian@2.13.10` (#2136, #2137).
+1. Done: `plugins/hermes` is on `Marker-Inc-Korea/AutoRAG` `main` (#2123), pinned to `@autorag/librarian@2.13.11` (#2136, #2137).
 2. `catalog/autorag.yaml` has `sha: 39889672400e58245d88975f47cc6311f7d7f73e`, the main commit with that pin. Checked with
    Hermes's own `entry_from_mapping`, and `hermes plugins validate` / `doctor --ci` on the tree at that commit. If the
    plugin changes again before the upstream PR is merged, set `sha:` to the new 40-char main commit (never a branch).
@@ -80,7 +80,7 @@ Discord staying keyword-only because discrawl's own config has embeddings off.
 > Portable Agent Plugins v1 package (`plugin.json` + `mcp.json` + four skills + a Desktop search pane). Source:
 > `Marker-Inc-Korea/AutoRAG` `plugins/hermes` (submitted by a contributor to that repository; confirm owner or major-contributor status before opening, rule 5).
 >
-> - Surfaces used: stdio MCP server (`@autorag/librarian@2.13.10`, pinned), skills, and a Hermes Desktop pane with a small
+> - Surfaces used: stdio MCP server (`@autorag/librarian@2.13.11`, pinned), skills, and a Hermes Desktop pane with a small
 >   backend router (`dashboard/plugin_api.py`). No hooks, no middleware, no core overrides. Three skills bundle a
 >   standard-library Python helper that the agent runs only when the user asks (macOS/Linux): `setup` (a read-only
 >   folder inventory: lists and stats files, never opens or writes them), `automate` (writes an AutoRAG automation rule and
