@@ -104,6 +104,10 @@ interface FakeOptions {
 	readonly datasources?: readonly unknown[];
 	/** Datasource ids with a registered retrieval method (dynamic tool exposure). */
 	readonly retrievalDatasourceIds?: readonly string[];
+	/** Diagnostics `getRefreshStatus` reports; `autorag.search` merges them into its own (default: none). */
+	readonly statusDiagnostics?: readonly unknown[];
+	/** Diagnostics `searchSelected` reports (default: none). */
+	readonly retrievalDiagnostics?: readonly unknown[];
 }
 
 function fakeLite(options: FakeOptions): {
@@ -134,7 +138,7 @@ function fakeLite(options: FakeOptions): {
 			state: "success",
 			inFlight: false,
 			stale: false,
-			diagnostics: [],
+			diagnostics: options.statusDiagnostics ?? [],
 			components: {},
 		}),
 		getRetrievalEngine: () => ({
@@ -165,7 +169,7 @@ function fakeLite(options: FakeOptions): {
 						content: "Refund exceptions require director approval before payout.",
 					},
 				],
-				diagnostics: [],
+				diagnostics: options.retrievalDiagnostics ?? [],
 				unsearched: [],
 			};
 		},
@@ -311,6 +315,78 @@ describe("AutoRAG Lite MCP server", () => {
 		expect(result.structuredContent).toMatchObject({ state: "success", stale: false });
 		await client.close();
 		await server.close();
+	});
+
+	describe("diagnostics volume", () => {
+		/** What a corpus with a changed parser reports: one entry per source file, all the same code. */
+		const staleFlood = (count: number, reason = "parser-changed") =>
+			Array.from({ length: count }, (_, index) => ({
+				code: "stale-index",
+				severity: "warning",
+				message: `Source /Desktop/file-${index}.docx is ${reason} since the last refresh; indexes may be stale.`,
+				source: `/Desktop/file-${index}.docx`,
+				reason,
+			}));
+
+		for (const tool of ["autorag.search", "autorag.status"] as const) {
+			it(`${tool} keeps a response small when one code floods the diagnostics, and says how many were left out`, async () => {
+				const flood = [...staleFlood(1000), ...staleFlood(100, "source-added")];
+				const { lite } = fakeLite({ workspacePath: workspace(true), statusDiagnostics: flood });
+				const { client, server } = await connectedServer(lite);
+				const result = await client.callTool({
+					name: tool,
+					arguments: tool === "autorag.search" ? { query: "refund" } : {},
+				});
+				expect(result.isError).not.toBe(true);
+				const diagnostics = field(result.structuredContent, "diagnostics");
+				if (!Array.isArray(diagnostics)) throw new Error("diagnostics missing");
+				// A handful of examples plus one summary entry, not 1100 entries.
+				expect(diagnostics.length).toBeLessThanOrEqual(12);
+				const summary = diagnostics.find((entry) => String(field(entry, "message")).includes("omitted"));
+				expect(field(summary, "code")).toBe("stale-index");
+				// 1100 entries, the first 3 of the flooding code are shown verbatim, the other 1097 are summarized.
+				expect(String(field(summary, "message"))).toContain("1097 more");
+				// The reasons the left-out entries had are kept, so the model can still tell the user why the index is stale.
+				expect(String(field(summary, "message"))).toContain("parser-changed: 997");
+				expect(String(field(summary, "message"))).toContain("source-added: 100");
+				expect(JSON.stringify(result.structuredContent).length).toBeLessThan(20_000);
+				await client.close();
+				await server.close();
+			});
+		}
+
+		it("does not let a flood of one code hide a different diagnostic", async () => {
+			const important = {
+				code: "datasource-failed",
+				severity: "error",
+				message: "kakao: the crawler CLI is missing",
+				source: "kakao",
+			};
+			const { lite } = fakeLite({
+				workspacePath: workspace(true),
+				statusDiagnostics: [...staleFlood(500), important],
+			});
+			const { client, server } = await connectedServer(lite);
+			const result = await client.callTool({ name: "autorag.search", arguments: { query: "refund" } });
+			expect(field(result.structuredContent, "diagnostics")).toContainEqual(important);
+			await client.close();
+			await server.close();
+		});
+
+		it("passes a short diagnostics list through untouched", async () => {
+			const few = staleFlood(3);
+			const { lite } = fakeLite({ workspacePath: workspace(true), statusDiagnostics: few });
+			const { client, server } = await connectedServer(lite);
+			for (const [name, args] of [
+				["autorag.search", { query: "refund" }],
+				["autorag.status", {}],
+			] as const) {
+				const result = await client.callTool({ name, arguments: args });
+				expect(field(result.structuredContent, "diagnostics")).toEqual(few);
+			}
+			await client.close();
+			await server.close();
+		});
 	});
 
 	it("maps search selection and retrieval options onto searchSelected", async () => {

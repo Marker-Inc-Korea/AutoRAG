@@ -125,6 +125,56 @@ function toolError(code: string, message: string, extra: Record<string, unknown>
 	return jsonResult({ ok: false, errorCode: code, message, ...extra }, true);
 }
 
+/** Entries of one code kept verbatim; the rest of that code are summarized in one entry. */
+const DIAGNOSTIC_EXAMPLES_PER_CODE = 3;
+
+interface DiagnosticLike {
+	readonly code: string;
+	readonly severity: string;
+	readonly message: string;
+	readonly source?: string;
+	readonly reason?: string;
+}
+
+/**
+ * Keep an MCP response small when one code repeats once per file. A corpus whose parser changed reports one
+ * `stale-index` entry per source (1,100 of them, about 750 KB, on a real 160k-file index), which the model then has to
+ * read through on every search and status call. Each code keeps its first few entries verbatim and one summary entry
+ * says how many more there were and how they split by `reason`, so "why is it stale" survives and a different code is
+ * never hidden behind a flood of this one. Short lists pass through unchanged.
+ */
+export function capDiagnostics<T extends DiagnosticLike>(diagnostics: readonly T[]): (T | DiagnosticLike)[] {
+	const byCode = new Map<string, T[]>();
+	for (const entry of diagnostics) {
+		const list = byCode.get(entry.code);
+		if (list === undefined) byCode.set(entry.code, [entry]);
+		else list.push(entry);
+	}
+	const out: (T | DiagnosticLike)[] = [];
+	for (const [code, entries] of byCode) {
+		out.push(...entries.slice(0, DIAGNOSTIC_EXAMPLES_PER_CODE));
+		const rest = entries.slice(DIAGNOSTIC_EXAMPLES_PER_CODE);
+		if (rest.length === 0) continue;
+		const reasons = new Map<string, number>();
+		for (const entry of rest) {
+			const key = entry.reason ?? "unspecified";
+			reasons.set(key, (reasons.get(key) ?? 0) + 1);
+		}
+		const split = [...reasons].map(([reason, count]) => `${reason}: ${count}`).join(", ");
+		const severity = entries.some((entry) => entry.severity === "error")
+			? "error"
+			: entries.some((entry) => entry.severity === "warning")
+				? "warning"
+				: "info";
+		out.push({
+			code,
+			severity,
+			message: `${rest.length} more ${code} entries omitted (${split}); the first ${DIAGNOSTIC_EXAMPLES_PER_CODE} are shown above.`,
+		});
+	}
+	return out;
+}
+
 /**
  * Shape a conversion for the model: one row per source with its outputs and error, plus the Dupey verdict per
  * output. Nothing converted is an error that still carries the per-file reasons, since "why" is what the model
@@ -314,7 +364,10 @@ export function createAutoRAGMcpServer(lite: AutoRAGLite, options: AutoRAGMcpSer
 				outputSchema: objectOutput,
 				annotations: { readOnlyHint: true, openWorldHint: false },
 			},
-			async () => jsonResult(await lite.getRefreshStatus()),
+			async () => {
+				const status = await lite.getRefreshStatus();
+				return jsonResult({ ...status, diagnostics: capDiagnostics(status.diagnostics) });
+			},
 		);
 	}
 
@@ -367,7 +420,7 @@ export function createAutoRAGMcpServer(lite: AutoRAGLite, options: AutoRAGMcpSer
 							content: result.content,
 						})),
 						unsearched: retrieved.unsearched,
-						diagnostics: [...status.diagnostics, ...retrieved.diagnostics],
+						diagnostics: capDiagnostics([...status.diagnostics, ...retrieved.diagnostics]),
 					});
 				} catch (error) {
 					return toolError(
@@ -437,7 +490,7 @@ export function createAutoRAGMcpServer(lite: AutoRAGLite, options: AutoRAGMcpSer
 							content: result.content,
 						})),
 						unsearched: retrieved.unsearched,
-						diagnostics: [...status.diagnostics, ...retrieved.diagnostics],
+						diagnostics: capDiagnostics([...status.diagnostics, ...retrieved.diagnostics]),
 					});
 				} catch (error) {
 					return toolError(
