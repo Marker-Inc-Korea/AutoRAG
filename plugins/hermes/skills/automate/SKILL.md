@@ -40,7 +40,7 @@ python3 "${HERMES_SKILL_DIR}/scripts/autorag_automation.py" setup \
   run `hermes` under a daemon's minimal PATH, and prints the JSON you need next. Read its `cron_job` and `daemon`
   fields. If it exits non-zero, show the user its `error` and stop; do not retry with guessed flags.
 - If it says no AutoRAG CLI was found, run the plugin's search pane once (it installs a resident copy), or pass
-  `--autorag-cli npx -y -p @autorag/librarian@2.13.9 autorag`.
+  `--autorag-cli npx -y -p @autorag/librarian@2.13.10 autorag`.
 
 ### 2. Create the cron job
 
@@ -63,7 +63,7 @@ the agent, and the job keeps working for the next batch. A blocked run shows in 
 The rule does nothing until AutoRAG's daemon runs. Start it once:
 
 ```bash
-npx -y -p @autorag/librarian@2.13.9 autorag automate install
+npx -y -p @autorag/librarian@2.13.10 autorag automate install
 ```
 
 `install` registers it with launchd (macOS) or systemd `--user` (Linux) so it survives logout. `automate status`
