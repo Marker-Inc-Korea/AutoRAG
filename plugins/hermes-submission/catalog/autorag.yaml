@@ -13,12 +13,14 @@ description: >-
   AutoRAG Lite MCP server (pinned @autorag/librarian@2.13.10 over npx stdio) for hybrid
   BM25 + dense + sparse retrieval over PDF, DOCX, PPTX, XLSX, Markdown, email and Korean HWP/HWPX,
   plus Slack, Discord, Telegram, WhatsApp, KakaoTalk, email, Notion and Obsidian archives through
-  the local crawler CLIs you already have. Cited evidence, file-name search and duplicate detection;
-  it never edits your documents. Bundles search, setup and automate skills (automate runs a
-  Hermes cron job when files appear in a folder, through a standard-library Python helper the
-  agent runs only on request; macOS/Linux). Portable Agent Plugins v1 package (mcp.json +
-  skills/); needs Node.js 24+.
-  Disclosure - first start downloads the pinned server from npm through npx; the first refresh
+  the local crawler CLIs you already have. File-name search and duplicate detection; it never edits your
+  documents. Bundles four skills (search, setup, automate, schedule) and a Hermes Desktop search pane. Setup,
+  automate and schedule each bundle a standard-library Python helper the agent runs only on request
+  (macOS/Linux): a read-only folder inventory, a rule that runs a Hermes cron job when files appear, and
+  no-agent cron jobs that refresh the index or report new duplicates. Portable Agent Plugins v1 package
+  (mcp.json + skills/ + desktop/); needs Node.js 24+.
+  Disclosure - first start downloads the pinned server from npm through npx (the Desktop pane runs npm install of the
+  same pinned package once into $HERMES_HOME/plugin-data/autorag/runtime, no lifecycle scripts); the first refresh
   provisions the local helpers minsync and jikji (cargo, or a sha256-verified GitHub release for
   minsync) and downloads the local embedding models (Qwen3-Embedding-0.6B about 1.2 GB and
   KURE-Sparse-nano about 290 MB, from Hugging Face). It reads only the folders and crawler archives
@@ -30,7 +32,9 @@ tier: community
 category: tools
 requires_hermes: ">=0.22.3"
 docs_url: https://github.com/Marker-Inc-Korea/AutoRAG/tree/main/plugins/hermes
-platforms: [macos, linux, windows]
+platforms: [macos]
+known_issues:
+  - "Tested on macOS only. The MCP server (npx) is portable, but the setup, automate and schedule helpers are macOS/Linux and Linux and Windows are not verified."
 capabilities:
   provides_tools: []
   provides_hooks: []

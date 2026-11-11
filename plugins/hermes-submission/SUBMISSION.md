@@ -77,13 +77,17 @@ Discord staying keyword-only because discrawl's own config has embeddings off.
 ### PR description draft
 
 > **AutoRAG** adds local search over your own files and chat/mail archives to Hermes.
-> Portable Agent Plugins v1 package (`plugin.json` + `mcp.json` + three skills). Source:
+> Portable Agent Plugins v1 package (`plugin.json` + `mcp.json` + four skills + a Desktop search pane). Source:
 > `Marker-Inc-Korea/AutoRAG` `plugins/hermes` (submitted by a contributor to that repository; confirm owner or major-contributor status before opening, rule 5).
 >
-> - Surfaces used: stdio MCP server (`@autorag/librarian@2.13.10`, pinned), skills. No hooks, no middleware, no core
->   overrides, no Python imported into Hermes. One skill (`automate`) bundles a standard-library Python helper script
->   that the agent runs only when the user asks for a file automation (macOS/Linux): it writes an AutoRAG automation
->   rule and two small scripts, and nothing at install time.
+> - Surfaces used: stdio MCP server (`@autorag/librarian@2.13.10`, pinned), skills, and a Hermes Desktop pane with a small
+>   backend router (`dashboard/plugin_api.py`). No hooks, no middleware, no core overrides. Three skills bundle a
+>   standard-library Python helper that the agent runs only when the user asks (macOS/Linux): `setup` (a read-only
+>   folder inventory: lists and stats files, never opens or writes them), `automate` (writes an AutoRAG automation rule and
+>   two small scripts so a file event runs a Hermes cron job), and `schedule` (creates no-agent Hermes cron jobs that
+>   refresh the index or report new duplicate files). Nothing is created at install time.
+> - The Desktop backend runs `npm install` of the same pinned `@autorag/librarian` once into
+>   `$HERMES_HOME/plugin-data/autorag/runtime` (no lifecycle scripts) and then runs `autorag lite find` with `node`.
 > - Network: retrieval is local, but chunks a search returns are read by the user's Hermes model. First start downloads the pinned package from npm via `npx`. The first refresh downloads
 >   `minsync` (cargo or sha256-verified GitHub release asset), `jikji` (cargo), and two local embedding
 >   models from Hugging Face (about 1.5 GB). Search itself needs no network for local files and local crawler archives; Notion, GitHub, RSS and Hister connectors do.
