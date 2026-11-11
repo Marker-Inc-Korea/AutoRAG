@@ -64,10 +64,12 @@ Discord staying keyword-only because discrawl's own config has embeddings off.
 
 ## Before opening the catalog PR
 
-1. Done: `plugins/hermes` is on `Marker-Inc-Korea/AutoRAG` `main` (#2123), pinned to `@autorag/librarian@2.13.11` (#2136, #2137).
-2. `catalog/autorag.yaml` has `sha: 8b0ea0ab9bf5860676ce097cf0854ea915afe7ff`, the main commit with that pin. Checked with
-   Hermes's own `entry_from_mapping`, and `hermes plugins validate` / `doctor --ci` on the tree at that commit. If the
-   plugin changes again before the upstream PR is merged, set `sha:` to the new 40-char main commit (never a branch).
+1. Finder readiness repair #2144 and credential-isolation release #2146 are merged on `main`.
+   The plugin pins `@autorag/librarian@2.13.12`.
+2. `catalog/autorag.yaml` pins `40ef977a1262fb1090b2be04556739994eb29225`, the merged release commit.
+   The current upstream pinned-source validator cloned that exact commit and passed all gates;
+   structural validation and the installed plugin's `doctor --ci` passed too.
+   Keep this pin unless plugin code changes; documentation-only commits do not require a re-pin.
 3. In `NousResearch/hermes-agent`, add that one file as `plugin-catalog/autorag.yaml`.
 4. PR description must carry the rule-13 disclosure. Draft below.
 5. Check `requires_hermes` against the Hermes release current on submission day; it is `>=0.22.3`
@@ -78,9 +80,9 @@ Discord staying keyword-only because discrawl's own config has embeddings off.
 
 > **AutoRAG** adds local search over your own files and chat/mail archives to Hermes.
 > Portable Agent Plugins v1 package (`plugin.json` + `mcp.json` + four skills + a Desktop search pane). Source:
-> `Marker-Inc-Korea/AutoRAG` `plugins/hermes` (submitted by a contributor to that repository; confirm owner or major-contributor status before opening, rule 5).
+> `Marker-Inc-Korea/AutoRAG` `plugins/hermes` (submitted by maintainer/major contributor `vkehfdl1`, rule 5).
 >
-> - Surfaces used: stdio MCP server (`@autorag/librarian@2.13.11`, pinned), skills, and a Hermes Desktop pane with a small
+> - Surfaces used: stdio MCP server (`@autorag/librarian@2.13.12`, pinned), skills, and a Hermes Desktop pane with a small
 >   backend router (`dashboard/plugin_api.py`). No hooks, no middleware, no core overrides. Three skills bundle a
 >   standard-library Python helper that the agent runs only when the user asks (macOS/Linux): `setup` (a read-only
 >   folder inventory: lists and stats files, never opens or writes them), `automate` (writes an AutoRAG automation rule and
@@ -96,6 +98,6 @@ Discord staying keyword-only because discrawl's own config has embeddings off.
 > - Writes beyond that, only on request: `~/.autorag/automations.json` (backed up first) and
 >   `$HERMES_HOME/plugin-data/autorag/automations/` plus one gate script in `$HERMES_HOME/scripts/`. `remove` deletes them.
 > - Processes: long-lived stdio child; refresh spawns local helper binaries.
-> - No telemetry, no self-update (version pinned in `mcp.json`), no credentials read.
+> - No telemetry or self-update. Both MCP and Finder force environment-only model authentication and a plugin-owned Pi runtime directory; stored Pi/Dazzi logins and Codex config fallback are disabled.
 > - Tools are annotated `readOnlyHint` except `autorag.refresh` and `autorag.report`.
 > - Tested with `hermes plugins validate` and `hermes plugins doctor --ci`.
