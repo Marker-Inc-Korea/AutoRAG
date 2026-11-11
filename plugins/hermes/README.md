@@ -110,6 +110,8 @@ The first time the plugin loads (or the pane opens), the backend installs the pi
 `$HERMES_HOME/plugin-data/autorag/runtime` with `npm install` (about 1 GB of dependencies and about 25 s on a warm
 cache; the pane shows "Getting AutoRAG ready" until it finishes). Searches then run with `node` from that folder, so a
 search never waits on npm. Changing the version pinned in `mcp.json` reinstalls on the next load.
+If you search during installation, the pane waits for readiness and automatically runs that query when installation
+finishes. An installation failure is shown with its cause; other API errors are not treated as installation progress.
 
 Desktop opt-in: Hermes ships a package's desktop half switched off. Turn on **AutoRAG search** once in
 Capabilities → Plugins; it then sits next to the file tree in the right sidebar, and opens with `Cmd+Alt+F`.
