@@ -22,7 +22,31 @@ The agent can send a message out of your machine when you ask it to: "tell the o
   error never echoes it.
 - Secrets are read when a message is sent, not at startup.
 
-Channel kinds each document their own fields in their own section below as they ship.
+Channel kinds each document their own fields in their own section below.
+
+## `agentmail`: an email address of the agent's own
+
+The agent gets its own inbox at [AgentMail](https://www.agentmail.to) and sends from it. It never opens your
+mailbox and no SMTP password is stored; people see mail from `my-agent@agentmail.to`, not from you.
+
+```json
+{ "kind": "agentmail", "apiKeyEnv": "AGENTMAIL_API_KEY", "inboxId": "my-agent@agentmail.to" }
+```
+
+| Field | |
+|---|---|
+| `apiKeyEnv` | Name of the variable holding the AgentMail API key (`am_...`). |
+| `inboxId` | The inbox's address, as AgentMail returns it for `inbox_id`. |
+| `region` | `us` (default) or `eu`. |
+
+Set up once (AgentMail's own flow, not AutoRAG's): create an account at console.agentmail.to or let the agent
+sign itself up with your email (`POST /v0/agent/sign-up`), verify the one-time code it mails you, and export the key.
+Until verified, an inbox can only mail the human attached to it, and new accounts ramp up how many distinct
+recipients they may reach.
+
+Each send takes `to` (1-10 addresses) and a one-line `subject`. A reply to the message arrives in the inbox, not
+in AutoRAG: this channel only sends. Success needs AgentMail to return a message id; an answer without one is
+reported as unconfirmed.
 
 ## Approval
 

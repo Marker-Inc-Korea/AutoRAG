@@ -3,9 +3,13 @@
  * this is the only place that lists them. Adding a channel is one file plus one line here.
  */
 
+import { agentmailKind } from "./channels/agentmail.ts";
+import { registerChannelKind } from "./registry.ts";
+
 let registered = false;
 
 export function registerBuiltinChannelKinds(): void {
 	if (registered) return;
 	registered = true;
+	registerChannelKind(agentmailKind);
 }
