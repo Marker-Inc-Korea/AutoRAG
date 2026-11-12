@@ -1,0 +1,12 @@
+{
+  "name": "autorag",
+  "description": "AutoRAG plugins for agent hosts",
+  "owner": { "name": "Marker Inc. Korea", "url": "https://github.com/Marker-Inc-Korea" },
+  "plugins": [
+    {
+      "name": "autorag-remote",
+      "source": "./remote-agents",
+      "description": "Search your own files and archives with AutoRAG from a cloud agent. Skill only; you register your own server URL."
+    }
+  ]
+}
