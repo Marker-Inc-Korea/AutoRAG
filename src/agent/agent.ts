@@ -83,6 +83,12 @@ import { loadMemoryContext, type MemoryContext, type MemoryContextOptions } from
 import { EVIDENCE_SUPPORT_THRESHOLD, type JudgedEvidenceRecord } from "../memory/judged-evidence.ts";
 import { RetrievalMemory } from "../memory/memory.ts";
 import { memoryVectorStorePath } from "../memory/similar-queries.ts";
+import {
+	buildChannels,
+	createSendMessageTool,
+	type MessagingConfig,
+	SEND_MESSAGE_TOOL_NAME,
+} from "../messaging/index.ts";
 import { resolveMinSyncBinary } from "../minsync/binary.ts";
 import { unionChannelResults } from "../minsync/channel-union.ts";
 import { MinSyncRequiredError, minSyncBinaryMissingError } from "../minsync/errors.ts";
@@ -773,6 +779,12 @@ export interface AutoRAGAgentOptions {
 	 */
 	webSearch?: (WebSearchToolOptions & { fetch?: WebFetchToolOptions | false }) | false;
 	/**
+	 * Outbound channels for the `send_message` tool (chats, channels, email). Absent or without channels leaves the
+	 * tool out. Secrets are read from the named environment variables at send time; the user approves each send
+	 * unless the permission mode is `full`.
+	 */
+	messaging?: MessagingConfig;
+	/**
 	 * Post-merge reranking, opt-in: it runs only when a rerank `model` is named. A block without a model is treated as
 	 * off and reported once as a `rerank-disabled` diagnostic; absent or `false` is off. With reranking off the fast
 	 * answer's baseline keeps each source's own top 10 (see {@link AutoRAGRetrievalLimits.prefetch}). A configured
@@ -1336,6 +1348,17 @@ export class AutoRAGAgent {
 		const listFileConversionsTool = this.fileeOptions === false ? undefined : createListFileConversionsTool(this);
 		const manageAutomationsTool = createManageAutomationsTool();
 		const calculatorTool = createCalculatorTool();
+		const outboundChannels =
+			options.messaging === undefined
+				? undefined
+				: buildChannels(options.messaging, {
+						env: process.env,
+						fetch: (input, init) => globalThis.fetch(input, init),
+					});
+		const sendMessageTool =
+			outboundChannels !== undefined && outboundChannels.size > 0
+				? createSendMessageTool(outboundChannels)
+				: undefined;
 		this.decisionModels = createDecisionModels({ ...options.jev, agentDir: options.piAgentDir });
 		this.jevJudge = this.decisionModels.judge;
 		this.jevExtension = createJevExtension(this.jevJudge);
@@ -1398,6 +1421,7 @@ export class AutoRAGAgent {
 			LIST_FILE_CONVERSIONS_TOOL_NAME,
 			CALCULATOR_TOOL_NAME,
 			MANAGE_AUTOMATIONS_TOOL_NAME,
+			SEND_MESSAGE_TOOL_NAME,
 			JEV_TOOL_NAME,
 			WEB_SEARCH_TOOL_NAME,
 			WEB_FETCH_TOOL_NAME,
@@ -1427,6 +1451,7 @@ export class AutoRAGAgent {
 			...(listFileConversionsTool !== undefined ? [listFileConversionsTool] : []),
 			calculatorTool,
 			manageAutomationsTool,
+			...(sendMessageTool !== undefined ? [sendMessageTool] : []),
 			...(jikjiFindTool !== undefined ? [jikjiFindTool] : []),
 			...(everythingSearchTool !== undefined ? [everythingSearchTool] : []),
 			...(fsearchSearchTool !== undefined ? [fsearchSearchTool] : []),

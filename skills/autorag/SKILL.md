@@ -101,6 +101,14 @@ in-process, and needs no configuration. Operations:
   it differs from `America/Los_Angeles` in summer), and CST, IST, and BST mean
   several zones, so the user has to say which.
 
+### Sending messages
+
+`send_message` sends text to a chat, channel, or email address listed under `messaging.channels` in `config.json`,
+only when the user asks. Every send is approved by the user first, one message at a time, in `ask` and `auto`;
+without a UI it is blocked. Chat channels deliver to a fixed destination from the config, so the model passes only
+the channel and text; email channels need `to` and `subject`. Secrets are never in the config, only the names of the
+environment variables that hold them. A send is never retried. See `docs/messaging.md`.
+
 ### Excluding local files from the index
 
 `"excludePaths"` in `config.json` lists files or folders (absolute, or relative

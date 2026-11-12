@@ -2,6 +2,7 @@ import { statSync } from "node:fs";
 import { isAbsolute, relative, sep } from "node:path";
 import type { ExtensionAPI, ExtensionContext, ExtensionFactory, SessionEntry } from "@earendil-works/pi-coding-agent";
 import { matchesKey } from "@earendil-works/pi-tui";
+import { describeSend, SEND_MESSAGE_TOOL_NAME } from "../messaging/tool.ts";
 import type { JevJudge } from "./jev-extension.ts";
 import {
 	type Approval,
@@ -148,20 +149,25 @@ const DENY_WITH_NOTE = "Deny and tell the model what to do instead";
 /** Longest part of a command shown in a dialog or a notice. */
 const SHOWN_CALL_CHARS = 1200;
 
+/** Sending leaves the machine and cannot be undone, so it is approved one message at a time in every mode but `full`. */
+const SEND_PROMPT_SENTENCE = `Every ${SEND_MESSAGE_TOOL_NAME} call is shown to the user for approval before it is sent, one message at a time; send only what the user asked you to, and if a send is denied do not send it again.`;
+
 /** Appended to the system prompt while a gate is active, so the model stays on the happy path. */
 export const PERMISSION_PROMPT_ADDENDUM = [
 	"File safety: the user's existing files are originals, and AutoRAG asks the user for approval before it deletes, moves, renames, overwrites, or edits one.",
 	"When you reorganize or change files on your own initiative, copy first and work on the copy: creating new files and folders, copying, reading, and searching never need approval.",
 	"When the user explicitly asks you to delete, move, rename, or edit a specific original, go ahead and run it (delete by moving to the OS trash, as above): do not refuse or ask for confirmation yourself, because the approval prompt is the confirmation.",
 	"If an approval is denied, do not retry it within that request: leave the original as it is and say what you did instead. A new request from the user, or a changed permission mode, is a fresh decision: run it again then.",
+	SEND_PROMPT_SENTENCE,
 ].join(" ");
 
 /** `ask` addendum: the user sees every call, so the model should batch work and still not refuse requests. */
 export const ASK_PROMPT_ADDENDUM = [
-	"File safety: in this mode the user approves every bash, write, and edit call, and every saved automation, before it runs; reading, searching, and AutoRAG's own tools need no approval.",
+	"File safety: in this mode the user approves every bash, write, and edit call, and every saved automation, before it runs; reading, searching, and AutoRAG's other tools need no approval.",
 	"Keep such calls few: combine steps into one command where you can, and prefer copying to a new path over changing an original.",
 	"When the user explicitly asks you to delete, move, rename, or edit a specific original, go ahead and run it (delete by moving to the OS trash, as above): do not refuse or ask for confirmation yourself, because the approval prompt is the confirmation.",
 	"If an approval is denied, do not retry it within that request: leave the original as it is and say what you did instead. A new request from the user, or a changed permission mode, is a fresh decision: run it again then.",
+	SEND_PROMPT_SENTENCE,
 ].join(" ");
 
 const MODE_SUMMARY: Readonly<Record<PermissionMode, string>> = {
@@ -293,6 +299,8 @@ export function createPermissionGate(options: PermissionGateOptions): ExtensionF
 
 		pi.on("tool_call", async (event, ctx): Promise<Decision | undefined> => {
 			const input = event.input as Record<string, unknown>;
+			if (event.toolName === SEND_MESSAGE_TOOL_NAME)
+				return controller.mode === "full" ? undefined : decideSend(input, ctx);
 			if (!isGatedCall(event.toolName, input)) return undefined;
 			const call: ProposedCall = { tool: event.toolName, input, cwd: ctx.cwd };
 			// Whatever the mode, a path this call names that is missing now and exists after it succeeded is the
@@ -353,6 +361,41 @@ export function createPermissionGate(options: PermissionGateOptions): ExtensionF
 				return undefined;
 			}
 			return decide(reviewOf(call, classification.flagged, classification.approval), ctx);
+		}
+
+		/** Every send is put to the user, one at a time: Jev does not judge it and no session grant covers it. */
+		function decideSend(input: Record<string, unknown>, ctx: ExtensionContext): Promise<Decision | undefined> {
+			const turn = queue.then(() => askSend(input, ctx));
+			queue = turn.catch(() => undefined);
+			return turn;
+		}
+
+		async function askSend(input: Record<string, unknown>, ctx: ExtensionContext): Promise<Decision | undefined> {
+			if (controller.mode === "full") return undefined;
+			if (!ctx.hasUI) {
+				return {
+					block: true,
+					reason: `Blocked: sending a message needs the user's approval and this session has nobody to ask. The message was not sent. Do not retry; tell the user, or ask them to rerun with --permission-mode full.`,
+				};
+			}
+			dialogsOpen += 1;
+			try {
+				const choice = await ctx.ui.select(
+					`Send this message? It leaves this machine and cannot be undone.\n${describeSend(input)}`,
+					[ALLOW_ONCE, DENY, DENY_WITH_NOTE],
+				);
+				if (choice === ALLOW_ONCE) return undefined;
+				const note =
+					choice === DENY_WITH_NOTE
+						? (await ctx.ui.input("What should the model do instead?", "e.g. draft it for me to send"))?.trim()
+						: undefined;
+				return {
+					block: true,
+					reason: `Denied by the user: the message was not sent. Do not retry it for this request.${note === undefined || note === "" ? "" : ` The user says: ${note}`}`,
+				};
+			} finally {
+				dialogsOpen -= 1;
+			}
 		}
 
 		async function decide(review: Review, ctx: ExtensionContext): Promise<Decision | undefined> {
