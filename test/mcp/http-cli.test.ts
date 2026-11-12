@@ -1,4 +1,4 @@
-import { type ChildProcess, spawn } from "node:child_process";
+import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -128,5 +128,49 @@ describe("autorag-mcp --http", () => {
 
 	it("rejects an unknown flag instead of silently serving stdio", async () => {
 		await expect(launch(["--http", "--prot", "0"], { AUTORAG_MCP_TOKEN: TOKEN })).rejects.toThrow(/unknown/i);
+	});
+
+	it("--check passes against a server started with --public-url and prints no token", async () => {
+		const port = 18000 + Math.floor(Math.random() * 1000);
+		const publicUrl = `http://127.0.0.1:${port}`;
+		const running = await launch(["--http", "--port", String(port), "--public-url", publicUrl], {
+			AUTORAG_MCP_TOKEN: TOKEN,
+		});
+		const check = spawnSync(process.execPath, ["src/mcp/index.ts", "--check", `${publicUrl}/mcp`], {
+			encoding: "utf8",
+			env: { ...process.env, AUTORAG_MCP_TOKEN: TOKEN },
+		});
+		expect(check.status, check.stdout + check.stderr).toBe(0);
+		expect(check.stdout).toContain("tools");
+		expect(check.stdout).toContain("pass");
+		expect(check.stdout + check.stderr).not.toContain(TOKEN);
+		expect(running.child.exitCode).toBeNull();
+	});
+
+	it("--check exits non-zero and says why when the server has no OAuth surface", async () => {
+		const running = await launch(["--http", "--port", "0"], { AUTORAG_MCP_TOKEN: TOKEN });
+		const check = spawnSync(process.execPath, ["src/mcp/index.ts", "--check", running.url], {
+			encoding: "utf8",
+			env: { ...process.env, AUTORAG_MCP_TOKEN: TOKEN },
+		});
+		expect(check.status).toBe(1);
+		expect(check.stdout).toContain("fail");
+		expect(check.stdout).toContain("--public-url");
+	});
+
+	it("--check with --json prints one machine-readable document", async () => {
+		const running = await launch(["--http", "--port", "0"], { AUTORAG_MCP_TOKEN: TOKEN });
+		const check = spawnSync(process.execPath, ["src/mcp/index.ts", "--check", running.url, "--json"], {
+			encoding: "utf8",
+			env: { ...process.env, AUTORAG_MCP_TOKEN: TOKEN },
+		});
+		const parsed: unknown = JSON.parse(check.stdout);
+		expect(parsed).toMatchObject({ ok: false, steps: expect.any(Array) });
+	});
+
+	it("--check refuses to run beside --http", async () => {
+		await expect(
+			launch(["--http", "--check", "http://127.0.0.1:1/mcp"], { AUTORAG_MCP_TOKEN: TOKEN }),
+		).rejects.toThrow(/--check/);
 	});
 });

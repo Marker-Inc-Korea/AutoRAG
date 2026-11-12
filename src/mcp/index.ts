@@ -8,6 +8,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
 import { resolveAutoRAGHome } from "../config/home.ts";
 import { createAutoRAGLite } from "../core.ts";
 import { startMcpHttpServer } from "./http.ts";
+import { type PreflightResult, runPreflight } from "./preflight.ts";
 import { configSignature, createReloadingLite } from "./reloading-lite.ts";
 import { createAutoRAGMcpServer } from "./server.ts";
 
@@ -40,6 +41,7 @@ const USAGE = `autorag-mcp - AutoRAG Lite MCP server
 
   autorag-mcp                       stdio (default; what Hermes, Claude Code and Codex spawn)
   autorag-mcp --http [options]      streamable HTTP, for agents that run in a cloud and reach you through a URL
+  autorag-mcp --check URL [--json]  replay a cloud agent's connect sequence against URL (e.g. your tunnel's /mcp)
 
 HTTP options:
   --host HOST        interface to bind (default 127.0.0.1)
@@ -50,6 +52,7 @@ HTTP options:
 
 Auth: every request needs "Authorization: Bearer <owner token>". The token is AUTORAG_MCP_TOKEN (at least 32
 characters) or, when unset, a random one kept at $AUTORAG_HOME/${TOKEN_FILE} (owner-only).
+--check exits 1 if any step fails. It reads the owner token from AUTORAG_MCP_TOKEN (or the token file) and never prints it.
 Env: AUTORAG_MCP_TOOLS, AUTORAG_MCP_READ_ONLY (stdio), AUTORAG_CONFIG, AUTORAG_HOME.`;
 
 /** The owner token from the environment, or a random one persisted owner-only so restarts keep issued tokens valid. */
@@ -71,6 +74,24 @@ function resolveOwnerToken(env: NodeJS.ProcessEnv): { token: string; file?: stri
 	return { token, file };
 }
 
+/** The owner token an operator already has: the environment, else the file a previous `--http` run wrote. Never creates one. */
+function existingOwnerToken(env: NodeJS.ProcessEnv): string | undefined {
+	const fromEnv = env.AUTORAG_MCP_TOKEN?.trim();
+	if (fromEnv !== undefined && fromEnv !== "") return fromEnv;
+	try {
+		const stored = readFileSync(join(resolveAutoRAGHome(env), TOKEN_FILE), "utf8").trim();
+		return stored === "" ? undefined : stored;
+	} catch {
+		return undefined;
+	}
+}
+
+function renderPreflight(result: PreflightResult): string {
+	const width = Math.max(...result.steps.map((step) => step.name.length));
+	const lines = result.steps.map((step) => `${step.status.padEnd(4)}  ${step.name.padEnd(width)}  ${step.detail}`);
+	return `${lines.join("\n")}\n${result.ok ? "OK" : "FAILED"}\n`;
+}
+
 export async function main(argv: readonly string[] = process.argv.slice(2)): Promise<void> {
 	const { values } = parseArgs({
 		args: [...argv],
@@ -81,6 +102,8 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
 			port: { type: "string" },
 			"public-url": { type: "string" },
 			"allow-write": { type: "boolean" },
+			check: { type: "string" },
+			json: { type: "boolean" },
 			help: { type: "boolean", short: "h" },
 		},
 	});
@@ -88,6 +111,14 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
 		process.stdout.write(`${USAGE}\n`);
 		return;
 	}
+	if (values.check !== undefined) {
+		if (values.http === true) throw new Error("--check inspects a running server; do not combine it with --http.");
+		const result = await runPreflight(values.check, { token: existingOwnerToken(process.env) });
+		process.stdout.write(values.json === true ? `${JSON.stringify(result, null, 2)}\n` : renderPreflight(result));
+		if (!result.ok) process.exitCode = 1;
+		return;
+	}
+	if (values.json === true) throw new Error("--json only applies with --check.");
 	const tools = parseTools(process.env.AUTORAG_MCP_TOOLS);
 	if (values.http !== true) {
 		for (const flag of ["host", "port", "public-url", "allow-write"] as const) {

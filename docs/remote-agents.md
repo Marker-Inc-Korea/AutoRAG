@@ -53,6 +53,20 @@ One secret opens everything. Without `AUTORAG_MCP_TOKEN`, the server creates a r
 - Request bodies over 1 MiB are refused.
 - Tokens are stateless HMACs, so a restart keeps them valid; there is no per-token revocation other than rotating the owner token.
 
+### Check the URL before you paste it into a vendor dialog
+
+```bash
+autorag-mcp --check https://<public>/mcp          # human-readable; exit 1 if any step fails
+autorag-mcp --check https://<public>/mcp --json   # one JSON document
+```
+
+`--check` replays what a connector-only agent does before its first tool call: the 401 challenge, the protected-resource
+and authorization-server metadata (and that they name the URL you gave), client registration, the consent page, and, if
+`AUTORAG_MCP_TOKEN` (or the stored token file) is available, a real `tools/list`. It catches a tunnel pointing at the
+wrong port or a `--public-url` that does not match the tunnel, which a vendor dialog reports only as "couldn't connect".
+It never types the owner token into the consent page and never prints it. Write tools being exposed is a warning, not a
+failure.
+
 ## Per agent
 
 The vendor steps below come from each vendor's own documentation as of 2026-11-12 and were **not** executed against
