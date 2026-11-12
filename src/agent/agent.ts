@@ -191,6 +191,7 @@ import { EvidenceLedger } from "./evidence-ledger.ts";
 import { EvidenceOriginIndex } from "./evidence-origins.ts";
 import { createEvidencePersistence } from "./evidence-persistence.ts";
 import { createFSearchSearchTool, FSEARCH_SEARCH_TOOL_NAME } from "./fsearch-search-tool.ts";
+import { readIdentity } from "./identity.ts";
 import {
 	detectPowerSource,
 	evaluateIndexSchedule,
@@ -738,6 +739,8 @@ export interface AutoRAGAgentOptions {
 	searchPaths: string[];
 	languages?: readonly LanguageTag[];
 	memoryPath?: string;
+	/** Load a snapshot of AUTORAG_HOME/IDENTITY.md. Disabled for built-in remote bridges. */
+	loadIdentity?: boolean;
 	workspacePath?: string;
 	tools?: AgentTool[];
 	minSync?: Omit<MinSyncVectorMethodOptions, "root">;
@@ -1166,6 +1169,8 @@ export class AutoRAGAgent {
 
 	constructor(options: AutoRAGAgentOptions) {
 		const { memoryPath } = options;
+		const identityText =
+			options.loadIdentity !== false && !options.discordRemote && !options.telegram ? readIdentity() : undefined;
 		this.configuredModel = options.model;
 		this.discordRemote = options.discordRemote ?? false;
 		this.toolBurstGuard = new ToolBurstGuard(options.toolCallBurstGuard);
@@ -1443,6 +1448,7 @@ export class AutoRAGAgent {
 		const toolNames = [...PI_BUILTIN_TOOL_NAMES, ...tools.map((tool) => tool.name), JEV_TOOL_NAME];
 		this.baseSystemPromptConfig = {
 			toolNames,
+			identityText,
 			modelId: options.model?.id,
 			datasourceSkills: this.datasourceAgentSkills,
 			jikjiIndexingEnabled: options.jikji !== false,

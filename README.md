@@ -195,6 +195,13 @@ Three principles drive every design decision in AutoRAG Agent:
 
 ---
 
+### Personal context with IDENTITY.md
+
+Create `~/.autorag/IDENTITY.md` with the background you want the librarian to know,
+such as your name, role, and language preferences. If `AUTORAG_HOME` is set, put
+the file there instead. A separate `--config` file does not change this location.
+See [identity context](docs/identity.md) for loading, bridge, and session behavior.
+
 ## Architecture & How It Works
 
 AutoRAG Agent orchestrates five integrated subsystems:
