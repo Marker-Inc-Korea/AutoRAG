@@ -177,6 +177,11 @@ AutoRAG Agent:
 [3] SLA Guarantee — Guaranteed uptime threshold adjusted to 99.95% with penalty credits starting at 15 minutes downtime. (contracts/sla-addendum.md:lines 45-62)
 ```
 
+Agent-facing retrieval rows also keep a bounded source context when the backend
+provides one: chat/channel, sender, ISO-normalized timestamp, and mail subject.
+This lets the model answer "who said what, when" without loading the full
+datasource metadata object for every hit.
+
 ---
 
 ## Core Values

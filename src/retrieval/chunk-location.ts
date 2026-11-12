@@ -12,6 +12,12 @@ export interface ChunkLocation {
 const ARTICLE_LINE = /^제\s*\d+(?:의\d+)?\s*[조장절관](?:\s|\(|$)/u;
 const MARKDOWN_HEADING = /^#{1,6}\s+(.+?)\s*#*$/u;
 const MAX_SECTION_CHARS = 80;
+const MAX_CONTEXT_CHARS = 120;
+const MAX_CONTEXT_VALUE_CHARS = 32;
+
+const CHAT_KEYS = ["chatName", "channelName", "guildName"] as const;
+const SENDER_KEYS = ["senderNickname", "senderName", "userName", "authorName", "from"] as const;
+const TIME_KEYS = ["startedAt", "publishedAt", "timestamp", "date", "createdAt"] as const;
 
 function sectionLabel(line: string): string | undefined {
 	const text = line.trim();
@@ -86,13 +92,113 @@ export function describeLocation(location: {
 
 /** ` (lines 7-8, section "…")` for a retrieval result whose backend measured a location; empty otherwise. */
 export function locationSuffix(metadata: Readonly<Record<string, unknown>>): string {
+	const described = describeMeasuredLocation(metadata);
+	return described === undefined ? "" : ` (${described})`;
+}
+
+/**
+ * ` (lines 7-8; chat: "…", from: "…", at: 2026-…, subject: "…")` for an agent-facing
+ * result row. Location is measured by the retrieval backend; the remaining values
+ * come from a small source-metadata allowlist and are bounded so one row cannot
+ * flood the model's context. Unknown metadata is deliberately ignored.
+ */
+export function resultContextSuffix(metadata: Readonly<Record<string, unknown>>): string {
+	const location = describeMeasuredLocation(metadata);
+	const sourceContext = describeSourceMetadata(metadata);
+	const parts = [location, sourceContext].filter((part): part is string => part !== undefined);
+	return parts.length === 0 ? "" : ` (${parts.join("; ")})`;
+}
+
+function describeMeasuredLocation(metadata: Readonly<Record<string, unknown>>): string | undefined {
 	const lineStart = typeof metadata.lineNumber === "number" ? metadata.lineNumber : undefined;
 	const lineEnd = typeof metadata.lineEnd === "number" ? metadata.lineEnd : undefined;
 	const section = typeof metadata.section === "string" && metadata.section.length > 0 ? metadata.section : undefined;
-	const described = describeLocation({
+	return describeLocation({
 		...(lineStart !== undefined ? { lineStart } : {}),
 		...(lineEnd !== undefined ? { lineEnd } : {}),
 		...(section !== undefined ? { section } : {}),
 	});
-	return described === undefined ? "" : ` (${described})`;
+}
+
+function describeSourceMetadata(metadata: Readonly<Record<string, unknown>>): string | undefined {
+	const parts: string[] = [];
+	const chat = firstText(metadata, CHAT_KEYS);
+	if (chat !== undefined) parts.push(`chat: ${quoted(chat)}`);
+
+	const sender = firstText(metadata, SENDER_KEYS);
+	if (sender !== undefined) parts.push(`from: ${quoted(sender)}`);
+
+	const time = firstTime(metadata, TIME_KEYS);
+	if (time !== undefined) parts.push(`at: ${time}`);
+
+	const subject = firstText(metadata, ["subject"] as const);
+	if (subject !== undefined) parts.push(`subject: ${quoted(subject)}`);
+
+	return boundedParts(parts);
+}
+
+function firstText(metadata: Readonly<Record<string, unknown>>, keys: readonly string[]): string | undefined {
+	for (const key of keys) {
+		const value = metadata[key];
+		if (typeof value !== "string") continue;
+		const compact = compactText(value, MAX_CONTEXT_VALUE_CHARS);
+		if (compact.length > 0) return compact;
+	}
+	return undefined;
+}
+
+function firstTime(metadata: Readonly<Record<string, unknown>>, keys: readonly string[]): string | undefined {
+	for (const key of keys) {
+		const normalized = normalizeTimestamp(metadata[key]);
+		if (normalized !== undefined) return normalized;
+	}
+	return undefined;
+}
+
+function normalizeTimestamp(value: unknown): string | undefined {
+	if (typeof value === "number" && Number.isFinite(value)) return isoTime(value);
+	if (typeof value !== "string") return undefined;
+	const text = value.trim();
+	if (text.length === 0) return undefined;
+
+	// Slack timestamps are decimal epoch seconds; mail and chat timestamps are
+	// normally ISO strings. Normalize every parseable value to an ISO instant.
+	if (/^[+-]?\d+(?:\.\d+)?$/u.test(text)) {
+		const numeric = Number(text);
+		if (!Number.isFinite(numeric)) return undefined;
+		return isoTime(Math.abs(numeric) < 100_000_000_000 ? numeric * 1_000 : numeric);
+	}
+	const parsed = Date.parse(text);
+	return Number.isFinite(parsed) ? isoTime(parsed) : compactText(text, MAX_CONTEXT_VALUE_CHARS);
+}
+
+function isoTime(milliseconds: number): string | undefined {
+	const date = new Date(milliseconds);
+	return Number.isFinite(date.getTime()) ? date.toISOString() : undefined;
+}
+
+function quoted(value: string): string {
+	return JSON.stringify(value);
+}
+
+function compactText(value: string, maxChars: number): string {
+	const compact = value.replace(/\s+/gu, " ").trim();
+	if (compact.length <= maxChars) return compact;
+	return `${compact.slice(0, Math.max(0, maxChars - 1))}…`;
+}
+
+function boundedParts(parts: readonly string[]): string | undefined {
+	if (parts.length === 0) return undefined;
+	const shown: string[] = [];
+	for (const part of parts) {
+		const candidate = [...shown, part].join(", ");
+		if (candidate.length <= MAX_CONTEXT_CHARS) {
+			shown.push(part);
+			continue;
+		}
+		if (shown.length === 0) return `${part.slice(0, MAX_CONTEXT_CHARS - 1)}…`;
+		break;
+	}
+	const omitted = shown.length < parts.length;
+	return `${shown.join(", ")}${omitted ? "…" : ""}`.slice(0, MAX_CONTEXT_CHARS);
 }
