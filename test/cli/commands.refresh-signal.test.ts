@@ -58,13 +58,12 @@ afterEach(() => {
 
 /** A MinSync whose `sync` runs until it is killed, and records its own pid so a test can find the process. */
 function writeHangingMinSync(binaryPath: string, pidPath: string): void {
+	// The PATH copy is extensionless on POSIX and minsync.exe on Windows; both must load as CommonJS.
 	writeFileSync(
 		binaryPath,
 		`#!/usr/bin/env node
-import { createRequire } from "node:module";
-import { mkdirSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-const require = createRequire(import.meta.url);
+const { mkdirSync, writeFileSync } = require("node:fs");
+const { dirname, join } = require("node:path");
 const args = process.argv.slice(2);
 if (args[0] === "stage") {
   const eqArg = args.find((a) => a.startsWith("--state-dir="));
@@ -153,7 +152,7 @@ function makeCtx(overrides: Partial<CommandContext> = {}): CommandContext {
 
 describe("runRefresh signal handling", () => {
 	it("aborts the refresh when the process is told to stop, and exits with the signal's conventional code", async () => {
-		const binary = join(root, "hang-minsync.mjs");
+		const binary = join(root, "hang-minsync.cjs");
 		const pidPath = join(root, "sync.pid");
 		writeHangingMinSync(binary, pidPath);
 		writeConfig(binary);
@@ -175,7 +174,7 @@ describe("runRefresh signal handling", () => {
 	}, 90_000);
 
 	it("treats SIGINT the same way", async () => {
-		const binary = join(root, "hang-minsync.mjs");
+		const binary = join(root, "hang-minsync.cjs");
 		const pidPath = join(root, "sync.pid");
 		writeHangingMinSync(binary, pidPath);
 		writeConfig(binary);
@@ -224,7 +223,7 @@ describe("every command that runs a refresh stops on a signal", () => {
 
 	for (const command of commands) {
 		it(`${command.name} exits 143 on SIGTERM and stops the sync`, async () => {
-			const binary = join(root, "hang-minsync.mjs");
+			const binary = join(root, "hang-minsync.cjs");
 			const pidPath = join(root, "sync.pid");
 			writeHangingMinSync(binary, pidPath);
 			writeConfig(binary);
@@ -245,7 +244,7 @@ describe("every command that runs a refresh stops on a signal", () => {
 
 describe("autorag refresh as a real process", () => {
 	it("stops on SIGTERM without orphaning the sync it started", async () => {
-		const binary = join(root, "hang-minsync.mjs");
+		const binary = join(root, "hang-minsync.cjs");
 		const pidPath = join(root, "sync.pid");
 		writeHangingMinSync(binary, pidPath);
 		const configPath = writeConfig(binary);
