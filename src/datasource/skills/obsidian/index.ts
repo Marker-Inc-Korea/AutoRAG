@@ -1,4 +1,4 @@
-export { ObsidianBm25Method, type ObsidianMethodOptions, ObsidianSemanticMethod } from "./methods.ts";
+export { type ObsidianMethodOptions, ObsidianSemanticMethod, ObsidianSparseMethod } from "./methods.ts";
 export {
 	encodeSourceSegment,
 	obsidianDatasourceDir,

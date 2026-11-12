@@ -47,7 +47,7 @@ describe("limits config normalization", () => {
 				minSyncTopK: 40,
 				minSyncScopedQueryTopK: 200,
 				toolDescriptionInstanceScopes: 3,
-				prefetch: { jikjiTopK: 12, minSyncTopK: 250, jikjiPathLimit: 40, sectionLimit: 30 },
+				prefetch: { jikjiTopK: 12, minSyncTopK: 250, datasourceTopK: 15, jikjiPathLimit: 40, sectionLimit: 30 },
 			},
 		});
 
@@ -57,7 +57,7 @@ describe("limits config normalization", () => {
 			minSyncTopK: 40,
 			minSyncScopedQueryTopK: 200,
 			toolDescriptionInstanceScopes: 3,
-			prefetch: { jikjiTopK: 12, minSyncTopK: 250, jikjiPathLimit: 40, sectionLimit: 30 },
+			prefetch: { jikjiTopK: 12, minSyncTopK: 250, datasourceTopK: 15, jikjiPathLimit: 40, sectionLimit: 30 },
 		});
 	});
 
@@ -73,6 +73,7 @@ describe("limits config normalization", () => {
 		expect(() => resolveFrom({ limits: { mergedEvidenceCeiling: 0 } })).toThrow(ConfigError);
 		expect(() => resolveFrom({ limits: { minSyncTopK: -1 } })).toThrow(ConfigError);
 		expect(() => resolveFrom({ limits: { prefetch: { sectionLimit: 2.5 } } })).toThrow(ConfigError);
+		expect(() => resolveFrom({ limits: { prefetch: { datasourceTopK: 0 } } })).toThrow(ConfigError);
 	});
 
 	it("maps limits onto the agent option", () => {

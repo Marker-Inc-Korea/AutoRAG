@@ -4,8 +4,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
+import { readRefreshProgress } from "../../src/agent/refresh-progress.ts";
 import { MinSyncClient, MinSyncVectorMethod, minSyncConfigPath } from "../../src/minsync/index.ts";
 import { spawnProcess } from "../../src/minsync/process.ts";
+import { fakeMinSyncStageSimulatorPath } from "../helpers/fake-minsync.ts";
 
 const posixOnly = process.platform === "win32" ? describe.skip : describe;
 
@@ -58,7 +60,9 @@ function writeHangingSyncBinary(): void {
 import { spawn } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { createRequire } from "node:module";
 const args = process.argv.slice(2);
+if (args[0] === "stage") { createRequire(import.meta.url)(${JSON.stringify(fakeMinSyncStageSimulatorPath)}).runStage({stateDir: args[args.indexOf("--state-dir") + 1]}); } else {
 if (args[0] === "init") {
   mkdirSync(join(process.cwd(), ".minsync"), { recursive: true });
   writeFileSync(join(process.cwd(), ".minsync", "config.toml"), "[embedder]\\nid = \\"openai\\"\\n");
@@ -76,6 +80,7 @@ if (args[0] === "sync") {
 } else {
   process.exit(2);
 }
+}
 `,
 	);
 	chmodSync(binary, 0o755);
@@ -87,7 +92,9 @@ function writeLockHeldBinary(heldAt: "check" | "sync" = "sync"): void {
 		binary,
 		`#!/usr/bin/env node
 import { mkdirSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 const args = process.argv.slice(2);
+if (args[0] === "stage") { createRequire(import.meta.url)(${JSON.stringify(fakeMinSyncStageSimulatorPath)}).runStage({stateDir: args[args.indexOf("--state-dir") + 1]}); } else {
 if (args[0] === "init") {
   mkdirSync(".minsync", { recursive: true });
   writeFileSync(".minsync/config.toml", "[embedder]\\nid = \\"openai\\"\\n");
@@ -101,6 +108,7 @@ if (args[0] === "sync") {
   process.exit(3);
 }
 process.exit(2);
+}
 `,
 	);
 	chmodSync(binary, 0o755);
@@ -223,6 +231,56 @@ describe("MinSyncClient.sync cancellation", () => {
 		expect(result).toMatchObject({ ok: false, reason: "lock-held", diagnostic: { code: "minsync-lock-held" } });
 	});
 
+	it("maps MinSync 0.5+ check exit 5 (unhealthy embedder) to embedder-unavailable instead of sync-failed", async () => {
+		writeFileSync(
+			binary,
+			`#!/usr/bin/env node
+const args = process.argv.slice(2);
+if (args[0] === "check") {
+  console.log(JSON.stringify({ vectorstore_ok: true, embedder_ok: false, all_passed: false }));
+  console.error("Error: embedder connection refused");
+  process.exit(5);
+}
+process.exit(1);
+`,
+		);
+		chmodSync(binary, 0o755);
+		writeFileSync(minSyncConfigPath(workspace), '[embedder]\nid = "openai"\n');
+
+		const result = await new MinSyncClient({ binaryPath: binary, workspacePath: workspace }).sync();
+
+		expect(result).toMatchObject({
+			ok: false,
+			reason: "check-failed: embedder unavailable",
+			diagnostic: { code: "embedder-unavailable", retryable: true },
+		});
+	});
+
+	it("maps MinSync 0.5+ check exit 4 (unhealthy vector store) to check-failed: vector store unavailable", async () => {
+		writeFileSync(
+			binary,
+			`#!/usr/bin/env node
+const args = process.argv.slice(2);
+if (args[0] === "check") {
+  console.log(JSON.stringify({ vectorstore_ok: false, embedder_ok: true, all_passed: false }));
+  console.error("Error: vector store corrupt");
+  process.exit(4);
+}
+process.exit(1);
+`,
+		);
+		chmodSync(binary, 0o755);
+		writeFileSync(minSyncConfigPath(workspace), '[embedder]\nid = "openai"\n');
+
+		const result = await new MinSyncClient({ binaryPath: binary, workspacePath: workspace }).sync();
+
+		expect(result).toMatchObject({
+			ok: false,
+			reason: "check-failed: vector store unavailable",
+			diagnostic: { code: "sync-failed", retryable: true },
+		});
+	});
+
 	it("keeps a generic sync failure as sync-failed", async () => {
 		writeFileSync(
 			binary,
@@ -239,6 +297,42 @@ process.exit(1);
 		const result = await new MinSyncClient({ binaryPath: binary, workspacePath: workspace }).sync();
 
 		expect(result).toMatchObject({ ok: false, reason: "sync-failed", diagnostic: { code: "sync-failed" } });
+	});
+
+	it("streams JSONL batch progress while preserving the final sync result", async () => {
+		writeFileSync(
+			binary,
+			`#!/usr/bin/env node
+import { writeFileSync } from "node:fs";
+const args = process.argv.slice(2);
+if (args[0] === "check") { console.log(JSON.stringify({ vectorstore_ok: true, embedder_ok: true })); process.exit(0); }
+writeFileSync(".minsync/cursor.json", "{}");
+if (args.includes("--progress")) {
+  console.log(JSON.stringify({ event: "start", total_files: 2 }));
+  console.log(JSON.stringify({ event: "batch", processed: 1, total: 2 }));
+  console.log(JSON.stringify({ event: "heartbeat", processed: 1, total: 2 }));
+  console.log(JSON.stringify({ event: "done", processed: 2, total: 2 }));
+}
+console.log(JSON.stringify({ files_processed: 2 }));
+`,
+		);
+		chmodSync(binary, 0o755);
+		writeFileSync(minSyncConfigPath(workspace), '[embedder]\nid = "openai"\n');
+		const events: { processed: number; total: number }[] = [];
+
+		const result = await new MinSyncClient({ binaryPath: binary, workspacePath: workspace }).sync(
+			false,
+			undefined,
+			(progress) => events.push(progress),
+		);
+
+		expect(events).toEqual([
+			{ processed: 0, total: 2 },
+			{ processed: 1, total: 2 },
+			{ processed: 1, total: 2 },
+			{ processed: 2, total: 2 },
+		]);
+		expect(result).toMatchObject({ ok: true, synced: 2 });
 	});
 
 	it("treats MinSync's partial exit (6) as a completed sync and names the skipped files", async () => {
@@ -330,7 +424,9 @@ posixOnly("refresh cancellation", () => {
 			binary,
 			`#!/usr/bin/env node
 import { mkdirSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 const args = process.argv.slice(2);
+if (args[0] === "stage") { createRequire(import.meta.url)(${JSON.stringify(fakeMinSyncStageSimulatorPath)}).runStage({stateDir: args[args.indexOf("--state-dir") + 1]}); } else {
 if (args[0] === "init") {
   mkdirSync(".minsync", { recursive: true });
   writeFileSync(".minsync/config.toml", "[embedder]\\nid = \\"openai\\"\\n");
@@ -340,6 +436,7 @@ if (args[0] === "check") { console.log(JSON.stringify({ vectorstore_ok: true, em
 writeFileSync(".minsync/cursor.json", "{}");
 console.log(JSON.stringify({ files_processed: 1, partial: true, files_failed: [{ path: "files/docs/a.txt.md", stage: "read", error: "Permission denied" }] }));
 process.exit(6);
+}
 `,
 		);
 		chmodSync(binary, 0o755);
@@ -355,7 +452,8 @@ process.exit(6);
 
 		const result = await agent.refresh(false, { methods: ["minsync"] });
 
-		expect(result.minsync).toMatchObject({ ok: true });
+		expect(result.minsync).toMatchObject({ ok: true, filesSkippedCount: 1 });
+		expect(readRefreshProgress(root)?.minsync).toMatchObject({ synced: 1, filesSkipped: 1 });
 		const skipped = result.diagnostics.filter((diagnostic) => diagnostic.code === "minsync-file-skipped");
 		expect(skipped).toEqual([expect.objectContaining({ severity: "warning", source: "files/docs/a.txt.md" })]);
 		expect(result.diagnostics.map((diagnostic) => diagnostic.code)).not.toContain("minsync-sync-failed");

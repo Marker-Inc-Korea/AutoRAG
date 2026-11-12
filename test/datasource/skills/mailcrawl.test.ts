@@ -164,6 +164,97 @@ process.exit(3);
 		expect(calls()[0]?.args).toEqual(["sync", "--json", "--source", "fixture", "--fixture", fixture]);
 	});
 
+	it("forwards mailcrawl 0.3.0 files source, sync tuning, category filters, and index --rebuild", async () => {
+		const takeout = join(root, "Takeout.mbox");
+		const emlDir = join(root, "eml");
+		writeFake(
+			JSON.stringify({
+				added: 5,
+				unchanged: 0,
+				chunksAdded: 8,
+				account: "takeout",
+				files: 2,
+				filesRead: 2,
+			}),
+		);
+		const client = new MailcrawlClient({
+			binaryPath,
+			dataDir: join(root, "data"),
+			source: "files",
+			paths: [takeout, emlDir],
+			account: "takeout",
+			concurrency: 8,
+			readTimeoutMs: 45_000,
+			pageSize: 500,
+			includeCategories: ["promotions"],
+			excludeCategories: ["spam", "social"],
+			rebuildIndex: true,
+		});
+
+		expect(await client.sync()).toMatchObject({
+			ok: true,
+			data: { messages: 5, chunksAdded: 8, files: 2, filesRead: 2 },
+		});
+		writeFake(
+			JSON.stringify({
+				embedded: 8,
+				reused: 0,
+				archiveRevision: "rev-files",
+				rebuilt: true,
+				embedder: "native:Qwen/Qwen3-Embedding-0.6B:1024",
+			}),
+		);
+		expect(await client.index()).toMatchObject({ ok: true, data: { embedded: 8, rebuilt: true } });
+
+		const recorded = calls();
+		expect(recorded[0]?.args).toEqual([
+			"sync",
+			"--json",
+			"--account",
+			"takeout",
+			"--source",
+			"files",
+			"--path",
+			takeout,
+			"--path",
+			emlDir,
+			"--page-size",
+			"500",
+			"--concurrency",
+			"8",
+			"--read-timeout",
+			"45000",
+			"--include-category",
+			"promotions",
+			"--exclude-category",
+			"spam",
+			"--exclude-category",
+			"social",
+		]);
+		expect(recorded[1]?.args).toEqual(["index", "--rebuild", "--json"]);
+	});
+
+	it("preserves operator MAILCRAWL_EMBED_API_KEY_ENV and MAILCRAWL_EMBED_ALLOW_REMOTE when no shared endpoint overrides them", async () => {
+		writeFake(JSON.stringify({ embedded: 1, reused: 0, embedder: "openai:text-embedding-3-small:1536" }));
+		const client = new MailcrawlClient({
+			binaryPath,
+			env: {
+				MAILCRAWL_EMBEDDER_PROVIDER: "openai",
+				MAILCRAWL_EMBED_MODEL: "text-embedding-3-small",
+				MAILCRAWL_EMBED_DIM: "1536",
+				MAILCRAWL_EMBED_API_KEY_ENV: "CUSTOM_EMBED_KEY",
+				MAILCRAWL_EMBED_ALLOW_REMOTE: "1",
+			},
+		});
+
+		expect(await client.index()).toMatchObject({ ok: true });
+		expect(calls()[0]?.embeddingEnv).toMatchObject({
+			MAILCRAWL_EMBEDDER_PROVIDER: "openai",
+			MAILCRAWL_EMBED_API_KEY_ENV: "CUSTOM_EMBED_KEY",
+			MAILCRAWL_EMBED_ALLOW_REMOTE: "1",
+		});
+	});
+
 	it("accepts 0.1.4 reused-only semantic index JSON", async () => {
 		writeFake(JSON.stringify({ embedded: 0, reused: 3, generation: "gen-1" }));
 		const client = new MailcrawlClient({ binaryPath, dataDir: join(root, "data") });

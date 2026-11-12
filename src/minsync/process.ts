@@ -1,5 +1,6 @@
-import { type ChildProcess, spawn } from "node:child_process";
+import { spawn } from "node:child_process";
 import { abortReason } from "../process/abort-reason.ts";
+import { trackLiveChild, untrackLiveChild } from "../process/lifecycle.ts";
 import { portableSpawnCommand } from "../process/portable-spawn.ts";
 import { terminateProcessTree } from "../process/terminate-tree.ts";
 
@@ -19,49 +20,16 @@ export interface ProcessResult {
  */
 const TERMINATE_GRACE_MS = 5_000;
 
-const HOST_SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP"] as const;
-
-/**
- * Children still running. A POSIX child leads its own process group, so it no
- * longer receives the terminal's Ctrl-C or the host's group-wide signals; the
- * host takes the tree down with it instead of orphaning a lock-holding sync.
- */
-const liveChildren = new Set<ChildProcess>();
-const hostSignalHandlers = new Map<NodeJS.Signals, () => void>();
-
-function killLiveChildren(): void {
-	for (const child of liveChildren) terminateProcessTree(child, "SIGKILL");
-}
-
-function installHostCleanup(): void {
-	if (hostSignalHandlers.size > 0) return;
-	process.on("exit", killLiveChildren);
-	for (const signal of HOST_SIGNALS) {
-		const handler = (): void => {
-			killLiveChildren();
-			// Listening for a signal replaces its default "terminate" action. When
-			// nothing else listens, restore it so the host still dies from the signal.
-			if (process.listenerCount(signal) === 1) {
-				removeHostCleanup();
-				process.kill(process.pid, signal);
-			}
-		};
-		hostSignalHandlers.set(signal, handler);
-		process.on(signal, handler);
-	}
-}
-
-function removeHostCleanup(): void {
-	process.off("exit", killLiveChildren);
-	for (const [signal, handler] of hostSignalHandlers) process.off(signal, handler);
-	hostSignalHandlers.clear();
-}
-
 export function spawnProcess(
 	command: string,
 	args: readonly string[],
 	cwd: string,
-	options: { readonly timeoutMs?: number; readonly signal?: AbortSignal; readonly env?: NodeJS.ProcessEnv } = {},
+	options: {
+		readonly timeoutMs?: number;
+		readonly signal?: AbortSignal;
+		readonly env?: NodeJS.ProcessEnv;
+		readonly onStdoutLine?: (line: string) => void;
+	} = {},
 ): Promise<ProcessResult> {
 	// Executor form: the ES2022 lib this package targets has no Promise.withResolvers.
 	return new Promise((resolve, reject) => {
@@ -81,18 +49,24 @@ export function spawnProcess(
 			detached: posix,
 			stdio: ["ignore", "pipe", "pipe"],
 		});
-		if (posix) {
-			liveChildren.add(child);
-			installHostCleanup();
-		}
+		trackLiveChild(child);
 		let stdout = "";
 		let stderr = "";
+		let stdoutLine = "";
 		let timedOut = false;
 		let escalation: ReturnType<typeof setTimeout> | undefined;
 		child.stdout.setEncoding("utf8");
 		child.stderr.setEncoding("utf8");
 		child.stdout.on("data", (chunk: string) => {
 			stdout += chunk;
+			if (options.onStdoutLine === undefined) return;
+			stdoutLine += chunk;
+			let newline = stdoutLine.indexOf("\n");
+			while (newline >= 0) {
+				options.onStdoutLine(stdoutLine.slice(0, newline).replace(/\r$/, ""));
+				stdoutLine = stdoutLine.slice(newline + 1);
+				newline = stdoutLine.indexOf("\n");
+			}
 		});
 		child.stderr.on("data", (chunk: string) => {
 			stderr += chunk;
@@ -114,8 +88,7 @@ export function spawnProcess(
 			clearTimeout(timer);
 			clearTimeout(escalation);
 			signal?.removeEventListener("abort", terminate);
-			liveChildren.delete(child);
-			if (liveChildren.size === 0) removeHostCleanup();
+			untrackLiveChild(child);
 		};
 		child.on("error", (error) => {
 			settle();
@@ -123,6 +96,7 @@ export function spawnProcess(
 			else resolve({ ok: false, stdout, stderr: error.message, code: null });
 		});
 		child.on("close", (code) => {
+			if (stdoutLine.length > 0) options.onStdoutLine?.(stdoutLine.replace(/\r$/, ""));
 			settle();
 			if (signal?.aborted) {
 				reject(abortReason(signal));

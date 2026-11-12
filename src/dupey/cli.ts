@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";
 import { portableSpawnCommand } from "../process/portable-spawn.ts";
+import { DUPEY_MIN_VERSION, isSupportedDupeyVersion, parseDupeyVersion } from "./version.ts";
 
 export interface DupeyScanFile {
 	readonly path: string;
@@ -43,6 +44,18 @@ export interface DupeyCliOptions {
 	readonly run?: (args: readonly string[]) => Promise<string>;
 }
 
+/** One file's identity as `dupey fingerprint` reports it. `exact` equals `dupey scan --json`'s `content_hash`. */
+export interface DupeyFingerprint {
+	readonly path: string;
+	readonly format: string;
+	readonly chars: number;
+	readonly exact: string;
+	readonly minhashWidth: number;
+	/** The document's own last-modified time, or `null` when dupey records none (`-`). */
+	readonly modified: string | null;
+	readonly revision: string | null;
+}
+
 export class DupeyCliError extends Error {
 	constructor(message: string) {
 		super(message);
@@ -50,13 +63,44 @@ export class DupeyCliError extends Error {
 	}
 }
 
-function runDupey(args: readonly string[], options: DupeyCliOptions): Promise<string> {
-	return options.run ? options.run(args) : spawnDupey(options.executable ?? "dupey", args, options);
+/** One `--version` probe per executable per process; a failed probe is forgotten so a later install is seen. */
+const versionChecks = new Map<string, Promise<void>>();
+
+/**
+ * Refuse a dupey below {@link DUPEY_MIN_VERSION}: its hashes disagree with the ones AutoRAG stores. A version line
+ * AutoRAG cannot read is let through, as Jikji's gate does. Test doubles (`run`) are never probed.
+ */
+function checkDupeyVersion(executable: string, options: DupeyCliOptions): Promise<void> {
+	const cached = versionChecks.get(executable);
+	if (cached !== undefined) return cached;
+	const check = spawnDupey(executable, ["--version"], options).then((stdout) => {
+		const version = parseDupeyVersion(stdout);
+		if (version !== undefined && !isSupportedDupeyVersion(version)) {
+			throw new DupeyCliError(
+				`dupey ${version} at ${executable} is older than the ${DUPEY_MIN_VERSION} AutoRAG requires; run \`cargo install dupey\` to update it.`,
+			);
+		}
+	});
+	check.catch(() => versionChecks.delete(executable));
+	versionChecks.set(executable, check);
+	return check;
 }
 
-export async function scanWithDupey(dir: string, options: DupeyCliOptions = {}): Promise<DupeyScanResult> {
+async function runDupey(args: readonly string[], options: DupeyCliOptions): Promise<string> {
+	if (options.run) return options.run(args);
+	const executable = options.executable ?? "dupey";
+	await checkDupeyVersion(executable, options);
+	return spawnDupey(executable, args, options);
+}
+
+export async function scanWithDupey(
+	dir: string,
+	options: DupeyCliOptions & { readonly excludeDirs?: readonly string[] } = {},
+): Promise<DupeyScanResult> {
 	const absoluteDir = resolve(dir);
-	const stdout = await runDupey(["scan", absoluteDir, "--json"], options);
+	const args = ["scan", absoluteDir, "--json"];
+	for (const name of options.excludeDirs ?? []) args.push("--exclude-dir", name);
+	const stdout = await runDupey(args, options);
 	let parsed: unknown;
 	try {
 		parsed = JSON.parse(stdout);
@@ -65,6 +109,40 @@ export async function scanWithDupey(dir: string, options: DupeyCliOptions = {}):
 	}
 	if (!isScanResult(parsed)) throw new DupeyCliError("dupey returned an unsupported scan result.");
 	return parsed;
+}
+
+/**
+ * Read one file's canonical-text identity with `dupey fingerprint` while it is on disk. This is how a cloud
+ * file is judged for exact-duplicate exclusion without ever reading it again after its single download:
+ * `exact` is the same hash `dupey scan --json` would report (`content_hash`), so a scanned copy elsewhere
+ * and this stored fingerprint group together.
+ */
+export async function fingerprintWithDupey(path: string, options: DupeyCliOptions = {}): Promise<DupeyFingerprint> {
+	const absolute = resolve(path);
+	const stdout = await runDupey(["fingerprint", absolute], options);
+	const fields = new Map<string, string>();
+	for (const line of stdout.split(/\r?\n/)) {
+		const tab = line.indexOf("\t");
+		if (tab > 0) fields.set(line.slice(0, tab), line.slice(tab + 1).trim());
+	}
+	const exact = fields.get("exact");
+	if (exact === undefined || exact.length === 0) {
+		throw new DupeyCliError("dupey fingerprint returned no exact hash.");
+	}
+	const chars = Number.parseInt(fields.get("chars") ?? "", 10);
+	const minhashWidth = Number.parseInt(fields.get("minhash_width") ?? "", 10);
+	// `dupey fingerprint` prints `-` for an absent value; normalize that to `null`.
+	const nullable = (value: string | undefined): string | null =>
+		value === undefined || value === "" || value === "-" ? null : value;
+	return {
+		path: fields.get("path") ?? absolute,
+		format: fields.get("format") ?? "",
+		chars: Number.isFinite(chars) ? chars : 0,
+		exact,
+		minhashWidth: Number.isFinite(minhashWidth) ? minhashWidth : 0,
+		modified: nullable(fields.get("modified")),
+		revision: nullable(fields.get("revision")),
+	};
 }
 
 /** `dupey scan`'s own defaults: `--threshold`, `--contains-threshold`, `--contains-min-jaccard`. */

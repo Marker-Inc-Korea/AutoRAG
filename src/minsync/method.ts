@@ -2,6 +2,7 @@ import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { basename, join, normalize } from "node:path";
 import { abortReason } from "../process/abort-reason.ts";
 import { type ChunkLocation, locateChunk } from "../retrieval/chunk-location.ts";
+import { OVERFETCH_ABSOLUTE_CAP, type RecordCut } from "../retrieval/record-cut.ts";
 import { matchesVirtualPathScope } from "../retrieval/scope.ts";
 import { describeRetrievalError } from "../retrieval/skip.ts";
 import type {
@@ -13,9 +14,10 @@ import type {
 import { isMinSyncBinaryMissing, resolveMinSyncBinary } from "./binary.ts";
 import type { MinSyncQueryMode } from "./client.ts";
 import { MinSyncClient } from "./client.ts";
+import { isSparseOnlyEmbedder } from "./embedder-config.ts";
 import type { EnsureMinSyncBinaryOptions } from "./installer.ts";
 import { minSyncWorkspaceRoot } from "./paths.ts";
-import type { MinSyncEmbedderConfig, MinSyncQueryHit, MinSyncSyncResult } from "./types.ts";
+import type { MinSyncEmbedderConfig, MinSyncQueryHit, MinSyncSyncProgress, MinSyncSyncResult } from "./types.ts";
 import { buildMinSyncPathMap, syncMinSyncWorkspace } from "./workspace.ts";
 import { runWorkspaceQuery, runWorkspaceSync } from "./workspace-lock.ts";
 
@@ -33,6 +35,11 @@ export interface MinSyncVectorMethodOptions {
 	readonly defaultTopK?: number;
 	/** Fetch cap applied when a scope narrows the query. Default 100. */
 	readonly scopedTopK?: number;
+	/**
+	 * Fuse deeper and cut the hits by document, so one long document cannot take every one of `topK` slots
+	 * (see {@link RecordCut}). Unset asks MinSync for `topK` and cuts by chunk.
+	 */
+	readonly recordCut?: RecordCut;
 }
 
 export type MinSyncHybridMethodOptions = Omit<MinSyncVectorMethodOptions, "mode">;
@@ -48,6 +55,7 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 	private readonly mode: MinSyncQueryMode;
 	private readonly defaultTopK: number;
 	private readonly scopedTopK: number;
+	private readonly recordCut: RecordCut | undefined;
 
 	constructor(options: MinSyncVectorMethodOptions) {
 		this.root = options.root;
@@ -59,22 +67,24 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 		this.maxChunkSize = options.maxChunkSize;
 		this.defaultTopK = options.defaultTopK ?? 50;
 		this.scopedTopK = options.scopedTopK ?? 100;
-		this.mode = options.mode ?? "vector";
+		this.recordCut = options.recordCut;
+		// A sparse-only index has no dense vectors, so MinSync answers only `--mode sparse` for it.
+		this.mode = isSparseOnlyEmbedder(options.embedder) ? "sparse" : (options.mode ?? "vector");
 	}
 
 	describe(): RetrievalMethodDescriptor {
 		return {
 			name: "minsync",
-			type: this.mode === "bm25" ? "bm25" : this.mode === "hybrid" ? "hybrid" : "vector",
+			type: this.mode,
 			description:
-				this.mode === "bm25"
-					? "MinSync-backed BM25 lexical retrieval over parsed markdown mirrors"
+				this.mode === "sparse"
+					? "MinSync-backed SPLADE sparse retrieval over parsed markdown mirrors"
 					: this.mode === "hybrid"
 						? "MinSync-backed hybrid retrieval over parsed markdown mirrors"
 						: "MinSync-backed semantic vector retrieval over parsed markdown mirrors",
 			status: "active",
 			capabilities: [
-				...(this.mode === "bm25" ? ["lexical"] : this.mode === "hybrid" ? ["semantic", "lexical"] : ["semantic"]),
+				...(this.mode === "sparse" ? ["lexical"] : this.mode === "hybrid" ? ["semantic", "lexical"] : ["semantic"]),
 				"incremental",
 				"parsed-mirrors",
 				"virtual-paths",
@@ -82,23 +92,34 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 		};
 	}
 
-	async sync(force = false, signal?: AbortSignal): Promise<MinSyncSyncResult> {
-		return runWorkspaceSync(this.workspacePath, () => this.syncUnlocked(force, signal));
+	async sync(
+		force = false,
+		signal?: AbortSignal,
+		onProgress?: (progress: MinSyncSyncProgress) => void,
+	): Promise<MinSyncSyncResult> {
+		return runWorkspaceSync(this.workspacePath, () => this.syncUnlocked(force, signal, onProgress));
 	}
 
-	private async syncUnlocked(force: boolean, signal: AbortSignal | undefined): Promise<MinSyncSyncResult> {
+	private async syncUnlocked(
+		force: boolean,
+		signal: AbortSignal | undefined,
+		onProgress?: (progress: MinSyncSyncProgress) => void,
+	): Promise<MinSyncSyncResult> {
 		if (signal?.aborted) throw abortReason(signal);
-		const staging = syncMinSyncWorkspace(this.root, { workspacePath: this.workspacePath });
+		const binaryPath = await this.resolveBinary();
+		const staging = syncMinSyncWorkspace(this.root, {
+			workspacePath: this.workspacePath,
+			minSyncBinaryPath: binaryPath,
+		});
 		const withExcluded = (result: MinSyncSyncResult): MinSyncSyncResult =>
 			staging.excluded.length === 0 ? result : { ...result, stagingExcluded: staging.excluded };
-		const binaryPath = await this.resolveBinary();
 		const client = new MinSyncClient({
 			binaryPath,
 			workspacePath: this.workspacePath,
 			embedder: this.embedder,
 			maxChunkSize: this.maxChunkSize,
 		});
-		return withExcluded(await client.sync(force, signal));
+		return withExcluded(await client.sync(force, signal, onProgress));
 	}
 
 	/** Report unavailable binaries without treating auto-install as already failed. */
@@ -122,10 +143,13 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 
 	private async retrieveUnlocked(query: string, options: RetrievalOptions): Promise<RetrievalResult[]> {
 		const topK = options.topK ?? this.defaultTopK;
-		const queryK = options.scope ? Math.min(Math.max(topK * 5, topK + 20), this.scopedTopK) : topK;
-		const byPath = buildMinSyncPathMap(this.root, this.workspacePath);
-		// Queries never install: they use an existing binary or fail loudly.
+		const scopedK = options.scope ? Math.min(Math.max(topK * 5, topK + 20), this.scopedTopK) : topK;
+		// The deeper fusion widens whatever the scope already asked for; the cap bounds only the extra depth.
+		const queryK =
+			this.recordCut === undefined ? scopedK : this.recordCut.fusedLimit(scopedK, OVERFETCH_ABSOLUTE_CAP);
 		const binaryPath = await this.resolveBinary({ install: false });
+		const byPath = buildMinSyncPathMap(this.root, this.workspacePath, binaryPath);
+		// Queries never install: they use an existing binary or fail loudly.
 		const client = new MinSyncClient({
 			binaryPath,
 			workspacePath: this.workspacePath,
@@ -137,12 +161,12 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 			hits = await client.query(query, queryK, this.mode, options.signal);
 		} catch (error) {
 			if (this.mode !== "hybrid" || options.signal?.aborted) throw error;
-			hits = await client.query(query, queryK, "bm25", options.signal);
+			hits = await client.query(query, queryK, "sparse", options.signal);
 			// Hybrid is the only MinSync method searched, so a semantic half that is down (embedder
 			// unreachable, stale index) would vanish from the result unless the pipeline is told.
 			options.onFallback?.({
 				method: this.describe().name,
-				fallback: "bm25",
+				fallback: "sparse",
 				reason: describeRetrievalError(error),
 			});
 		}
@@ -177,16 +201,17 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 						: {}),
 				},
 			});
-			if (results.length >= topK) break;
+			// With a record cut the whole in-scope pool is collected, then cut by document below.
+			if (this.recordCut === undefined && results.length >= topK) break;
 		}
-		return results;
+		return this.recordCut === undefined ? results : this.recordCut.cut(results, topK, (result) => result.source);
 	}
 
 	/**
 	 * Queries pass `install: false` so a user's turn never waits on `cargo install`; only `sync` (refresh)
 	 * may install. See {@link resolveMinSyncBinary}.
 	 */
-	protected resolveBinary(options: { readonly install?: boolean } = {}): Promise<string> {
+	resolveBinary(options: { readonly install?: boolean } = {}): Promise<string> {
 		return resolveMinSyncBinary({
 			root: this.root,
 			binaryPath: this.binaryPath,
@@ -198,18 +223,31 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 }
 
 export class MinSyncHybridMethod extends MinSyncVectorMethod {
+	private readonly sparseOnly: boolean;
+
 	constructor(options: MinSyncHybridMethodOptions) {
 		super({ ...options, mode: "hybrid" });
+		this.sparseOnly = isSparseOnlyEmbedder(options.embedder);
 	}
 
 	override describe(): RetrievalMethodDescriptor {
-		return {
-			name: "hybrid",
-			type: "hybrid",
-			description: "MinSync-backed hybrid BM25+vector retrieval over shared CDC chunks",
-			status: "active",
-			capabilities: ["semantic", "lexical", "incremental", "parsed-mirrors", "virtual-paths"],
-		};
+		// The registered name stays `hybrid` so tools and the skip report keep one MinSync surface; a sparse-only
+		// index ranks by SPLADE alone and says so.
+		return this.sparseOnly
+			? {
+					name: "hybrid",
+					type: "sparse",
+					description: "MinSync-backed SPLADE sparse retrieval over shared CDC chunks (sparse-only index)",
+					status: "active",
+					capabilities: ["lexical", "incremental", "parsed-mirrors", "virtual-paths"],
+				}
+			: {
+					name: "hybrid",
+					type: "hybrid",
+					description: "MinSync-backed hybrid SPLADE sparse + dense vector retrieval over shared CDC chunks",
+					status: "active",
+					capabilities: ["semantic", "lexical", "incremental", "parsed-mirrors", "virtual-paths"],
+				};
 	}
 }
 

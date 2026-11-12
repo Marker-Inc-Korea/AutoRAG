@@ -118,8 +118,8 @@ evidence remains in the mounted clone under `.omo/evidence`.
 Use `--config <path>` or `AUTORAG_CONFIG=<path>` when replacement is intentional.
 First-time implicit initialization remains allowed.
 
-The QA image is based on Ubuntu 24.04 so current Linux MinSync release assets
-run against the image's glibc; `make test-linux` continues to use the existing
+The QA image is based on Ubuntu 26.04 so current Linux MinSync release assets
+(built against glibc 2.43) run against the image's glibc; `make test-linux` continues to use the existing
 Java 17 CI image. Native-store lanes are expected to skip inside the isolated
 container unless their stores are deliberately provisioned inside it; never
 mount a real host home to make a lane pass.
@@ -205,7 +205,7 @@ make e2e-live E2E_ROOT="$AUTORAG_LIVE_E2E_ROOT"
 Datasource lanes run by default: with no `E2E_DATASOURCES` override the runner
 executes the `local` lane, the self-contained `obsidian` vault lane, and every
 native CLI lane (lazykatok, discrawl, wacrawl, telecrawl, slacrawl, lark,
-notcrawl, rclone, mailcrawl, and macOS Spotlight).
+notcrawl, and mailcrawl).
 `E2E_DATASOURCES` only narrows this default (e.g. `E2E_DATASOURCES=local`
 skips native lanes entirely). The summary separates the core MinSync result
 (`commandsSummary.core`) from `datasourceLanes`. Native lanes whose CLI or
@@ -235,7 +235,7 @@ filesystem path.
 
 Cleanup is limited to runner-owned state. The cold command removes and rebuilds
 `.autorag-e2e`; for manual cleanup, run `rm -rf .autorag-e2e` from this clone
-only. Leave lazykatok, discrawl, crawler, rclone, mailcrawl, and Spotlight
+only. Leave lazykatok, discrawl, crawler, and mailcrawl
 native stores untouched.
 Record the cleanup receipt in the task evidence; never stage `.debug-journal.md`.
 
@@ -356,7 +356,7 @@ Three core values drive every design decision. Features and PRs that conflict
 with any of them should be rejected or reshaped:
 
 1. **Never migrate your data to search it.** AutoRAG federates CLI-owned
-   stores (lazykatok, discrawl, msgvault, rclone, …) in place. No forced
+   stores (lazykatok, discrawl, msgvault, …) in place. No forced
    ingestion into a central index, no third-party server holding a copy of
    the corpus. Results carry source-native identities
    (`/kakao/<instance>/chunks/<chunk>`), and secrets
@@ -412,7 +412,7 @@ write new files, edit or replace existing files, and move files to the OS trash
 
 ## New CLI-backed datasource
 
-External datasource CLIs (lazykatok, discrawl, slacrawl, rclone,
+External datasource CLIs (lazykatok, discrawl, slacrawl,
 crawlers) are driven **directly** with their own native stores. There is no
 AutoRAG-managed workspace/config forcing and no bash gate: the agent may run
 these CLIs through `bash` as well as through the datasource tools.
@@ -457,7 +457,7 @@ path. Bounding runaway output by length is fine; suppressing content is not.
 
 Raw search tools return file paths and matching lines. A human still has to open each file, read the context, decide what's relevant, and synthesize an answer. AutoRAG eliminates that entire workflow:
 
-1. **Search** across multiple retrieval methods (BM25, vector/MinSync, datasource skills — pluggable)
+1. **Search** across multiple retrieval methods (MinSync sparse/vector/hybrid, datasource skills — pluggable)
 2. **Read** promising source files directly with the built-in bash tool
 3. **Judge and curate** — extract key insights, resolve conflicts, and assess freshness
 4. **Deliver** numbered knowledge units grounded in the sources
@@ -525,7 +525,7 @@ Datasource skills are retrieval-method factories plus indexing hooks for externa
 
 CLI-backed datasources own their archive, lexical index, and vectors: KakaoTalk through the external `lazykatok` CLI, and **Discord** through the external [`discrawl`](https://github.com/openclaw/discrawl) CLI. AutoRAG only spawns them and maps results. AutoRAG never reads KakaoTalk databases directly; failures surface as diagnostics, and remote embedding egress settings are rejected before the CLI is spawned.
 
-External crawler-backed skills cover **WhatsApp** (wacrawl), **Telegram** (telecrawl), **Slack** (slacrawl), and **Notion** (notcrawl); each crawler owns its archive, sync, credentials, and FTS search while AutoRAG provides bounded process execution, diagnostics, and retrieval mapping. The remaining connector-backed datasource skills use the shared framework (`src/datasource/connector.ts`, `chunk-store.ts`, `connector-skill.ts`): **GitHub**, **Google Drive**, **local mail export**, **Obsidian** (vault indexed by MinSync in its own workspace: incremental + BM25 + semantic), **RSS/news**, and **Spotlight**. Gmail, IMAP, and Maildir retrieval is provided by **mailcrawl**. Results remain traceable. Manual QA harnesses live in `scripts/manual-qa/` (see `docs/manual-qa-datasources.md`).
+External crawler-backed skills cover **WhatsApp** (wacrawl), **Telegram** (telecrawl), **Slack** (slacrawl), and **Notion** (notcrawl); each crawler owns its archive, sync, credentials, and FTS search while AutoRAG provides bounded process execution, diagnostics, and retrieval mapping. The remaining connector-backed datasource skills use the shared framework (`src/datasource/connector.ts`, `chunk-store.ts`, `connector-skill.ts`): **GitHub**, **Google Drive**, **Obsidian** (vault indexed by MinSync in its own workspace: incremental + BM25 + semantic), and **RSS/news**. Gmail, IMAP, Maildir, and static `.eml`/`.mbox` mailbox retrieval is provided by **mailcrawl**. Results remain traceable. Manual QA harnesses live in `scripts/manual-qa/` (see `docs/manual-qa-datasources.md`).
 
 ## Directory Access
 
@@ -534,13 +534,13 @@ The AutoRAG librarian navigates document collections directly with `bash`, using
 Model authentication stays with the configured provider or authenticated local runtime; corpus indexes remain workspace-local under `<workspace>/.autorag`.
 
 - **Tool surface** — the librarian owns `bash`, `check_memory`, `jikji_find`, `everything_search` (Windows), `fsearch_search` (macOS/Linux), `search_all_documents`, `semantic_search_local_docs`, one `search_datasource_<id>` tool per configured datasource connection, `load_datasource_skill`, and `scan_duplicate_documents`. There is no answer-emitting tool: the fast first answer and the final answer are ordinary assistant messages.
-- **Parsed mirrors** — `AutoRAGAgent.refresh()` parses supported files from configured source directories into `.autorag/parsed`; BM25 and MinSync index those parsed mirrors.
+- **Parsed mirrors** — `AutoRAGAgent.refresh()` parses supported files from configured source directories into `.autorag/parsed`; MinSync indexes those parsed mirrors (sparse and dense).
 - **Document parsing** — `kordoc` is the default parser for `.hwp`, `.hwpx`, `.hml`, `.hwpml`, `.pdf`, `.docx`, `.xlsx` and `.xls`; it runs in-process (no Java, no subprocess) and keeps nested tables and per-sheet workbook structure. `.pptx`, `.eml` and plain text keep their own parsers. kordoc failures surface as `ParseError` with kordoc's own code and message verbatim, and kordoc warnings become `parser-warning` diagnostics.
 - **Global language setting** — one `languages` list (config `languages`, `--languages`, or `AUTORAG_LANGUAGES`; default `["ko", "en"]`) describes the corpus. Accepted tags are curated in `src/language.ts` because every tag must map to a Tesseract traineddata code. Format parsing is language-agnostic; `languages` only selects the OCR engine when `parserOptions.ocr.enabled` is true: all-`ko`/`en` uses kordoc's built-in PP-OCRv5, any other tag injects Tesseract (all languages joined, e.g. `kor+jpn`) as kordoc's OCR provider. kordoc is the single owner of scanned PDF pages and `.png .jpg .jpeg .webp` images; image extensions are registered only while OCR is enabled, because kordoc OCRs every image it is handed. `.bmp`/`.tiff` are unsupported by kordoc and not claimed. OCR stays opt-in, so a default refresh downloads no recognition model. Tesseract traineddata is cached under `<workspace>/.autorag/models/tessdata` (`ocr.cachePath` overrides), never the working directory.
-- **MinSync BM25 tokenizer** — AutoRAG always sets MinSync's `[lexical].language` to `multilingual` (`src/minsync/lexical-language.ts`, passed to `minsync init --language` and written to an existing workspace's `config.toml`), independent of `languages`. MinSync's default `simple` splits on whitespace, so `인증서를` never matches `인증서`; `ko` indexes Kiwi morphemes only, so a compound (`연구목표`) loses its original form and exact-term queries lose precision; `multilingual` indexes the original words and the morphemes (measured on real Korean documents: best recall on inflected and exact queries). `ko`, `ja`, `zh` and `ar` are never selected. MinSync records the tokenizer an index was built with in its cursor, so a changed tokenizer makes its next sync delete and re-index (re-embed) every chunk; a failed refresh restores the previous `config.toml` and the rebuild retries on the next refresh. `multilingual` loads the Kiwi native library and model at run time and fails every sync without them, so `src/minsync/kiwi.ts` probes for them first (mirroring `kiwi-rs` discovery: `KIWI_LIBRARY_PATH`/`KIWI_MODEL_PATH`, `~/.local/kiwi`, system dirs). Missing Kiwi on a new or differently tokenized workspace falls back to `simple` with a `lexical-tokenizer-unavailable` refresh warning (`MinSyncSyncResult.lexicalFallback`), for every corpus; a workspace already on `multilingual` is never flipped, because that would re-embed every chunk. Tests stand in for Kiwi through `test/setup/kiwi-available.ts`.
+- **MinSync sparse retrieval** — MinSync 0.6 replaced BM25 with SPLADE (`nlpai-lab/KURE-Sparse-nano`); the MinSync methods query `--mode sparse` / `hybrid` / `vector` and need no tokenizer library (Kiwi is gone). `src/minsync/version.ts` sets the floor `MINSYNC_MIN_VERSION = 0.6.0`: an older `minsync` on PATH is skipped, an older cached one is replaced by the installer, and a query with no usable binary fails with `MinSyncRequiredError` naming the version. A BM25-era workspace has its `[lexical]` table removed on the next refresh and MinSync migrates the index in place (dense vectors kept). Exact identifiers among many look-alike documents rank worse than with BM25; the system prompt points the model at a bounded `grep` for those. `minSync.embedder.id: "none"` (`SPARSE_ONLY_EMBEDDER_ID`) is a sparse-only index: `minsync init --embedder none`, every MinSync method (and Obsidian) queries `--mode sparse` and describes itself as `sparse`, `createEmbedderFromConfig` returns an embedder that reports no backend, and no embedder warning is raised; switching between `none` and a dense embedder re-runs `minsync init --force` and a full sync, because the vector column's dimension differs.
 - **Jikji discovery** — `jikji_find` runs `jikji find ROOT "query" --json` and returns the answer pack to the librarian; direct file reading remains available. `prepare`/`refresh` remain for indexing only; AutoRAG-managed prepare runs with `--no-agent-rules` by default so it never rewrites the consumer repo's `AGENTS.md`/`CLAUDE.md`/`.cursorrules`. An explicit `writeAgentRules: true` opt-in re-enables upstream routing-block injection.
 - **No indexing during inference** — a query (`searchDocuments`, TUI, MCP retrieve) only reads prebuilt indexes. It never runs `jikji prepare`, `minsync sync`/`init`, parsed-mirror sync, fsearch/Everything index builds or instance startup, or a binary auto-install. All of that runs only in `refresh`/`watch` (incremental: MinSync syncs changed mirrors, `jikji prepare` reuses unchanged docs; Jikji roots prepare one at a time, because every root shares one central SQLite file that fails with "database is locked" under concurrent writers, and a search root nested inside or duplicating another is skipped since upstream rejects overlapping roots). A never-refreshed source simply contributes no evidence.
-- **External tool auto-install** — MinSync and Jikji binaries are cached under `<workspace>/.autorag/bin`. MinSync is **required**: it auto-installs from crates.io via `cargo install minsync` by default, falling back to verified GitHub release assets when cargo is unavailable (`minSync.autoInstall: false` only stops the auto-install; there is no way to turn MinSync off, `minSync: false` and `minSync.enabled: false` are config errors). A search, refresh, or MCP tool call with no resolvable `minsync` binary fails with `MinSyncRequiredError` and a non-zero exit instead of answering from the remaining retrieval paths. Jikji auto-installs the `jikji-cli` crate from crates.io via cargo by default (`jikji.autoInstall: false` opts out; requires the Rust toolchain). New `autorag init` configs enable Jikji by default (`jikji: {}`). The KakaoTalk `lazykatok` and Discord `discrawl` CLIs remain manual, optional installs (`brew install openclaw/tap/discrawl`). Jikji, `lazykatok`, and `discrawl` degrade gracefully when missing; MinSync does not.
+- **External tool auto-install** — MinSync and Jikji binaries are cached under `<workspace>/.autorag/bin`. MinSync is **required**: it auto-installs from crates.io via `cargo install minsync` by default, falling back to verified GitHub release assets when cargo is unavailable (`minSync.autoInstall: false` only stops the auto-install; there is no way to turn MinSync off, `minSync: false` and `minSync.enabled: false` are config errors). A search, refresh, or MCP tool call with no resolvable `minsync` binary fails with `MinSyncRequiredError` and a non-zero exit instead of answering from the remaining retrieval paths. Jikji auto-installs the `jikji-cli` crate from crates.io via cargo by default, pinned to the version in `src/jikji/version.ts` (`jikji.autoInstall: false` opts out; requires the Rust toolchain). AutoRAG refuses a `jikji` older than `JIKJI_MIN_VERSION` (0.2.0, the first release whose `find` accepts `--no-background-refresh`): it probes `jikji --version` on the PATH and cached binaries, skips a stale one, and `refresh` reinstalls the pinned version (`cargo install --force` over a stale cached binary). A query never installs, so `find` against only a stale binary degrades with `jikji-unsupported-version`, whose message names the detected version, the binary path and the floor. An explicit `jikji.binaryPath` is used as given and never probed. New `autorag init` configs enable Jikji by default (`jikji: {}`). The KakaoTalk `lazykatok` and Discord `discrawl` CLIs remain manual, optional installs (`brew install openclaw/tap/discrawl`). Jikji, `lazykatok`, and `discrawl` degrade gracefully when missing; MinSync does not.
 - **Everything (Windows)** — the npm package bundles the unmodified voidtools portable Everything 1.4.1.1032 and ES 1.1.0.38 ZIPs (x64/ARM64) in `vendor/everything`, pinned by SHA-256 in `vendor/everything/manifest.json`, with their MIT (and PCRE BSD) texts in `licenses/` and NOTICE. On Windows only, AutoRAG extracts and verifies them into `<workspace>/.autorag/everything/<version>/<arch>/` and starts a named, user-level instance (`autorag-<hash>`) with its own `Everything.ini`/`Everything.db` that indexes only the configured search roots as folder indexes. It never requests elevation, installs the Everything service, indexes whole NTFS/ReFS volumes, or enables the HTTP/ETP servers, and it does not touch a user's own Everything. `refresh` (all methods, any parsed refresh, or `--method everything`) rewrites the config, restarts the instance, and waits for the index; failures surface as `everything-index-failed` with ES's exit code and stderr verbatim. `everything: false` disables it; on macOS/Linux it is absent.
 - **FSearch (macOS/Linux)** — the Everything-analog on non-Windows hosts, via the user's [`fsearch-cli`](https://github.com/NomaDamas/fsearch-mac) (GPL-2.0-or-later). fsearch-cli is NOT bundled: the user installs it separately and AutoRAG only spawns it as a separate process over its CLI and Unix-socket daemon protocol — mere aggregation per the FSF GPL FAQ, never a combined work, so AutoRAG keeps its own license. On macOS/Linux only, AutoRAG builds a per-workspace database at `<workspace>/.autorag/fsearch/fsearch.db` that indexes only the configured search roots (excluding `.autorag` state dirs) and keeps a `fsearch-cli watch` daemon (pid file `watch.pid`) live from FSEvents/inotify so `fsearch-cli search` answers over its socket — an explicit short socket at `/tmp/autorag-fsearch-<uid>-<sha12(db realpath)>.sock`, because fsearch-cli's default `<db>.sock` overflows the 104-byte unix sun_path limit for deep workspace paths and daemon/client rendezvous silently breaks; `stopFsearch()` terminates the daemon, and it never touches the user's own FSearch app database (`$XDG_DATA_HOME/fsearch/fsearch.db`). `refresh` (all methods, any parsed refresh, or `--method fsearch`) rebuilds the database and re-verifies the daemon; a missing binary surfaces as a `fsearch-binary-missing` warning (not an error), other failures as `fsearch-index-failed` with the CLI's exit code and stderr verbatim. When fsearch-cli is not installed, `fsearch_search` still answers through a bounded slow filesystem walk (substring/regex name matching) and labels its output as such. `fsearch: false` disables it; on Windows it is absent (Everything covers it).
 - **Datasource skills** — `AutoRAGAgent` can register `datasourceSkills`; their retrieval methods are merged with the normal retrieval pipeline, filtered before merging by per-query scope, and indexed during `refresh()`.
@@ -632,9 +632,8 @@ configured for the run is never shown. See
 | `src/retrieval/registry.ts` | Method registry for multi-method orchestration |
 | `src/retrieval/merger.ts` | Cross-method result merging and deduplication |
 | `src/retrieval/rerank.ts` | Post-merge reranker seam + OpenRouter implementation (`OpenRouterReranker`, `createReranker`) |
-| `src/minsync/method.ts` | MinSync retrieval method (vector / BM25 / hybrid over shared CDC chunks) |
-| `src/minsync/lexical-language.ts` | The BM25 tokenizer AutoRAG always sets in MinSync (`multilingual`) and why |
-| `src/minsync/kiwi.ts` | Probe for the Kiwi native library and model that MinSync's `multilingual` tokenizer loads at run time |
+| `src/minsync/method.ts` | MinSync retrieval method (vector / SPLADE sparse / hybrid over shared CDC chunks) |
+| `src/minsync/version.ts` | MinSync version floor (`MINSYNC_MIN_VERSION`) and the `--version` probe that gates PATH and cached binaries |
 | `src/language.ts` | Curated global language tags, normalization, and defaults |
 | `src/parser/kordoc.ts` | Default document parser (kordoc) for HWP/HWPX/HWPML, PDF, DOCX, XLSX/XLS |
 | `src/parser/ocr-engines.ts` | OCR switch options, Tesseract runtime (worker lifecycle, timeout, cache path) and the language → engine split |
@@ -642,7 +641,7 @@ configured for the run is never shown. See
 | `src/datasource/connector.ts` | Connector contract + opaque-text/id sanitizers for connector-backed skills |
 | `src/datasource/chunk-store.ts` | Persistent chunk store with BM25-style lexical search per skill instance |
 | `src/datasource/connector-skill.ts` | Shared DatasourceSkill base composing a connector with the chunk store |
-| `src/datasource/skills/` | Built-in skills: lazykatok, discrawl, wacrawl, telecrawl, slack, lark, clawgallery, notion, github, cloud-drive, mail-export, mailcrawl, obsidian, rss, spotlight (+ config factory) |
+| `src/datasource/skills/` | Built-in skills: lazykatok, discrawl, wacrawl, telecrawl, slack, lark, clawgallery, notion, github, mailcrawl, obsidian, rss (+ config factory) |
 | `src/agent/search-single-datasource-tool.ts` | One generated `search_datasource_<id>` tool per configured datasource connection with model-safe `{ query, topK?, scope? }` parameters |
 | `src/profiles/agent-factory.ts` | `createProfileSession`: one plain in-memory pi session per `AgentProfile` (prompt, tool names, custom tools, thinking, opt-in AGENTS.md/skills/extensions) on the AutoRAG agent's model and credential store; never touches retrieval memory. Exported as `@autorag/librarian/profiles` |
 | `src/profiles/session-model.ts` | Resolves the profile model (`resolveSessionModel`) and keeps the Dazzi plan's OAuth credential (`preferPlanOAuth`, `openPlanRuntime`, `applyDazziThinkingLevels`) |

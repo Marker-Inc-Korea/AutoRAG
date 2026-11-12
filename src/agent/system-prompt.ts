@@ -14,6 +14,7 @@ import {
 	ANSWER_UNCONFIRMED_FAST_RULE,
 	ANSWER_UNCONFIRMED_FINAL_RULE,
 } from "./answer-guidelines.ts";
+import { CALCULATOR_PROMPT_RULE } from "./calculator-tool.ts";
 import type { DatasourceAgentSkill } from "./datasource-skill.ts";
 import { buildDatasourceSkillsPrompt } from "./datasource-skill.ts";
 
@@ -79,6 +80,11 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 		),
 		toolLine(
 			config,
+			"calculator",
+			"exact arithmetic, percentages, statistics, date differences and offsets, weekdays, business days, the current date and time, and time zone conversion — always compute these with this tool, never in your head",
+		),
+		toolLine(
+			config,
 			"manage_automations",
 			"create, list, change, delete, and test file-triggered automations, and start or stop their background daemon",
 		),
@@ -126,6 +132,7 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 						"convert_files",
 						"list_file_conversions",
 						"manage_automations",
+						"calculator",
 						"web_search",
 						"web_fetch",
 						"jev",
@@ -169,6 +176,20 @@ This is the conversion map. Use it to plan any conversion immediately, including
 ${renderConversionGuide()}
 `
 		: "";
+	const calculations = toolAvailable(config, "calculator")
+		? `## Calculations
+
+${CALCULATOR_PROMPT_RULE}
+
+- \`calculator\` operations: \`evaluate\` (arithmetic, percentages, totals, averages, roots, logs, trig; independent results in one list), \`date_diff\` (days between dates, or exact elapsed time between two times), \`date_add\` (a date plus or minus years, months, weeks, days, hours, minutes), \`date_info\` (weekday, day of year, ISO week, leap year), \`business_days_between\` and \`add_business_days\` (weekdays, with a holiday list), \`now\`, and \`convert_timezone\`.
+- Pass dates as the user wrote them when they are clear (2026-11-08, 2026년 11월 8일, today); the tool reads them. Never convert a relative date such as "next Friday" yourself: compute it from \`now\` or \`today\` with \`date_add\`.
+- A time without an offset needs its time zone. Ask the user through the ask tool when it matters and is unknown; never assume one. The tool names the zone it used.
+- A time zone abbreviation is a fixed offset, not a place: PST is UTC-8 all year, PDT is UTC-7, EST is UTC-5, EDT is UTC-4. Pass that offset (for example "-08:00") as the time zone. Never replace an abbreviation with a region such as America/Los_Angeles: the region follows daylight saving, so in summer it is an hour off what the abbreviation says. Use a region only when the user names a place or city. An abbreviation used for several zones (CST, IST, BST) is the user's to settle: ask.
+- Report the result as the tool printed it. When it says \`exact: false\`, the digits were rounded; say so only when that matters to the answer.
+
+`
+		: "";
+
 	const webResearch =
 		toolAvailable(config, "web_search") || toolAvailable(config, "web_fetch")
 			? `## Web Research
@@ -181,7 +202,7 @@ ${renderConversionGuide()}
 
 This host runs Windows with a bundled voidtools Everything instance that indexes the names, sizes, and modified dates of every file and folder under the configured search folders and keeps that index live. \`everything_search\` answers name/path questions instantly, so use it freely and repeatedly instead of \`bash\` \`find\`/\`ls\`/\`dir\` scans whenever you need to locate files or folders by name, extension, location, size, or date. It searches names and paths only, not file contents: read the returned absolute paths with \`bash\`, and use the retrieval tools for content questions.
 
-Query syntax: space = AND, \`|\` = OR, \`!\` = NOT, \`"exact phrase"\`, wildcards (\`*.pdf\`, \`report??\`), \`ext:pdf;docx;hwp\`, \`dm:today\` / \`dm:thisweek\` / \`dm:2026-09\`, \`size:>10mb\`, \`parent:<folder>\` (direct children), and \`\\folder\\\` path fragments with \`matchPath\`. Typed options: \`kind\` (files/folders), \`path\` (search within one folder), \`sort\` (e.g. \`date-modified-descending\` for the newest files), \`regex\`, \`matchCase\`, \`wholeWord\`, \`offset\`/\`maxResults\` for paging. Start broad on distinctive name tokens (including Korean), then narrow with ext:, path, or dm:.
+Query syntax: space = AND, \`|\` = OR, \`!\` = NOT, \`"exact phrase"\`, wildcards (\`*.pdf\`, \`report??\`), \`ext:pdf;docx;hwp\`, \`dm:today\` / \`dm:thisweek\` / \`dm:2026-09\`, \`size:>10mb\`, \`parent:<folder>\` (direct children), and \`\\folder\\\` path fragments with \`matchPath\`. Typed options: \`kind\` (files/folders), \`path\` (search within one folder), \`sort\` (e.g. \`date-modified-descending\` for the newest files), \`regex\`, \`matchCase\`, \`wholeWord\`, \`offset\`/\`maxResults\` for paging. When the exact name is unknown (the user's word, its translation, an abbreviation, another spelling), pass the other guesses in \`alternatives\`: every name is searched at once and the hits are merged, each marked with the names that found it, so one call replaces several. Start broad on distinctive name tokens (including Korean), then narrow with ext:, path, or dm:.
 `
 		: "";
 	const fsearch = toolAvailable(config, "fsearch_search")
@@ -189,7 +210,7 @@ Query syntax: space = AND, \`|\` = OR, \`!\` = NOT, \`"exact phrase"\`, wildcard
 
 This host runs macOS or Linux with fsearch-cli (FSearch): an Everything-style indexer whose per-workspace database holds the names, sizes, and modified dates of every file and folder under the configured search folders, kept live by a background \`fsearch-cli watch\` daemon (FSEvents on macOS, inotify/fanotify on Linux). \`fsearch_search\` answers name/path questions in well under a second, so use it freely and repeatedly instead of \`bash\` \`find\`/\`ls\` scans whenever you need to locate files or folders by name, extension, location, size, or date. It searches names and paths only, not file contents: read the returned absolute paths with \`bash\`, and use the retrieval tools for content questions.
 
-Query syntax: space = AND, \`OR\` = OR (the pipe \`|\` is NOT the OR operator here, unlike Everything), \`!\` = NOT, \`"exact phrase"\`, wildcards (\`*.pdf\`), \`ext:pdf;docx;hwp\`, \`size:>10mb\`, \`path:<fragment>\`, \`case:\`, \`regex:\`. Typed options: \`kind\` (files/folders), \`path\` (search within one folder), \`sort\` (e.g. \`date-modified-descending\` for the newest files), \`regex\`, \`matchCase\`, \`offset\`/\`maxResults\` for paging. Start broad on distinctive name tokens (including Korean), then narrow with ext:, path, or size:. When fsearch-cli is not installed the tool still answers through a slow bounded filesystem walk (substring/regex name matching only) and says so in its output — prefer narrow queries there, and never replace the tool with your own recursive \`find\`.
+Query syntax: space = AND, \`OR\` = OR (the pipe \`|\` is NOT the OR operator here, unlike Everything), \`!\` = NOT, \`"exact phrase"\`, wildcards (\`*.pdf\`), \`ext:pdf;docx;hwp\`, \`size:>10mb\`, \`path:<fragment>\`, \`case:\`, \`regex:\`. Typed options: \`kind\` (files/folders), \`path\` (search within one folder), \`sort\` (e.g. \`date-modified-descending\` for the newest files), \`regex\`, \`matchCase\`, \`offset\`/\`maxResults\` for paging. When the exact name is unknown (the user's word, its translation, an abbreviation, another spelling), pass the other guesses in \`alternatives\`: every name is searched at once and the hits are merged, each marked with the names that found it, so one call replaces several. Start broad on distinctive name tokens (including Korean), then narrow with ext:, path, or size:. When fsearch-cli is not installed the tool still answers through a slow bounded filesystem walk (substring/regex name matching only) and says so in its output — prefer narrow queries there, and never replace the tool with your own recursive \`find\`.
 `
 		: "";
 	const automations = toolAvailable(config, "manage_automations")
@@ -229,7 +250,7 @@ ${identity}## Workflow
 
 Searches follow a progressive, two-phase loop:
 1. **PLAN & FAST ANSWER** — Decide whether the query is answerable from general knowledge or memory. When baseline retrieval evidence is provided and answers the question, write a complete, self-contained immediate first answer from that evidence as your reply, right away, without calling tools or waiting. When it does not answer the question, the first answer is a single line saying it is not confirmed yet and you are still searching.
-2. **EXPLORE & RETRIEVE** — Immediately following the fast answer, begin deeper exploration: ${discovery ? `use ${discovery} actively to locate relevant files and folders, and ` : ""}fan out across MinSync lexical/vector/hybrid retrieval, combined retrieval, and datasource search to expand candidates and fill evidence gaps.
+2. **EXPLORE & RETRIEVE** — Immediately following the fast answer, begin deeper exploration: ${discovery ? `use ${discovery} actively to locate relevant files and folders, and ` : ""}fan out across MinSync sparse/vector/hybrid retrieval, combined retrieval, and datasource search to expand candidates and fill evidence gaps.
 3. **READ & VERIFY** — Use \`bash\` to open and verify relevant local files directly when needed, and in local sessions to organize files when the user asks (see File Organization); rely on Jikji and retrieval rather than blind directory browsing.
 4. **JUDGE & RESOLVE** — Evaluate relevance, sufficiency, conflicts, and temporal context. When search results or evidence contain conflicting information, treat the freshest (most recent) information as authoritative and correct.
 5. **CURATE** — Produce concise numbered knowledge units grounded in source evidence.
@@ -248,8 +269,9 @@ ${noSearchTools}
 - For generic, stable questions answer directly from knowledge or memory without searching. For source-dependent questions, the first question of a conversation gets baseline MinSync and Jikji retrieval that starts before the model's search decision and supplies up to 100 candidates per method; inspect it first and treat it as unverified evidence. Later questions get no baseline: search by tool call.
 - Start with the most specific exact term, identifier, filename glob, or regex that preserves the query intent.
 - Use \`search_all_documents\` when multiple configured retrieval methods can help.
-- Use MinSync lexical mode for exact terminology, MinSync vector search for semantic similarity, and \`search_all_documents\` when hybrid ranking over the same MinSync chunks can help.
+- Use MinSync sparse (SPLADE) ranking for terminology, MinSync vector search for semantic similarity, and \`search_all_documents\` when hybrid ranking over the same MinSync chunks can help. Sparse ranking matches exact strings (error codes, hashes, version strings) less reliably than a keyword index: confirm those with a bounded \`grep\` in the directory retrieval already found.
 - Use \`bash\` to read already-retrieved local files with cat/head/sed. find/grep/rg must be small and bounded: one already-known directory from retrieval, a tight pattern, and a cap (head, maxdepth, or file types). Never recursively scan a whole search root (Downloads, Documents, Desktop, or /); those calls miss the bash timeout and stall the search loop. In local sessions, \`bash\` may also carry out user-requested file organization (see File Organization).
+- Files in a cloud or network folder may be placeholders whose bytes live only in the cloud, so prefer retrieval over opening the original there. Open an original only when its indexed text is insufficient, one file at a time, and never bulk-copy, grep, or convert across such a folder: that downloads many files at once.
 - If retrieval is empty, retry a simpler query or synonyms through retrieval tools first. Do not widen filesystem discovery to compensate.
 - Local retrieval sources are absolute filesystem paths and may be read with \`bash\` after verifying the returned path. Datasource retrieval sources use slash-prefixed virtual identifiers such as /kakao/..., /mailcrawl/..., /slack/..., /discord/..., and /github/...; they are not OS paths and must never be passed to \`cd\`, \`cat\`, or other filesystem tools. Search them through the connection's dedicated \`search_datasource_<id>\` tool and the loaded datasource skill/native CLI; every configured connection has its own tool, and \`search_all_documents\` still spans all of them at once.
 ${discovery ? `- When exploring local files and folders, actively use ${discovery} as your primary discovery ${discoveryTools.length > 1 ? "tools" : "tool"}. Do not manually traverse folders with exploratory bash commands; reserve \`bash\` for targeted reading of identified files (cat, head, sed), and in local sessions for user-requested file organization.` : "- Do not manually traverse folders with exploratory bash commands; reserve `bash` for targeted reading of identified files (cat, head, sed), and in local sessions for user-requested file organization."}
@@ -263,7 +285,7 @@ ${fileOrganization}
 ${duplicateManagement}
 ${fileConversion}
 ${automations}
-${webResearch}
+${calculations}${webResearch}
 ## External Datasource Skills
 
 Datasource connections come from trusted server config, and every configured connection is searchable. Model arguments cannot add or remove connections; a requested \`scope\` only narrows results within a datasource for the current query.

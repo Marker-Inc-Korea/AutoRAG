@@ -8,6 +8,12 @@ export interface ExactDuplicateFilterResult {
 	readonly errors: readonly string[];
 }
 
+/** A cloud or network file's stored dupey identity: its exact hash and the document's own modified time (if any). */
+export interface ExactDuplicateFingerprint {
+	readonly exact: string;
+	readonly modified: string | null;
+}
+
 /** Selects the newest copy for each exact canonical-text hash.
  *
  * Uses dupey's own latest-copy ranking — the most recent internal document
@@ -19,6 +25,7 @@ export async function selectExactDuplicateExclusions(
 	root: string,
 	scan: DupeyScanResult,
 	isUnavailable?: (path: string) => boolean,
+	fingerprints?: ReadonlyMap<string, ExactDuplicateFingerprint>,
 ): Promise<ExactDuplicateFilterResult> {
 	const byHash = new Map<string, string[]>();
 	for (const file of scan.files) {
@@ -28,13 +35,23 @@ export async function selectExactDuplicateExclusions(
 		group.push(path);
 		byHash.set(file.content_hash, group);
 	}
+	// Cloud files are never scanned (their placeholders must not be read), so their stored fingerprints join
+	// the same hash groups here; a scanned copy elsewhere and a cloud copy then resolve to one keeper.
+	const fingerprintModified = new Map<string, string | null>();
+	for (const [path, fingerprint] of fingerprints ?? []) {
+		if (fingerprint.exact.length === 0) continue;
+		fingerprintModified.set(path, fingerprint.modified);
+		const group = byHash.get(fingerprint.exact) ?? [];
+		if (!group.includes(path)) group.push(path);
+		byHash.set(fingerprint.exact, group);
+	}
 	const dupeyRanking = dupeyExactRanking(scan);
 	const excluded = new Set<string>();
 	const keepers = new Set<string>();
 	const errors = [...scan.errors.map((error) => JSON.stringify(error))];
 	for (const paths of byHash.values()) {
 		if (paths.length < 2) continue;
-		const ranked = await rankExactCandidates(paths, dupeyRanking, errors);
+		const ranked = await rankExactCandidates(paths, dupeyRanking, fingerprintModified, errors);
 		// User-excluded copies are handled by the caller's own exclusion pass; they
 		// must not win keeper selection and drag the remaining copies out of the index.
 		const candidates = isUnavailable === undefined ? ranked : ranked.filter((path) => !isUnavailable(path));
@@ -66,6 +83,7 @@ function dupeyExactRanking(scan: DupeyScanResult): Map<string, number> {
 async function rankExactCandidates(
 	paths: readonly string[],
 	dupeyRanking: ReadonlyMap<string, number>,
+	fingerprintModified: ReadonlyMap<string, string | null>,
 	errors: string[],
 ): Promise<string[]> {
 	if (paths.every((path) => dupeyRanking.has(path))) {
@@ -73,6 +91,11 @@ async function rankExactCandidates(
 	}
 	const ranked = await Promise.all(
 		paths.map(async (path) => {
+			// A stored cloud fingerprint carries the document's own modified time, so a released placeholder is
+			// ranked without being read; `stat` on a placeholder reports metadata and never hydrates it.
+			const modified = fingerprintModified.get(path);
+			const fromFingerprint = modified === null || modified === undefined ? NaN : Date.parse(modified);
+			if (Number.isFinite(fromFingerprint)) return { path, mtimeMs: fromFingerprint };
 			try {
 				const info = await stat(path);
 				return { path, mtimeMs: info.mtimeMs };

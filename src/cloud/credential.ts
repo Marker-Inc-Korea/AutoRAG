@@ -16,6 +16,7 @@ export const DAZZI_LOGIN_REQUIRED_MESSAGE =
  * model provider uses. `agentDir` defaults to Pi's agent home.
  */
 export function readDazziLoginToken(agentDir: string = getAgentDir()): string | undefined {
+	if (process.env.AUTORAG_AUTH_MODE === "environment") return undefined;
 	return resolveCredentialKey(readStoredCredential(PROVIDER_ID, join(agentDir, "auth.json")));
 }
 

@@ -4,16 +4,11 @@ import { join } from "node:path";
 
 export const PARSED_MIRROR_SUBDIR = join(".autorag", "parsed");
 export const PARSED_FILES_SUBDIR = "files";
-export const PARSED_INDEX_FILE = "index.json";
 export const REFRESH_READINESS_FILE = "refresh-complete.json";
 export const REFRESH_PROGRESS_FILE = "refresh-progress.json";
 
 export function parsedMirrorRoot(root: string): string {
 	return join(root, PARSED_MIRROR_SUBDIR);
-}
-
-export function parsedMirrorIndexPath(root: string): string {
-	return join(parsedMirrorRoot(root), PARSED_INDEX_FILE);
 }
 
 export function parsedOutputPath(root: string, virtualPath: string): string {

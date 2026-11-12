@@ -1,4 +1,13 @@
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import {
+	chmodSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	realpathSync,
+	rmSync,
+	symlinkSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
@@ -372,6 +381,107 @@ describe("AutoRAGAgent Jikji indexing integration", () => {
 	});
 });
 
+describe("AutoRAGAgent Jikji response confidence (#2060)", () => {
+	const tool = { next_read: "original" } as const;
+
+	function packFor(paths: readonly string[], extra: Record<string, unknown> = {}): Record<string, unknown> {
+		return {
+			answer_paths: paths,
+			paths,
+			candidates: paths.map((path, index) => ({ p: path, next_read: tool.next_read, s: 10 - index })),
+			evidence_pack: paths.map((path) => ({ path, next_read: tool.next_read })),
+			handoff_action: "direct_use",
+			tool_call_policy: { stop_after_find: false, forbidden_tools: [], allowed_followups: [] },
+			agent_should_not_rerank: false,
+			...extra,
+		};
+	}
+
+	function agentFor(searchPaths: string[], excludePaths: string[] = []): AutoRAGAgent {
+		return new AutoRAGAgent({
+			searchPaths,
+			memoryPath: join(root, "memory.json"),
+			workspacePath: root,
+			minSync: { autoInstall: false },
+			jikji: { binaryPath },
+			excludePaths,
+			everything: false,
+			fsearch: false,
+		});
+	}
+
+	it("keeps response confidence through the merge, and drops an excluded path's candidate", async () => {
+		writeFileSync(join(docs, "keep-notes.txt"), "keep\n");
+		writeFileSync(join(docs, "secret-plan.txt"), "secret\n");
+		writeFakeJikji(
+			packFor(["keep-notes.txt", "secret-plan.txt"], {
+				confidence: "high",
+				confidence_score: 0.9,
+				answerability: "answerable_from_payload",
+				requires_llm_rerank: false,
+			}),
+		);
+		const agent = agentFor([docs], [join(docs, "secret-plan.txt")]);
+
+		const pack = (await agent.findJikji("plans")).answerPack;
+
+		const keep = realpathSync(join(docs, "keep-notes.txt"));
+		expect(pack?.candidates).toEqual([{ path: keep, nextRead: "original", score: 10 }]);
+		expect(JSON.stringify(pack)).not.toContain("secret-plan");
+		expect(pack?.confidence).toEqual({
+			level: "high",
+			score: 0.9,
+			answerability: "answerable_from_payload",
+			requiresLlmRerank: false,
+		});
+	});
+
+	it("merges confidence across roots to the weakest root and ORs requires_llm_rerank", async () => {
+		const second = join(root, "notes");
+		mkdirSync(second, { recursive: true });
+		writeFileSync(join(docs, "a.txt"), "a\n");
+		writeFileSync(join(second, "b.txt"), "b\n");
+		const strong = packFor(["a.txt"], {
+			confidence: "high",
+			confidence_score: 0.9,
+			answerability: "answerable_from_payload",
+			recommended_action: "verify_top_candidates",
+			requires_llm_rerank: false,
+		});
+		const weak = packFor(["b.txt"], {
+			confidence: "low",
+			confidence_score: 0.2,
+			answerability: "needs_one_jikji_retry",
+			recommended_action: "retry",
+			requires_llm_rerank: true,
+		});
+		writeFileSync(
+			binaryPath,
+			`#!/usr/bin/env node
+const args = process.argv.slice(2);
+const strong = ${JSON.stringify(strong)};
+const weak = ${JSON.stringify(weak)};
+console.log(JSON.stringify(args[0] === "find" ? (args[1].endsWith("notes") ? weak : strong) : { prepared: true }));
+`,
+		);
+		chmodSync(binaryPath, 0o755);
+
+		const pack = (await agentFor([docs, second]).findJikji("anything")).answerPack;
+
+		expect(pack?.candidates.map((candidate) => candidate.path)).toEqual([
+			realpathSync(join(docs, "a.txt")),
+			realpathSync(join(second, "b.txt")),
+		]);
+		expect(pack?.confidence).toEqual({
+			level: "low",
+			score: 0.2,
+			answerability: "needs_one_jikji_retry",
+			recommendedAction: "retry",
+			requiresLlmRerank: true,
+		});
+	});
+});
+
 describe("AutoRAGAgent Jikji prepare budget and lifecycle (#1894)", () => {
 	function writeBehaviorJikji(body: string): void {
 		writeFileSync(
@@ -409,6 +519,55 @@ ${body}
 		expect(diag?.code).toBe("jikji-prepare-failed");
 		expect(diag?.message).toMatch(/timed out/);
 		expect(diag?.message).not.toContain(root);
+	});
+
+	// `autorag refresh` and `autorag status` are separate processes, so the only place an operator sees a
+	// degraded Jikji is the refresh result itself. It used to carry every other index's diagnostics
+	// (MinSync, Everything, FSearch) but silently dropped Jikji's: `refresh --json` printed no jikji entry
+	// and a later `status` reported `jikji=configured`.
+	it("returns the jikji diagnostic in the refresh result itself, not only in later status", async () => {
+		writeBehaviorJikji("process.exit(3);");
+		const agent = agentFor([docs]);
+
+		const refreshed = await agent.refresh(true, { methods: ["jikji"] });
+
+		const diag = refreshed.diagnostics.find((item) => item.source === "jikji");
+		expect(diag?.code).toBe("jikji-prepare-failed");
+		expect(diag?.message).not.toContain(root);
+	});
+
+	it("returns the verbatim unsupported-version diagnostic in the refresh result", async () => {
+		writeFileSync(
+			binaryPath,
+			`#!/usr/bin/env node
+if (process.argv[2] === "--version") { console.log("jikji 0.1.1"); process.exit(0); }
+process.exit(0);
+`,
+		);
+		chmodSync(binaryPath, 0o755);
+		// PATH is only `stale`, so no real jikji/cargo on the machine can be picked up; node is linked in
+		// because the stand-in is a `#!/usr/bin/env node` script.
+		const stale = join(root, "stale-bin");
+		mkdirSync(stale, { recursive: true });
+		const link = join(stale, "jikji");
+		symlinkSync(binaryPath, link);
+		symlinkSync(process.execPath, join(stale, "node"));
+		const agent = new AutoRAGAgent({
+			searchPaths: [docs],
+			memoryPath: join(root, "memory.json"),
+			workspacePath: root,
+			minSync: { autoInstall: false },
+			jikji: { autoInstall: false, env: { PATH: stale } },
+			everything: false,
+			fsearch: false,
+		});
+
+		const refreshed = await agent.refresh(true, { methods: ["jikji"] });
+
+		const diag = refreshed.diagnostics.find((item) => item.source === "jikji");
+		expect(diag?.code).toBe("jikji-unsupported-version");
+		expect(diag?.message).toContain("0.1.1");
+		expect(diag?.message).toContain(link);
 	});
 
 	it("forwards refresh jikjiPrepare.parseTimeout to the CLI for every root", async () => {

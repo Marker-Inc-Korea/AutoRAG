@@ -1,6 +1,13 @@
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
 import type { FSearchSearchRequest, FSearchSearchResult } from "../fsearch/index.ts";
+import {
+	collectNameCandidates,
+	mergeNameHits,
+	renderNameHitLine,
+	renderNameSearchProblems,
+	searchNameCandidates,
+} from "./name-candidates.ts";
 
 export const FSEARCH_SEARCH_TOOL_NAME = "fsearch_search";
 
@@ -24,6 +31,12 @@ const fsearchSearchSchema = Type.Object({
 		description:
 			'FSearch query syntax over file and folder names: space = AND, OR keyword = OR (never the pipe |), ! = NOT, "quoted phrase", wildcards (*.pdf), ext:pdf;docx, size:>10mb, path:<fragment>, case:, regex:. When the slow-walk fallback answers (fsearch-cli not installed), only substring/regex name matching applies.',
 	}),
+	alternatives: Type.Optional(
+		Type.Array(Type.String(), {
+			description:
+				"Other names to try in the same call, such as a translation, an abbreviation, or another spelling. Every name is searched at once with the same options and the hits are merged, each marked with the names that found it. Prefer this over repeated calls when the exact name is unknown.",
+		}),
+	),
 	regex: Type.Optional(Type.Boolean({ description: "Treat query as a regular expression." })),
 	matchCase: Type.Optional(Type.Boolean()),
 	matchPath: Type.Optional(Type.Boolean({ description: "Match against the full path instead of the name." })),
@@ -65,51 +78,66 @@ export function createFSearchSearchTool(
 			"Instantly find files and folders by name, extension, path, size, or modified date across the configured search folders using fsearch-cli/FSearch (macOS/Linux), falling back to a slow filesystem walk when fsearch-cli is not installed. Returns absolute paths; read file contents with bash.",
 		parameters: fsearchSearchSchema,
 		async execute(_toolCallId, params): Promise<AgentToolResult<FSearchSearchDetails>> {
-			const query = params.query.trim();
-			if (query.length === 0) {
+			const { alternatives, ...options } = params;
+			const { candidates, dropped } = collectNameCandidates(params.query, alternatives, {
+				matchCase: params.matchCase,
+			});
+			if (candidates.length === 0) {
 				return {
 					content: [{ type: "text", text: "FSearch query was empty; nothing searched." }],
 					details: { method: FSEARCH_SEARCH_TOOL_NAME, resultCount: 0, sources: [], results: [] },
 				};
 			}
-			const request: FSearchSearchRequest = {
-				...params,
-				query,
-				maxResults: Math.min(params.maxResults ?? DEFAULT_MAX_RESULTS, MAX_RESULTS_CAP),
-			};
-			const result = await provider.searchFsearch(request);
-			if (!result.ok) {
+			const maxResults = Math.min(params.maxResults ?? DEFAULT_MAX_RESULTS, MAX_RESULTS_CAP);
+			const searchOne = (candidate: string): Promise<FSearchSearchResult> =>
+				provider.searchFsearch({ ...options, query: candidate, maxResults });
+			const single = candidates.length === 1 && dropped === 0;
+			const outcomes = await searchNameCandidates(candidates, searchOne);
+			const failures = renderNameSearchProblems(outcomes, dropped);
+			const succeeded = outcomes.flatMap((outcome) => (outcome.result.ok ? [outcome.result] : []));
+			const first = outcomes[0]?.result;
+			if (single && first !== undefined && !first.ok) {
 				return {
-					content: [{ type: "text", text: `FSearch ${result.reason}: ${result.message}` }],
+					content: [{ type: "text", text: `FSearch ${first.reason}: ${first.message}` }],
 					details: { method: FSEARCH_SEARCH_TOOL_NAME, resultCount: 0, sources: [], results: [] },
 				};
 			}
-			const lines = result.results.map((entry, index) => {
-				const parts = [`[${index + 1}] ${entry.type} ${entry.path}`];
-				if (entry.size !== undefined) parts.push(`size=${entry.size}`);
-				if (entry.dateModified !== undefined) parts.push(`modified=${entry.dateModified}`);
-				return parts.join(" ");
-			});
-			const backendLabel =
-				result.backend === "walk" ? "FSearch slow filesystem walk (fsearch-cli unavailable)" : "FSearch";
+			if (succeeded.length === 0) {
+				return {
+					content: [{ type: "text", text: `FSearch failed for every name:\n${failures.join("\n")}` }],
+					details: { method: FSEARCH_SEARCH_TOOL_NAME, resultCount: 0, sources: [], results: [] },
+				};
+			}
+			const merged = mergeNameHits(outcomes, maxResults);
+			const lines = merged.map((hit, index) =>
+				renderNameHitLine(index, hit.entry, single ? undefined : hit.candidates),
+			);
+			const walked = succeeded.some((result) => result.backend === "walk");
+			const backendLabel = walked ? "FSearch slow filesystem walk (fsearch-cli unavailable)" : "FSearch";
+			const limited = succeeded.find(
+				(result) =>
+					result.backend === "fsearch-cli" &&
+					(result.total ?? 0) > result.results.length &&
+					result.results.length === maxResults,
+			);
 			const limitNote =
-				result.backend === "fsearch-cli" &&
-				(result.total ?? 0) > lines.length &&
-				lines.length === request.maxResults
-					? ` of ${result.total} total (limit reached; narrow the query or page with offset)`
+				limited !== undefined
+					? ` of ${limited.total} total (limit reached; narrow the query or page with offset)`
 					: "";
-			const noteSuffix = result.note !== undefined ? `\n${result.note}` : "";
+			const notes = [...new Set(succeeded.flatMap((result) => (result.note !== undefined ? [result.note] : [])))];
+			const noteSuffix = [...notes, ...failures].map((line) => `\n${line}`).join("");
+			const names = single ? "" : ` (${candidates.length} names searched)`;
 			const text =
 				lines.length === 0
-					? `${backendLabel} found no files or folders matching: ${query}${noteSuffix}`
-					: `${backendLabel} found ${lines.length} item(s)${limitNote}:\n${lines.join("\n")}${noteSuffix}`;
+					? `${backendLabel} found no files or folders matching: ${candidates.join(" | ")}${noteSuffix}`
+					: `${backendLabel} found ${lines.length} item(s)${names}${limitNote}:\n${lines.join("\n")}${noteSuffix}`;
 			return {
 				content: [{ type: "text", text }],
 				details: {
 					method: FSEARCH_SEARCH_TOOL_NAME,
-					resultCount: result.results.length,
-					sources: result.results.map((entry) => entry.path),
-					results: result.results.map((entry, index) => ({ source: entry.path, excerpt: lines[index]! })),
+					resultCount: merged.length,
+					sources: merged.map((hit) => hit.entry.path),
+					results: merged.map((hit, index) => ({ source: hit.entry.path, excerpt: lines[index]! })),
 				},
 			};
 		},

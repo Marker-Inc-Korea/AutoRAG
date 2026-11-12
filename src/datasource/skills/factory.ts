@@ -18,7 +18,6 @@ import { resolveSidecarOptions } from "../sidecar/config.ts";
 import { CRAWLER_DESCRIPTORS, type CrawlerDescriptor } from "../sidecar/descriptors.ts";
 import type { DatasourceSkill } from "../types.ts";
 import { ClawGalleryClient, type ClawGalleryOptions, ClawGallerySkill } from "./clawgallery/index.ts";
-import { CloudDriveSkill, type RcloneConnectorOptions } from "./cloud-drive/index.ts";
 import {
 	DiscordAttachmentStore,
 	DiscrawlClient,
@@ -33,15 +32,14 @@ import { type GitHubGistConnectorOptions, GitHubGistSkill } from "./github-gist/
 import { HisterSkill } from "./hister/index.ts";
 import { LarkSkill } from "./lark/index.ts";
 import { LazykatokClient, type LazykatokOptions, LazykatokSkill } from "./lazykatok/index.ts";
-import { type MailExportConnectorOptions, MailExportSkill } from "./mail-export/index.ts";
 import { type MailcrawlOptions, MailcrawlSkill } from "./mailcrawl/index.ts";
 import { type NotcrawlOptions, NotionSkill } from "./notion/index.ts";
 import { type ObsidianMinSyncOptions, ObsidianSkill } from "./obsidian/index.ts";
 import { type RssConnectorOptions, RssSkill } from "./rss/index.ts";
 import { SlackSkill } from "./slack/index.ts";
-import { type SpotlightConnectorOptions, SpotlightSkill } from "./spotlight/index.ts";
 import { TelecrawlSkill } from "./telecrawl/index.ts";
 import { WacrawlSkill } from "./wacrawl/index.ts";
+import { type WombatOptions, WombatSkill } from "./wombat/index.ts";
 
 /** One configured datasource entry (the trusted `datasources.<name>` value). */
 export interface DatasourceSkillConfig {
@@ -69,6 +67,8 @@ export interface BuildDatasourceSkillsResult {
 	readonly skills: readonly DatasourceSkill[];
 	/** Names that were configured but not recognized. */
 	readonly unknown: readonly string[];
+	/** Configured names whose skill type was removed; they are skipped, not built. */
+	readonly retired: readonly string[];
 }
 
 /**
@@ -363,21 +363,6 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 					: { semantic: { embedder: embedding.embedder } }),
 		});
 	},
-	"cloud-drive": (config, workspaceRoot, registrationName) =>
-		new CloudDriveSkill({
-			...common(config, workspaceRoot),
-			skillName: registrationName,
-			provider: typeof config.connector?.provider === "string" ? config.connector.provider : undefined,
-			connectorOptions: {
-				...(config.connector as RcloneConnectorOptions),
-			},
-		}),
-	"mail-export": (config, workspaceRoot, registrationName) =>
-		new MailExportSkill({
-			...common(config, workspaceRoot),
-			skillName: registrationName,
-			connectorOptions: config.connector as MailExportConnectorOptions,
-		}),
 	mailcrawl: (config, workspaceRoot, registrationName, embedding) =>
 		new MailcrawlSkill({
 			...common(config, workspaceRoot),
@@ -400,11 +385,11 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 			skillName: registrationName,
 			connectorOptions: config.connector as RssConnectorOptions,
 		}),
-	spotlight: (config, workspaceRoot, registrationName) =>
-		new SpotlightSkill({
+	wombat: (config, workspaceRoot, registrationName) =>
+		new WombatSkill({
 			...common(config, workspaceRoot),
-			skillName: registrationName,
-			connectorOptions: config.connector as SpotlightConnectorOptions,
+			datasourceId: registrationName,
+			...(config.connector as WombatOptions),
 		}),
 };
 
@@ -446,9 +431,13 @@ function common(config: DatasourceSkillConfig, workspaceRoot: string | undefined
 	};
 }
 
+/** Skill templates that were removed. A config entry using one is skipped with a dedicated warning. */
+const RETIRED_TEMPLATES: Readonly<Record<string, true>> = { spotlight: true };
+
 /**
  * Build datasource skills from the trusted config section. `false` or
- * `{ enabled: false }` entries are skipped silently; unrecognized names are
+ * `{ enabled: false }` entries are skipped silently; entries naming a removed
+ * template are collected in `retired` and ignored; other unrecognized names are
  * collected in `unknown` (never thrown) so callers can surface setup
  * feedback without failing agent construction.
  */
@@ -459,6 +448,7 @@ export function buildDatasourceSkills(
 ): BuildDatasourceSkillsResult {
 	const skills: DatasourceSkill[] = [];
 	const unknown: string[] = [];
+	const retired: string[] = [];
 	for (const [name, raw] of Object.entries(config ?? {})) {
 		if (raw === false) continue;
 		if (raw !== true && (typeof raw !== "object" || raw === null || Array.isArray(raw))) {
@@ -468,6 +458,10 @@ export function buildDatasourceSkills(
 		const entry: DatasourceSkillConfig = raw === true ? {} : raw;
 		if (entry.enabled === false) continue;
 		const templateName = entry.type ?? name;
+		if (Object.hasOwn(RETIRED_TEMPLATES, templateName)) {
+			retired.push(name);
+			continue;
+		}
 		const builder =
 			Object.hasOwn(BUILDERS, templateName) && datasourceSkillSupported(templateName)
 				? BUILDERS[templateName]
@@ -502,5 +496,5 @@ export function buildDatasourceSkills(
 				: aliased,
 		);
 	}
-	return { skills, unknown };
+	return { skills, unknown, retired };
 }

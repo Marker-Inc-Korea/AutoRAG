@@ -1,5 +1,7 @@
 import { AutoRAGAgent, type AutoRAGAgentOptions, type AutoRAGThinkingLevel } from "../../agent/agent.ts";
+import { DecisionModelUnavailableError } from "../../agent/decision-model-check.ts";
 import type { DecompositionModel } from "../../agent/query-decomposition.ts";
+import type { SllmDecisionModel } from "../../agent/sllm-decision.ts";
 import { releaseEmbedders } from "../../embedding/index.ts";
 import {
 	buildAgentOptions,
@@ -10,9 +12,13 @@ import {
 	resolveAgentModel,
 	resolveConfig,
 	resolveQueryDecompositionModel,
+	resolveSllmDecisionModel,
 } from "../config.ts";
 import { renderError, renderPreliminary, renderSearch } from "../output.ts";
 import type { CommandContext } from "./types.ts";
+
+/** Exit status of a search whose session decision model cannot answer: AutoRAG is unusable until it can. */
+export const DECISION_MODEL_UNAVAILABLE_EXIT_CODE = 3;
 
 // ---------------------------------------------------------------------------
 // Search health hints (Issue #49)
@@ -207,20 +213,24 @@ export async function runSearch(ctx: CommandContext, deps: SearchDeps = {}): Pro
 	} else {
 		let resolvedModel: ResolvedAgentModel;
 		let decompositionModel: DecompositionModel | undefined;
+		let decisionSllm: SllmDecisionModel | undefined;
 		try {
 			resolvedModel = await (deps.modelResolver ?? resolveAgentModel)(config);
 			decompositionModel = await resolveQueryDecompositionModel(config);
+			decisionSllm = await resolveSllmDecisionModel(config);
 		} catch (error) {
 			const hint = classifySearchHealthHint(error);
 			ctx.stderr(renderError(error, { json: ctx.json, debug: ctx.debug, hint }));
 			return 2;
 		}
+		const baseOptions = buildAgentOptions(config);
 		agentOptions = {
-			...buildAgentOptions(config),
+			...baseOptions,
 			model: resolvedModel.model,
 			...(resolvedModel.apiKey !== undefined ? { apiKey: resolvedModel.apiKey } : {}),
 			...(resolvedModel.providerApiKeys !== undefined ? { providerApiKeys: resolvedModel.providerApiKeys } : {}),
 			...(decompositionModel !== undefined ? { queryDecomposition: decompositionModel } : {}),
+			...(decisionSllm !== undefined ? { jev: { ...baseOptions.jev, sllm: decisionSllm } } : {}),
 			...(thinking !== undefined ? { thinking } : {}),
 		};
 	}
@@ -245,6 +255,12 @@ export async function runSearch(ctx: CommandContext, deps: SearchDeps = {}): Pro
 		}
 		return 0;
 	} catch (error) {
+		// The decision model is required: its own code, exit status, and remedy, and no `autorag health`
+		// hint, since health does not check it.
+		if (error instanceof DecisionModelUnavailableError) {
+			ctx.stderr(renderError(error, { json: ctx.json, debug: ctx.debug }));
+			return DECISION_MODEL_UNAVAILABLE_EXIT_CODE;
+		}
 		const hint = classifySearchHealthHint(error);
 		ctx.stderr(renderError(error, { json: ctx.json, debug: ctx.debug, hint }));
 		return 1;

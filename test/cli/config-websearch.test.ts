@@ -1,8 +1,8 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { buildAgentOptions, type CliConfig, ConfigError } from "../../src/cli/config.ts";
+import { buildAgentOptions, type CliConfig, ConfigError, resolveConfig } from "../../src/cli/config.ts";
 
 let root: string;
 
@@ -33,6 +33,13 @@ describe("webSearch CLI config", () => {
 	it("maps enabled:false to the agent opt-out", () => {
 		const opts = buildAgentOptions(baseConfig({ enabled: false }));
 		expect(opts.webSearch).toBe(false);
+	});
+
+	it("preserves enabled:false when resolving a config file", () => {
+		const configPath = join(root, "config.json");
+		writeFileSync(configPath, JSON.stringify({ searchPaths: [root], webSearch: { enabled: false } }));
+		const config = resolveConfig({ flags: { config: configPath }, cwd: root, env: { HOME: root } });
+		expect(buildAgentOptions(config).webSearch).toBe(false);
 	});
 
 	it("passes provider, order, exclusion, and timeouts through", () => {

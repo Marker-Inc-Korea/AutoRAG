@@ -120,6 +120,184 @@ describe("parseJikjiAnswerPack", () => {
 		}
 	});
 
+	it("accepts Jikji 0.1.1 jikji_retry envelope where evidence_pack and agent_should_not_rerank are omitted", () => {
+		const retryEnvelope = JSON.stringify({
+			answer_paths: [],
+			answerability: "needs_one_jikji_retry",
+			candidates: [],
+			command: "jikji find",
+			error: null,
+			handoff_action: "jikji_retry",
+			index_status: "missing",
+			max_jikji_retries: 1,
+			max_raw_fallback_commands: 0,
+			mode: "find",
+			paths: [],
+			query: "vendor contract renewal",
+			raw_fallback_allowed: false,
+			root: "/tmp/docs",
+			tool_call_policy: {
+				allowed_followups: ["exactly_one_jikji_retry"],
+				forbidden_tools: ["grep", "rg", "glob", "find", "fd", "ls", "tree", "cat"],
+				reason: "jikji_retry_required_before_raw_fallback",
+				stop_after_find: false,
+			},
+		});
+		const pack = parseJikjiAnswerPack(retryEnvelope);
+		expect(pack).toEqual({
+			answerPaths: [],
+			paths: [],
+			candidates: [],
+			evidencePack: [],
+			handoffAction: "jikji_retry",
+			toolCallPolicy: {
+				stopAfterFind: false,
+				forbiddenTools: ["grep", "rg", "glob", "find", "fd", "ls", "tree", "cat"],
+				allowedFollowups: ["exactly_one_jikji_retry"],
+			},
+			agentShouldNotRerank: false,
+			rawFallbackAllowed: false,
+			maxJikjiRetries: 1,
+			maxRawFallbackCommands: 0,
+			nextCommands: [],
+			confidence: { answerability: "needs_one_jikji_retry", indexStatus: "missing" },
+		});
+	});
+
+	describe("retry protocol fields (jikji 0.2.1)", () => {
+		const PROOF = "ab9ebb1eb3f6e5460b4f1c23";
+		const DISCOVER = `jikji discover '/tmp/docs' 'unrelatedterm zzzqqq' --top-k 20 --after-jikji-retry --retry-proof '${PROOF}' --json`;
+
+		function retryEnvelope(overrides: Record<string, unknown> = {}): string {
+			return validAnswerPack({
+				answer_paths: [],
+				paths: [],
+				candidates: [],
+				evidence_pack: [],
+				handoff_action: "jikji_retry",
+				agent_should_not_rerank: false,
+				tool_call_policy: { stop_after_find: false, forbidden_tools: [], allowed_followups: [] },
+				max_jikji_retries: 1,
+				max_raw_fallback_commands: 0,
+				raw_fallback_allowed: false,
+				retry_proof: PROOF,
+				next_commands: [DISCOVER],
+				...overrides,
+			});
+		}
+
+		it("turns a jikji_retry envelope into a retry step bound to its proof, root and rewritten query", () => {
+			const pack = parseJikjiAnswerPack(retryEnvelope());
+			expect(pack?.retry).toEqual({ root: "/tmp/docs", query: "unrelatedterm zzzqqq", topK: 20, proof: PROOF });
+			expect(pack?.nextCommands).toEqual([DISCOVER]);
+			expect(pack?.maxJikjiRetries).toBe(1);
+			expect(pack?.rawFallbackAllowed).toBe(false);
+		});
+
+		it("reads raw_fallback_allowed and max_raw_fallback_commands from a raw_fallback_after_retry envelope", () => {
+			const pack = parseJikjiAnswerPack(
+				retryEnvelope({
+					handoff_action: "raw_fallback_after_retry",
+					raw_fallback_allowed: true,
+					max_raw_fallback_commands: 2,
+					max_jikji_retries: 0,
+					retry_proof: "",
+					next_commands: [],
+				}),
+			);
+			expect(pack?.handoffAction).toBe("raw_fallback_after_retry");
+			expect(pack?.rawFallbackAllowed).toBe(true);
+			expect(pack?.maxRawFallbackCommands).toBe(2);
+			expect(pack?.maxJikjiRetries).toBe(0);
+			expect(pack?.retry).toBeUndefined();
+		});
+
+		it("does not build a retry step from a command whose proof differs from retry_proof", () => {
+			const pack = parseJikjiAnswerPack(retryEnvelope({ retry_proof: "someone-elses-proof" }));
+			expect(pack?.retry).toBeUndefined();
+			expect(pack?.nextCommands).toEqual([DISCOVER]);
+		});
+
+		it("builds no retry step when the envelope is not jikji_retry, even if it lists a discover command", () => {
+			const pack = parseJikjiAnswerPack(retryEnvelope({ handoff_action: "direct_use" }));
+			expect(pack?.retry).toBeUndefined();
+		});
+
+		it("derives rawFallbackAllowed from the handoff when the envelope omits raw_fallback_allowed", () => {
+			const raw = parseJikjiAnswerPack(validAnswerPack({ handoff_action: "raw_fallback_after_retry" }));
+			const direct = parseJikjiAnswerPack(validAnswerPack());
+			expect(raw?.rawFallbackAllowed).toBe(true);
+			expect(direct?.rawFallbackAllowed).toBe(false);
+			expect(raw?.maxRawFallbackCommands).toBeUndefined();
+		});
+
+		it("rejects wrong-typed retry protocol fields", () => {
+			expect(parseJikjiAnswerPack(retryEnvelope({ raw_fallback_allowed: "no" }))).toBeUndefined();
+			expect(parseJikjiAnswerPack(retryEnvelope({ max_raw_fallback_commands: "2" }))).toBeUndefined();
+			expect(parseJikjiAnswerPack(retryEnvelope({ max_jikji_retries: -1 }))).toBeUndefined();
+			expect(parseJikjiAnswerPack(retryEnvelope({ next_commands: "jikji discover" }))).toBeUndefined();
+			expect(parseJikjiAnswerPack(retryEnvelope({ retry_proof: 7 }))).toBeUndefined();
+		});
+	});
+
+	// Real jikji 0.2.1 `find --after-jikji-retry --retry-proof <proof>` against an unprepared root. The
+	// recovery envelope omits evidence_pack and agent_should_not_rerank for BOTH retry actions, but the
+	// parser only tolerated the omission for `jikji_retry`, so the second step of the recovery sequence
+	// (the only way to reach `raw_fallback_after_retry`) was rejected as an unparseable answer pack.
+	it("accepts the raw_fallback_after_retry recovery envelope where evidence_pack and agent_should_not_rerank are omitted", () => {
+		const recoveryEnvelope = JSON.stringify({
+			answer_paths: [],
+			answerability: "needs_raw_fallback_after_retry",
+			candidates: [],
+			command: "jikji find",
+			error: null,
+			handoff_action: "raw_fallback_after_retry",
+			index_status: "missing",
+			max_jikji_retries: 0,
+			max_raw_fallback_commands: 2,
+			mode: "find",
+			next_commands: [],
+			paths: [],
+			query: "vendor contract renewal",
+			raw_fallback_allowed: true,
+			retry_proof: "",
+			root: "/tmp/docs",
+			tool_call_policy: {
+				allowed_followups: ["bounded_raw_fallback"],
+				forbidden_tools: [],
+				reason: "exactly_one_jikji_retry_failed",
+				stop_after_find: false,
+			},
+		});
+		const pack = parseJikjiAnswerPack(recoveryEnvelope);
+		expect(pack).toEqual({
+			answerPaths: [],
+			paths: [],
+			candidates: [],
+			evidencePack: [],
+			handoffAction: "raw_fallback_after_retry",
+			toolCallPolicy: {
+				stopAfterFind: false,
+				forbiddenTools: [],
+				allowedFollowups: ["bounded_raw_fallback"],
+			},
+			agentShouldNotRerank: false,
+			rawFallbackAllowed: true,
+			maxRawFallbackCommands: 2,
+			maxJikjiRetries: 0,
+			nextCommands: [],
+			confidence: { answerability: "needs_raw_fallback_after_retry", indexStatus: "missing" },
+		});
+	});
+
+	it("still rejects a direct_use pack that omits evidence_pack or agent_should_not_rerank", () => {
+		const base = JSON.parse(validAnswerPack()) as Record<string, unknown>;
+		const { evidence_pack: _evidence, ...withoutEvidence } = base;
+		const { agent_should_not_rerank: _rerank, ...withoutRerank } = base;
+		expect(parseJikjiAnswerPack(JSON.stringify(withoutEvidence))).toBeUndefined();
+		expect(parseJikjiAnswerPack(JSON.stringify(withoutRerank))).toBeUndefined();
+	});
+
 	it("accepts all next_read enum values on candidates", () => {
 		for (const nextRead of ["cache", "wiki", "original", "none"] as const) {
 			const pack = parseJikjiAnswerPack(
@@ -352,5 +530,82 @@ describe("normalizeJikjiAnswerPath", () => {
 	it("returns undefined when the path does not exist on disk", () => {
 		const roots = [root(repoRoot)];
 		expect(normalizeJikjiAnswerPath("src/nonexistent.ts", roots)).toBeUndefined();
+	});
+});
+
+/** Trimmed from a real `jikji find --json` 0.2.1 run over a three-file Korean corpus. */
+function realJikjiPayload(overrides: Record<string, unknown> = {}): string {
+	return JSON.stringify({
+		answer_paths: ["pay.md"],
+		paths: ["pay.md"],
+		candidates: [
+			{
+				ev: "2026년 3분기 보험금 지급 기준 안내 | 지급 청구는 14일 이내 처리됩니다",
+				next_read: { kind: "original", path: "pay.md" },
+				p: "pay.md",
+				queries: ["보험금 지급 기준"],
+				rank: 1,
+				s: 5130.7564,
+				strategies: ["lexical", "lexical_anchors"],
+				terms: ["기준", "보험금", "지급"],
+				why: ["fielded-bm25", "strong-map-term"],
+			},
+		],
+		evidence_pack: [
+			{
+				evidence: ["2026년 3분기 보험금 지급 기준 안내", "지급 청구는 14일 이내 처리됩니다"],
+				matched_terms: ["기준", "보험금", "지급"],
+				next_read: { kind: "original", path: "pay.md" },
+				path: "pay.md",
+				why: ["fielded-bm25"],
+			},
+		],
+		handoff_action: "direct_use",
+		tool_call_policy: { stop_after_find: true, forbidden_tools: ["bash"], allowed_followups: [] },
+		agent_should_not_rerank: true,
+		confidence: "high",
+		confidence_score: 0.9,
+		answerability: "answerable_from_payload",
+		recommended_action: "verify_top_candidates",
+		requires_llm_rerank: false,
+		index_status: "ready",
+		...overrides,
+	});
+}
+
+describe("parseJikjiAnswerPack real 0.2.1 payload and confidence", () => {
+	it("parses the real payload's candidates by path, next_read and score", () => {
+		expect(parseJikjiAnswerPack(realJikjiPayload())?.candidates).toEqual([
+			{ path: "pay.md", nextRead: "original", score: 5130.7564 },
+		]);
+	});
+
+	it("keeps the response-level confidence, answerability and rerank signals", () => {
+		expect(parseJikjiAnswerPack(realJikjiPayload())?.confidence).toEqual({
+			level: "high",
+			score: 0.9,
+			answerability: "answerable_from_payload",
+			recommendedAction: "verify_top_candidates",
+			requiresLlmRerank: false,
+			indexStatus: "ready",
+		});
+	});
+
+	it("has no confidence when jikji sent none, without rejecting the pack", () => {
+		const pack = parseJikjiAnswerPack(validAnswerPack());
+		expect(pack).toBeDefined();
+		expect(pack?.confidence).toBeUndefined();
+	});
+
+	it("drops wrong-typed confidence fields instead of rejecting the pack", () => {
+		const pack = parseJikjiAnswerPack(
+			realJikjiPayload({ confidence: 7, confidence_score: "0.9", requires_llm_rerank: "no" }),
+		);
+		expect(pack).toBeDefined();
+		expect(pack?.confidence).toEqual({
+			answerability: "answerable_from_payload",
+			recommendedAction: "verify_top_candidates",
+			indexStatus: "ready",
+		});
 	});
 });

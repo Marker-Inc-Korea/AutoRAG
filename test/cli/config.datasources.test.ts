@@ -66,6 +66,33 @@ describe("CLI config datasources wiring", () => {
 		]);
 	});
 
+	it("warns about retired spotlight entries, ignores them, and still reports unknown names separately", () => {
+		const configPath = writeConfig({
+			searchPaths: [tmpRoot],
+			workspacePath: tmpRoot,
+			datasources: {
+				rss: { connector: { feeds: [{ url: "https://feeds.example.com/a.xml" }] } },
+				spotlight: { connector: { queries: ["kMDItemContentTypeTree == 'public.text'"] } },
+				"my-files": { type: "spotlight" },
+				"slack-local": {},
+			},
+		});
+		const options = buildAgentOptions(resolveConfig({ flags: { config: configPath } }));
+		const skills = (options.datasourceSkills ?? []) as readonly DatasourceSkill[];
+		expect(skills.map((skill) => skill.describe().name)).toEqual(["rss"]);
+		expect(options.startupDiagnostics).toEqual([
+			expect.objectContaining({
+				code: "retired-datasource-skill",
+				severity: "warning",
+				message: expect.stringContaining("spotlight, my-files"),
+			}),
+			expect.objectContaining({
+				code: "unknown-datasource-skill",
+				message: "Unknown datasource skill(s) in config were skipped: slack-local",
+			}),
+		]);
+	});
+
 	it("skips malformed datasource entries without constructing connectors", () => {
 		const configPath = writeConfig({
 			searchPaths: [tmpRoot],
@@ -248,21 +275,18 @@ describe("CLI config datasources wiring", () => {
 		});
 	});
 
-	it("materializes provider-neutral cloud drives through the rclone CLI datasource", () => {
+	it("registers each connection alias as a distinct datasource skill", () => {
 		const configPath = writeConfig({
 			searchPaths: [tmpRoot],
 			workspacePath: tmpRoot,
 			datasources: {
-				"cloud-drive": {
-					instanceId: "team-drive",
-					connector: {
-						provider: "onedrive",
-						remote: "onedrive:Team Docs",
-						include: ["**/*.pdf", "**/*.md"],
-						exclude: ["Archive/**"],
-						concurrency: 4,
-						bandwidthLimit: "10M",
-					},
+				"personal-feeds": {
+					type: "rss",
+					connector: { feeds: [{ url: "https://example.com/a.xml" }] },
+				},
+				"company-news": {
+					type: "rss",
+					connector: { feeds: [{ url: "https://example.com/b.xml" }] },
 				},
 			},
 		});
@@ -270,44 +294,10 @@ describe("CLI config datasources wiring", () => {
 		const options = buildAgentOptions(resolveConfig({ flags: { config: configPath } }));
 		const skills = (options.datasourceSkills ?? []) as readonly DatasourceSkill[];
 
-		expect(skills).toHaveLength(1);
-		expect(skills[0]?.describe()).toMatchObject({
-			name: "cloud-drive",
-			type: "rclone-drive",
-			instanceId: "team-drive",
-			requiresExternalCli: true,
-		});
-		expect(skills[0]?.skillManifest().content).toContain("OneDrive");
-	});
-
-	it("registers each rclone connection alias as a distinct datasource skill", () => {
-		const configPath = writeConfig({
-			searchPaths: [tmpRoot],
-			workspacePath: tmpRoot,
-			datasources: {
-				"personal-google-drive": {
-					type: "cloud-drive",
-					instanceId: "personal",
-					connector: { provider: "google-drive", remote: "personal-gdrive:" },
-				},
-				"company-onedrive": {
-					type: "cloud-drive",
-					instanceId: "work",
-					connector: { provider: "onedrive", remote: "company-onedrive:Documents" },
-				},
-			},
-		});
-
-		const options = buildAgentOptions(resolveConfig({ flags: { config: configPath } }));
-		const skills = (options.datasourceSkills ?? []) as readonly DatasourceSkill[];
-
-		expect(skills.map((skill) => skill.describe().name).sort()).toEqual([
-			"company-onedrive",
-			"personal-google-drive",
-		]);
+		expect(skills.map((skill) => skill.describe().name).sort()).toEqual(["company-news", "personal-feeds"]);
 		expect(skills.map((skill) => skill.skillManifest().name).sort()).toEqual([
-			"datasource-company-onedrive",
-			"datasource-personal-google-drive",
+			"datasource-company-news",
+			"datasource-personal-feeds",
 		]);
 		expect(skills[0]?.describe().datasourceId).not.toBe(skills[1]?.describe().datasourceId);
 	});
@@ -317,18 +307,18 @@ describe("CLI config datasources wiring", () => {
 			searchPaths: [tmpRoot],
 			workspacePath: tmpRoot,
 			datasources: {
-				"personal-drive": {
-					type: "cloud-drive",
-					description: "보통 프로젝트 문서와 계약서 검색에 사용하는 개인 Google Drive입니다.",
-					connector: { provider: "google-drive", remote: "personal:" },
+				"personal-feed": {
+					type: "rss",
+					description: "보통 뉴스와 블로그 글 검색에 사용하는 개인 피드입니다.",
+					connector: { feeds: [{ url: "https://example.com/feed.xml" }] },
 				},
 			},
 		});
 		const options = buildAgentOptions(resolveConfig({ flags: { config: configPath } }));
 		const skill = (options.datasourceSkills ?? [])[0];
-		expect(skill?.describe().description).toContain("개인 Google Drive");
-		expect(skill?.skillManifest().description).toContain("개인 Google Drive");
-		expect(skill?.skillManifest().content).toContain("계약서 검색");
+		expect(skill?.describe().description).toContain("개인 피드");
+		expect(skill?.skillManifest().description).toContain("개인 피드");
+		expect(skill?.skillManifest().content).toContain("뉴스와 블로그");
 	});
 
 	it("registers connector and crawler aliases through their datasource type", () => {

@@ -45,11 +45,11 @@ interface MinSyncStagingState {
 
 export function syncMinSyncWorkspace(
 	root: string,
-	options: { readonly workspacePath?: string } = {},
+	options: { readonly workspacePath?: string; readonly minSyncBinaryPath?: string } = {},
 ): MinSyncWorkspaceSyncResult {
 	const workspacePath = options.workspacePath ?? minSyncWorkspaceRoot(root);
 	const filesRoot = join(workspacePath, "files");
-	const index = loadMirrorIndex(root);
+	const index = loadMirrorIndex(root, options);
 	const candidates = Object.values(index.entries).sort((a, b) => a.virtualPath.localeCompare(b.virtualPath));
 	const excluded = candidates
 		.filter((entry) => normalizeVirtualPath(entry.virtualPath) !== entry.virtualPath || !existsSync(entry.outputPath))
@@ -89,6 +89,9 @@ export function syncMinSyncWorkspace(
 		desiredPaths.add(entry.minSyncPath);
 	}
 
+	// `desiredPaths` is driven by the whole mirror index, not by one parse batch,
+	// so a caller that stages once per batch never drops a not-yet-reached
+	// document: only entries the mirror no longer holds leave the staged tree.
 	removeUnexpectedStagedFiles(filesRoot, desiredPaths);
 	saveStagingState(workspacePath, { version: 1, entries: currentState });
 
@@ -183,8 +186,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null;
 }
 
-export function buildMinSyncPathMap(root: string, workspacePath: string): ReadonlyMap<string, MinSyncWorkspaceEntry> {
-	const index = loadMirrorIndex(root);
+export function buildMinSyncPathMap(
+	root: string,
+	workspacePath: string,
+	minSyncBinaryPath?: string,
+): ReadonlyMap<string, MinSyncWorkspaceEntry> {
+	const index = loadMirrorIndex(root, { minSyncBinaryPath });
 	const byPath = new Map<string, MinSyncWorkspaceEntry>();
 	for (const entry of Object.values(index.entries)) {
 		const minSyncPath = minSyncDocumentPath(workspacePath, entry.virtualPath);

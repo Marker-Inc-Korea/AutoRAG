@@ -25,6 +25,7 @@ import type {
 	RetrievalOptions,
 	RetrievalResult,
 } from "../../src/retrieval/types.ts";
+import { baselineJev } from "../helpers/baseline-jev.ts";
 
 let root: string;
 let docs: string;
@@ -179,6 +180,7 @@ function agentOptions(model: ReturnType<typeof fauxModel>): AutoRAGAgentOptions 
 		workspacePath: root,
 		minSync: { autoInstall: false },
 		jikji: false,
+		jev: baselineJev(),
 	};
 }
 

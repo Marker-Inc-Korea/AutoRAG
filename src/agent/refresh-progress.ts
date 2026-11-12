@@ -2,6 +2,9 @@ import { readFileSync, rmSync } from "node:fs";
 import { writeFileAtomic } from "../mirror/atomic-write.ts";
 import { refreshProgressPath } from "../mirror/paths.ts";
 
+/** Persist display progress every 25 files; this is not the engine's recovery checkpoint. */
+export const REFRESH_PROGRESS_EVERY = 25;
+
 export type RefreshProgressPhase =
 	| "parsed"
 	| "minsync"
@@ -29,7 +32,7 @@ export interface PersistedRefreshProgress {
 	readonly finishedAt?: string;
 	readonly sourceFiles?: { readonly total: number };
 	readonly parsedCounts?: RefreshProgressCounts;
-	readonly minsync?: { readonly synced?: number };
+	readonly minsync?: { readonly synced?: number; readonly total?: number; readonly filesSkipped?: number };
 	readonly error?: string;
 }
 
@@ -126,7 +129,18 @@ function isParsedCounts(value: unknown): boolean {
 }
 
 function isMinsync(value: unknown): boolean {
-	return value === undefined || (isRecord(value) && (value.synced === undefined || typeof value.synced === "number"));
+	return (
+		value === undefined ||
+		(isRecord(value) &&
+			(value.synced === undefined ||
+				(typeof value.synced === "number" && Number.isInteger(value.synced) && value.synced >= 0)) &&
+			(value.total === undefined ||
+				(typeof value.total === "number" && Number.isInteger(value.total) && value.total >= 0)) &&
+			(value.filesSkipped === undefined ||
+				(typeof value.filesSkipped === "number" &&
+					Number.isInteger(value.filesSkipped) &&
+					value.filesSkipped >= 0)))
+	);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
 import { MinSyncRequiredError } from "../../src/minsync/errors.ts";
+import { fakeMinSyncStageSimulatorPath } from "../helpers/fake-minsync.ts";
 
 let root: string;
 let docs: string;
@@ -28,31 +29,35 @@ function writeFakeMinSync(): void {
 		minsyncBinary,
 		`#!/usr/bin/env node
 import { mkdirSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
+const require = createRequire(import.meta.url);
 const args = process.argv.slice(2);
 const cursor = join(process.cwd(), ".minsync", "cursor.json");
 
-if (args[0] === "init") {
+// A parsed refresh drives MinSync's materialization stage in a long-lived
+// session: hand the state directory to the shared simulator and let it keep
+// reading this process's stdin instead of exiting.
+if (args[0] === "stage") {
+  const eqArg = args.find((a) => a.startsWith("--state-dir="));
+  const flagAt = args.indexOf("--state-dir");
+  const stateDir = eqArg ? eqArg.slice("--state-dir=".length) : flagAt >= 0 ? args[flagAt + 1] : args[1];
+  require(${JSON.stringify(fakeMinSyncStageSimulatorPath)}).runStage({ stateDir });
+} else if (args[0] === "init") {
   const config = join(process.cwd(), ".minsync", "config.toml");
   mkdirSync(dirname(config), { recursive: true });
   writeFileSync(config, "[embedder]\\nid = \\"openai\\"\\n");
   console.log(JSON.stringify({ initialized: true }));
   process.exit(0);
-}
-
-if (args[0] === "check") {
+} else if (args[0] === "check") {
   console.log(JSON.stringify({ vectorstore_ok: true, embedder_ok: true }));
   process.exit(0);
-}
-
-if (args[0] === "sync") {
+} else if (args[0] === "sync") {
   mkdirSync(dirname(cursor), { recursive: true });
   writeFileSync(cursor, JSON.stringify({ ready: true }));
   console.log(JSON.stringify({ synced: 1 }));
   process.exit(0);
-}
-
-if (args[0] === "query") {
+} else if (args[0] === "query") {
   console.log(JSON.stringify({
     results: [
       {
@@ -63,9 +68,9 @@ if (args[0] === "query") {
     ]
   }));
   process.exit(0);
+} else {
+  process.exit(2);
 }
-
-process.exit(2);
 `,
 	);
 	chmodSync(minsyncBinary, 0o755);
@@ -76,31 +81,35 @@ function writeFakeScopedMinSync(): void {
 		minsyncBinary,
 		`#!/usr/bin/env node
 import { mkdirSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
+const require = createRequire(import.meta.url);
 const args = process.argv.slice(2);
 const cursor = join(process.cwd(), ".minsync", "cursor.json");
 
-if (args[0] === "init") {
+// A parsed refresh drives MinSync's materialization stage in a long-lived
+// session: hand the state directory to the shared simulator and let it keep
+// reading this process's stdin instead of exiting.
+if (args[0] === "stage") {
+  const eqArg = args.find((a) => a.startsWith("--state-dir="));
+  const flagAt = args.indexOf("--state-dir");
+  const stateDir = eqArg ? eqArg.slice("--state-dir=".length) : flagAt >= 0 ? args[flagAt + 1] : args[1];
+  require(${JSON.stringify(fakeMinSyncStageSimulatorPath)}).runStage({ stateDir });
+} else if (args[0] === "init") {
   const config = join(process.cwd(), ".minsync", "config.toml");
   mkdirSync(dirname(config), { recursive: true });
   writeFileSync(config, "[embedder]\\nid = \\"openai\\"\\n");
   console.log(JSON.stringify({ initialized: true }));
   process.exit(0);
-}
-
-if (args[0] === "check") {
+} else if (args[0] === "check") {
   console.log(JSON.stringify({ vectorstore_ok: true, embedder_ok: true }));
   process.exit(0);
-}
-
-if (args[0] === "sync") {
+} else if (args[0] === "sync") {
   mkdirSync(dirname(cursor), { recursive: true });
   writeFileSync(cursor, JSON.stringify({ ready: true }));
   console.log(JSON.stringify({ synced: 2 }));
   process.exit(0);
-}
-
-if (args[0] === "query") {
+} else if (args[0] === "query") {
   const k = Number(args[args.indexOf("-k") + 1]);
   const results = [
     {
@@ -118,9 +127,9 @@ if (args[0] === "query") {
   }
   console.log(JSON.stringify({ results }));
   process.exit(0);
+} else {
+  process.exit(2);
 }
-
-process.exit(2);
 `,
 	);
 	chmodSync(minsyncBinary, 0o755);

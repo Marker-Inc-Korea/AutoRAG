@@ -32,25 +32,6 @@ trusted `vdr sync`. Keyword, V-SPLADE lexical, dense embedding, and hybrid
 search are delegated to `clawgallery search --json`; AutoRAG never reads
 `images.jsonl` or `vdr.sqlite3`, and does not trigger captioning or renaming.
 
-### Spotlight
-
-`spotlight` is a macOS-only connector skill. It drives the built-in `mdfind`
-CLI (no extra install). Indexing re-runs configured Spotlight queries and
-hydrates file text; result metadata carries the real absolute path. Grant Full
-Disk Access to the host app when searching Mail, Messages, Safari, or other
-protected locations. Unavailable on non-macOS hosts.
-
-```json
-{
-  "datasources": {
-    "mac-files": {
-      "type": "spotlight",
-      "instanceId": "local"
-    }
-  }
-}
-```
-
 ### Obsidian
 
 `obsidian` indexes a markdown vault with MinSync — the same engine and
@@ -73,7 +54,7 @@ Only `.md` and `.markdown` notes are staged. Dot-prefixed folders and files
 (`.obsidian`, `.trash`, `.git`), `node_modules`, and symlinks are skipped, and a
 re-index is incremental: only changed or deleted notes are touched. The former
 `connector.binaryPath` and `connector.configPath` options no longer exist.
-Retrieval exposes `obsidian-bm25` (lexical) and `obsidian-semantic` (vector,
+Retrieval exposes `obsidian-sparse` (SPLADE sparse) and `obsidian-semantic` (vector,
 through the shared embedder), and both accept an ordinary `scope`. Sources are
 vault-relative note paths as opaque slash paths —
 `/obsidian/<instanceId>/<folder>/<note>.md`, for example
@@ -119,7 +100,7 @@ The zero-configuration boundary is narrow:
   only that one variable through to discrawl's environment). It checks discrawl
   metadata before asking the native CLI to rebuild. An explicit `configPath` is
   authoritative and is never rewritten.
-- **mailcrawl** (`@nomadamas/mailcrawl@0.2.2` or newer) and **kakao**
+- **mailcrawl** (`@nomadamas/mailcrawl@0.3.0` or newer) and **kakao**
   (`lazykatok` 0.3.3 or newer) embed for themselves, so AutoRAG points them at
   the same backend through the environment variables each CLI documents, for
   `index` and for semantic and hybrid search only (BM25 never embeds).
@@ -192,7 +173,7 @@ reads. Measured first-run costs on a real archive:
 | Connector | First-run workload | Measured |
 |---|---|---|
 | `mailcrawl` | Gmail INBOX full sync (~2,300 messages) + native index | ~12 min |
-| `mailcrawl` | No-op `sync` of a 1,000-message INBOX (mailcrawl re-reads every message, NomaDamas/mailcrawl#48) | 16 to 27 min |
+| `mailcrawl` | Incremental `sync` of an unchanged 1,000-message INBOX (envelope fingerprint check in 0.3.0; first post-upgrade sync reads once) | seconds |
 | `kakao` (lazykatok) | Semantic index over a ~50k-message archive (9,373 units) | ~11 min |
 
 A step killed by its timeout does not commit its cursor, so the next refresh
@@ -236,8 +217,8 @@ separately (#1587, #1586).
 ## mailcrawl
 
 The `mailcrawl` datasource delegates local email synchronization and search to
-the external `mailcrawl` CLI. Install `@nomadamas/mailcrawl@0.2.2` or newer
-(Node.js 24+) and configure Himalaya separately; AutoRAG never opens
+the external `mailcrawl` CLI. Install `@nomadamas/mailcrawl@0.3.0` or newer
+(Node.js 24+) and configure Himalaya separately (or set `"source": "files"` and `"paths": [...]` to index static `.eml`/`.mbox` exports without Himalaya); AutoRAG never opens
 `archive.sqlite` directly. 0.1.3 and earlier fail a repeated `index` after a
 no-op sync (`text array must be non-empty`). By default, mailcrawl uses its
 native archive. Set `connector.dataDir` only when the operator explicitly
@@ -282,8 +263,51 @@ Refresh runs `mailcrawl sync --json` followed by `mailcrawl index --json`.
 Retrieval is hybrid-first: one `mailcrawl search --mode hybrid` per query, and BM25 only when hybrid cannot run
 (for example when no semantic index exists). Results map to opaque `/mailcrawl/<instance>/chunks/<chunk-id>` sources. Use
 `mailcrawl --help` for upstream commands; AutoRAG does not invent a shared
-datasource command taxonomy. `mail-export` remains the static `.mbox`/`.eml`
-path. Mailcrawl is the sole Gmail, IMAP, and Maildir path.
+datasource command taxonomy. Mailcrawl is the sole Gmail, IMAP, Maildir, and
+static `.mbox`/`.eml` (`--source files`) email path; the former `mail-export` connector is retired.
+
+## wombat
+
+The `wombat` datasource searches past coding-agent conversations: Codex, Claude Code, OpenCode, pi, and omp.
+Install the CLI with `cargo install wombat-sessions` (it installs the `wombat` binary; `minsync` 0.6.0 or newer must
+be on `PATH` too). wombat reads each agent's own session log, keeps only the user and assistant conversation, and
+lets MinSync index it incrementally with SPLADE and dense vectors. Thinking, tool calls and outputs, and file diffs
+are not indexed. AutoRAG never opens the agents' logs or wombat's catalog directly.
+
+```json
+{
+  "datasources": {
+    "wombat": {
+      "connector": {
+        "binaryPath": "wombat",
+        "agents": ["codex", "claude-code", "opencode", "pi", "omp"]
+      }
+    }
+  }
+}
+```
+
+- Refresh runs `wombat doctor --json`, then `wombat sync --index --json` (parse new and changed sessions, then
+  MinSync). It is incremental: only sessions that changed are parsed and only new chunks are embedded. `sync --index`
+  gets the one-hour connector budget (`connector.indexTimeoutMs`); search keeps its 60-second budget.
+- Retrieval is hybrid-first: one `wombat search --mode hybrid` per query, and SPLADE keyword search only when hybrid
+  cannot run (for example, no embedder is available). Results map to opaque
+  `/wombat/<instance>/chunks/<chunk-id>` sources and carry `agent`, `title`, `startTurn`, `endTurn` and
+  `sessionKey` (`<agent>:<session id>`) in their metadata. The model reads only a result's content, never its
+  metadata, so the first line of every hit is a label with the same facts:
+  `[<sessionKey> | turns 3-5 | 2026-10-22 | <title> | <cwd>]`. Missing parts are omitted, and line breaks in a title or
+  path are collapsed so they cannot add lines to the result.
+- `connector.agents` limits indexing and search to those agents. `connector.includeSubagents` and
+  `connector.includeEphemeral` index subagent transcripts and headless, benchmark, or temp-directory sessions, which
+  wombat skips by default. `connector.dataDir` and `connector.configPath` move wombat's data directory or config.
+- Embeddings stay inside MinSync: wombat starts `minsync` itself, and a native MinSync embedder adopts a running
+  `minsync serve` automatically, so AutoRAG passes no embedding endpoint to it. AutoRAG forwards only an allow-list of
+  environment variables and refuses to spawn the CLI when `WOMBAT_EMBEDDER` selects a remote (`openai:` or `tei:`)
+  embedder, because that would send conversation text off the machine.
+- To go from a result to the full conversation, the agent calls wombat through `bash` with the `sessionKey` from the
+  label: `wombat show <sessionKey>` prints the cleaned conversation, and `wombat trace <sessionKey> --turn N` prints
+  the original log around that turn, including the tool calls and outputs the index leaves out. The skill's
+  always-visible description says this, because the skill body is read only when the agent loads it.
 
 ## Universal connection aliases
 
@@ -327,14 +351,11 @@ servers apart.
 ```json
 {
   "datasources": {
-    "personal-google-drive": {
-      "type": "cloud-drive",
-      "instanceId": "personal",
-      "description": "Project contracts and government-support documents. Prefer this connection for current agreements; treat Archive/ as historical.",
-      "connector": {
-        "provider": "google-drive",
-        "remote": "personal-gdrive:"
-      }
+    "company-slack": {
+      "type": "slack",
+      "instanceId": "company",
+      "description": "Engineering and product channels. Prefer this connection for current project decisions; treat #general as historical chatter.",
+      "connector": { "configPath": "/secure/company-slack.toml" }
     }
   }
 }
@@ -564,114 +585,61 @@ Arabic message that the base tokenizer splits differently is still ranked lexica
 a supplemental native candidate. Tables that are not configured are ignored. Set `sidecar: false` to retain the
 native method and its language-index fusion throughout.
 
-## Cloud drives via rclone
+## Cloud drives and network folders
 
-The `cloud-drive` datasource uses the external [`rclone`](https://rclone.org)
-CLI as the provider boundary. Configure OAuth, Apple ID/session, or other
-credentials only in `rclone config`; AutoRAG receives the trusted remote name,
-never provider secrets.
+Cloud storage is a folder, not a datasource skill. Connect it by adding the
+provider's desktop-sync folder to `searchPaths` — the sync app (iCloud Drive,
+Google Drive, OneDrive, Dropbox, …) owns the mount, its authentication, and its
+placeholder lifecycle, and the parsed mirror indexes the folder like any other.
+A refresh reads each cloud or network file once per change, downloads a cloud
+placeholder within the per-refresh budget, then releases the local copy again;
+see [Cloud and network folders](minsync-setup.md#cloud-and-network-folders) for
+the detection rules, the download budget (`refresh.cloudMaxFiles` /
+`refresh.cloudMaxBytes`), and what is unverified.
 
-Tier-1 is Google Drive. OneDrive and mounted/network remotes use the same
-provider-neutral contract. iCloud Drive is explicitly experimental because
-its rclone backend is Tier 4 and periodically requires Apple ID/password,
-2FA, and reauthentication.
+Storage without a desktop sync app can be mounted instead: `rclone mount
+<remote>: <mountpoint>` exposes it as a local folder, or `rclone serve webdav
+<remote>:` plus an OS WebDAV mount (`mount_webdav` on macOS, a mapped drive on
+Windows) does the same. However it is mounted, AutoRAG then treats the folder as
+a network folder and reads each file over the wire, with no download budget.
 
-```json
-{
-  "datasources": {
-    "personal-google-drive": {
-      "type": "cloud-drive",
-      "instanceId": "personal",
-      "connector": {
-        "provider": "google-drive",
-        "remote": "personal-gdrive:"
-      }
-    },
-    "company-onedrive": {
-      "type": "cloud-drive",
-      "instanceId": "work",
-      "pollingIntervalMs": 900000,
-      "connector": {
-        "provider": "onedrive",
-        "remote": "onedrive:Team Docs",
-        "include": ["**/*.md", "**/*.pdf"],
-        "exclude": ["Archive/**"],
-        "maxBytesPerFile": 52428800,
-        "concurrency": 4,
-        "bandwidthLimit": "10M",
-        "dryRun": false
-      }
-    }
-  }
-}
-```
+### Removed: the `cloud-drive` datasource
 
-`cloud-drive` is the reusable template, not the required connection name.
-Every key whose `type` is `"cloud-drive"` becomes an independent datasource:
+The rclone-backed `cloud-drive` datasource is removed. A config entry that still
+names `cloud-drive` (or an alias with `"type": "cloud-drive"`) is now an unknown
+datasource skill: it is skipped with the existing `unknown-datasource-skill`
+warning, as for any other retired skill, and nothing is migrated or shimmed. To
+keep a Google Drive, OneDrive, Dropbox, or iCloud Drive collection searchable:
 
-- its key is the datasource id and skill suffix;
-- `datasource-personal-google-drive` and `datasource-company-onedrive` are
-  independently loadable with `load_datasource_skill`;
-- source scopes are isolated under the same aliases;
-- manifests, mirrors, and chunks are stored independently under
-  `.autorag/datasources/<alias>/<instance>/`.
+1. Remove the `cloud-drive` entry (and every alias whose `type` is
+   `"cloud-drive"`) from `datasources`.
+2. Add the provider's sync folder to `searchPaths` — for example
+   `~/Library/CloudStorage/GoogleDrive-<account>` or
+   `~/Library/Mobile Documents/com~apple~CloudDocs` on macOS, or the
+   OneDrive/Dropbox/iCloud-for-Windows folder on Windows — and run
+   `autorag refresh`.
+3. Delete the old rclone data left under `<workspace>/.autorag/datasources/<name>/`
+   (each removed connection's `mirror/`, `manifest.json`, and `chunks.json`).
 
-This lets one process connect multiple accounts from the same provider as well
-as different providers. For example, `personal-google-drive` and
-`client-google-drive` may both use Google Drive but different rclone remotes.
+`autorag setup` reports every cloud or network folder the machine has that no
+`searchPaths` entry covers, with the exact command to add it.
 
-### Migrating from the legacy `gdrive` datasource
+Google Docs, Sheets, and Slides are a known gap: in a sync folder they appear
+only as small `.gdoc`/`.gsheet`/`.gslides` pointer files with no document
+content, so they are not indexed beyond their names. Whether `rclone mount` /
+`rclone serve webdav` exports them as readable files is unverified.
 
-The former REST-backed `gdrive` datasource and its `backend: "rclone"`
-compatibility mode are removed. Configure every Google Drive connection as a
-named `cloud-drive` alias and authenticate the remote with `rclone config`:
+### Removed: the `spotlight` datasource
 
-```json
-{
-  "datasources": {
-    "google-drive": {
-      "type": "cloud-drive",
-      "instanceId": "default",
-      "connector": {
-        "provider": "google-drive",
-        "remote": "my-google-drive:"
-      }
-    }
-  }
-}
-```
+The macOS Spotlight (`mdfind`) datasource is removed. A config entry named
+`spotlight`, or an alias with `"type": "spotlight"`, is ignored and reported with
+a `retired-datasource-skill` warning (not `unknown-datasource-skill`); nothing is
+migrated and config resolution does not fail. Remove those entries from
+`datasources`. File content stays searchable through `searchPaths` (mirror/BM25
+index) and, where installed, FSearch.
 
-Existing `gdrive` configurations must be renamed and converted before the next
-refresh; the old REST token settings and `/gdrive/**` scopes are not read.
-
-Run the CLI datasource refresh with:
-
-```bash
-rclone config
-autorag refresh --method datasources --config ./config.json
-autorag search "the renewal terms in the team drive"
-```
-
-Each refresh runs `rclone lsjson --recursive --files-only --hash`, compares
-the result with the workspace-local manifest at
-`.autorag/datasources/<connection-alias>/<instance>/manifest.json`, then copies only
-added/changed indexable files into `mirror/`. Deleted and renamed virtual paths
-are removed from the completed snapshot. A no-op refresh downloads zero bodies
-and does not rewrite `chunks.json`. A failed copy leaves the previous manifest
-and mirror available for query-time search. `include`, `exclude`,
-`maxDocuments`, `maxContentChars`, `maxBytesPerFile`, `concurrency`,
-`bandwidthLimit`, and `dryRun` are trusted server configuration; model/tool
-arguments cannot change them. The RSS connector takes the same trusted
-`maxDocuments`/`maxItemsPerFeed`/`maxContentChars` caps, and Spotlight takes
-`maxDocuments`/`maxContentChars`/`maxResultsPerQuery`/`maxBytesPerFile`.
-
-Before searching, the agent loads the datasource skill with
-`load_datasource_skill`, then calls the connection's dedicated
-`search_datasource_<name>` tool using a natural-language query and, when
-useful, a narrowing scope such as `/company-onedrive/work/**`. Read-only
-`rclone` inspection (e.g. `rclone lsl <remote>:<path>`) may run directly
-through bash per the skill's Native CLI section; credentials stay with
-rclone and the agent never requests them.
+Connector ingest caps stay trusted configuration: the RSS connector takes
+`maxDocuments`/`maxItemsPerFeed`/`maxContentChars`.
 
 ## Chat channel selection
 

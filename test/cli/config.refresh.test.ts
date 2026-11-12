@@ -55,6 +55,27 @@ describe("refresh config normalization", () => {
 		expect(buildAgentOptions(zero).refresh).toEqual({ transientRetries: 0 });
 	});
 
+	it("accepts the cloud download budget and eviction switch and maps them onto the agent option", () => {
+		const cloud = { cloudMaxFiles: 50, cloudMaxBytes: 1048576, cloudEvictAfterParse: false, cloudEvictRetries: 5 };
+		const config = resolveFrom({ refresh: cloud });
+
+		expect(config.refresh).toEqual(cloud);
+		expect(buildAgentOptions(config).refresh).toEqual(cloud);
+	});
+
+	it("rejects invalid cloud refresh values", () => {
+		expect(() => resolveFrom({ refresh: { cloudMaxFiles: 0 } })).toThrow(ConfigError);
+		expect(() => resolveFrom({ refresh: { cloudMaxFiles: 1.5 } })).toThrow(ConfigError);
+		expect(() => resolveFrom({ refresh: { cloudMaxBytes: -1 } })).toThrow(ConfigError);
+		expect(() => resolveFrom({ refresh: { cloudEvictAfterParse: "no" } })).toThrow(ConfigError);
+		expect(() => resolveFrom({ refresh: { cloudEvictRetries: -1 } })).toThrow(ConfigError);
+		expect(() => resolveFrom({ refresh: { cloudEvictRetries: 1.5 } })).toThrow(ConfigError);
+	});
+
+	it("accepts cloudEvictRetries of 0, which tries the release once", () => {
+		expect(resolveFrom({ refresh: { cloudEvictRetries: 0 } }).refresh).toEqual({ cloudEvictRetries: 0 });
+	});
+
 	it("accepts the ratio boundaries 0 and 1", () => {
 		expect(resolveFrom({ refresh: { maxDeleteRatio: 0 } }).refresh).toEqual({ maxDeleteRatio: 0 });
 		expect(resolveFrom({ refresh: { maxDeleteRatio: 1 } }).refresh).toEqual({ maxDeleteRatio: 1 });
@@ -88,5 +109,21 @@ describe("refresh config normalization", () => {
 		const config = resolveConfig({ flags: { config: path }, cwd: root, env: {} });
 
 		expect(config.refresh).toEqual({ maxDeleteRatio: 0.2 });
+	});
+});
+
+describe("refresh.schedule config", () => {
+	it("round-trips a valid schedule into agent options", () => {
+		const config = resolveFrom({ refresh: { schedule: { power: "ac", windows: ["22:00-07:00"], days: ["Mon"] } } });
+		expect(buildAgentOptions(config).refresh?.schedule).toEqual({
+			power: "ac",
+			windows: ["22:00-07:00"],
+			days: ["mon"],
+		});
+	});
+
+	it("rejects invalid schedule values as ConfigError", () => {
+		expect(() => resolveFrom({ refresh: { schedule: { power: "solar" } } })).toThrow(ConfigError);
+		expect(() => resolveFrom({ refresh: { schedule: { windows: ["9-5"] } } })).toThrow(/windows/);
 	});
 });

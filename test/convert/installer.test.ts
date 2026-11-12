@@ -51,7 +51,8 @@ function seams(platform: NodeJS.Platform, arch: NodeJS.Architecture, calls: stri
 }
 
 describe("selectFileeAsset", () => {
-	it("pins one release asset per supported platform, with a sha256 and the release url", () => {
+	it("pins filee-cli 2.0.0-3 and one release asset per supported platform, with a sha256 and the release url", () => {
+		expect(FILEE_CLI_VERSION).toBe("2.0.0-3");
 		const targets: [NodeJS.Platform, NodeJS.Architecture, string][] = [
 			["darwin", "arm64", "osx-arm64.tar.gz"],
 			["darwin", "x64", "osx-x64.tar.gz"],

@@ -31,7 +31,7 @@ export interface ObsidianVaultIndexOptions {
 	readonly minSync?: ObsidianMinSyncOptions;
 }
 
-export type ObsidianSearchMode = "bm25" | "semantic";
+export type ObsidianSearchMode = "sparse" | "semantic";
 
 export interface ObsidianSearchOptions {
 	readonly topK?: number;
@@ -47,7 +47,7 @@ const DEFAULT_TOP_K = 20;
 /** A folder scope cannot be pushed into MinSync, so the fetch grows until enough in-scope notes turn up. */
 const MIN_SCOPED_FETCH = 50;
 const MAX_SCOPED_FETCH = 1000;
-const QUERY_MODES: Readonly<Record<ObsidianSearchMode, MinSyncQueryMode>> = { bm25: "bm25", semantic: "vector" };
+const QUERY_MODES: Readonly<Record<ObsidianSearchMode, MinSyncQueryMode>> = { sparse: "sparse", semantic: "vector" };
 
 /**
  * One vault, indexed by MinSync in a workspace of its own. Notes are staged under the workspace's

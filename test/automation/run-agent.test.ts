@@ -115,7 +115,7 @@ describe("buildAutomationProfile", () => {
 		);
 		expect(profile.tools).toEqual(expect.arrayContaining(["bash", "edit", "write"]));
 		expect(profile.systemPrompt).toContain("Automation loop guard");
-		expect(profile.systemPrompt).toContain("Triggering this automation is forbidden");
+		expect(profile.systemPrompt).toContain("nothing you do must fire this automation again");
 	});
 
 	it("gives the read-only profile no way to change a file", () => {

@@ -1,4 +1,5 @@
 import { MinSyncRequiredError } from "../minsync/errors.ts";
+import type { RecordCut } from "./record-cut.ts";
 import { describeRetrievalError, groupUnsearchedSurfaces, type RetrievalSkip, retrievalSurfaceFor } from "./skip.ts";
 import type {
 	RetrievalDiagnostic,
@@ -17,6 +18,11 @@ export interface MergeOptions {
 	topK: number;
 	/** Retained for API compatibility; pure-duplicate removal is always enabled. */
 	dedup: boolean;
+	/**
+	 * When set, the ranked pool is cut to `topK` spread across documents (see {@link RecordCut}) instead of
+	 * by chunk, so one long document cannot take every slot. Unset keeps the plain top-`topK` cut.
+	 */
+	recordCut?: RecordCut;
 }
 
 const SAME_SOURCE_CORROBORATION_BONUS = 0.15;
@@ -76,7 +82,10 @@ export class ResultMerger {
 			allResults.push(...methodResults.map((result) => ({ method, result })));
 		}
 
-		return collateDistinctEvidence(allResults).slice(0, topK);
+		const ranked = collateDistinctEvidence(allResults);
+		return options.recordCut === undefined
+			? ranked.slice(0, topK)
+			: options.recordCut.cut(ranked, topK, (result) => result.source);
 	}
 }
 

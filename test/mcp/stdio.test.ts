@@ -52,9 +52,9 @@ function makeFixture() {
 			// Pass the shim explicitly: `portableSpawnCommand` only rewrites a shebang
 			// script to its interpreter when it can see the file at that exact path.
 			dupey: { binaryPath: dupeyBinary },
-			// Spotlight needs no external install, so a configured skill yields a
-			// dynamic datasource tool without touching the network or a binary.
-			datasources: { spotlight: { enabled: true } },
+			// RSS needs no external install and fetches nothing until a feed is configured and polled, so a
+			// configured skill yields a dynamic datasource tool without touching the network or a binary.
+			datasources: { rss: { enabled: true } },
 		}),
 	);
 	return { root, docs, config, binDir };
@@ -77,6 +77,7 @@ async function connect(
 	config: string,
 	binDir: string,
 	envOverrides: Record<string, string> = {},
+	cwd?: string,
 ): Promise<StdioConnection> {
 	// Windows spells the variable `Path`; reuse the existing key so the child
 	// env has no case-duplicate entry and the fake stays first on the lookup path.
@@ -91,6 +92,7 @@ async function connect(
 		command: process.execPath,
 		args: [join(process.cwd(), "src/mcp/index.ts")],
 		env,
+		...(cwd === undefined ? {} : { cwd }),
 		stderr: "pipe",
 	});
 	const client = new Client({ name: "autorag-stdio-qa", version: "1.0.0" });
@@ -243,7 +245,7 @@ describe("AutoRAG Lite MCP stdio", () => {
 			"autorag.datasources.list",
 			"autorag.datasources.get",
 			"autorag.duplicates",
-			"autorag.search_datasource_spotlight",
+			"autorag.search_datasource_rss",
 			"autorag.refresh",
 		]) {
 			expect(names).toContain(tool);
@@ -251,17 +253,17 @@ describe("AutoRAG Lite MCP stdio", () => {
 
 		const duplicatesTool = listed.tools.find((tool) => tool.name === "autorag.duplicates");
 		expect(duplicatesTool?.description).toContain("Dupey");
-		const dynamicTool = listed.tools.find((tool) => tool.name === "autorag.search_datasource_spotlight");
-		expect(dynamicTool?.description).toContain("Spotlight");
+		const dynamicTool = listed.tools.find((tool) => tool.name === "autorag.search_datasource_rss");
+		expect(dynamicTool?.description).toContain("RSS");
 
-		// Before refresh the dynamic tool must fail ready-gated without touching Spotlight.
+		// Before refresh the dynamic tool must fail ready-gated without fetching any feed.
 		const dynamicNotReady = await first.client.callTool({
-			name: "autorag.search_datasource_spotlight",
+			name: "autorag.search_datasource_rss",
 			arguments: { query: "refund" },
 		});
 		expect(dynamicNotReady.isError).toBe(true);
 		expect(hasFieldValue(dynamicNotReady.structuredContent, "errorCode", "index-not-ready")).toBe(true);
-		expect(hasFieldValue(dynamicNotReady.structuredContent, "datasourceId", "spotlight")).toBe(true);
+		expect(hasFieldValue(dynamicNotReady.structuredContent, "datasourceId", "rss")).toBe(true);
 
 		const duplicates = await first.client.callTool({ name: "autorag.duplicates", arguments: {} });
 		expect(duplicates.isError).not.toBe(true);
@@ -519,4 +521,37 @@ describe("AutoRAG Lite MCP stdio", () => {
 		expect(field(status.structuredContent, "state")).toBe("idle");
 		expect(field(status.structuredContent, "inFlight")).toBe(false);
 	}, 60000);
+
+	it("picks up a config written after the server started, without a restart", async () => {
+		const { config, binDir, docs, root } = makeFixture();
+		const written = readFileSync(config, "utf8");
+		// First-time setup order: no config exists when the server starts. An empty AUTORAG_CONFIG means "not set",
+		// so the server resolves <AUTORAG_HOME>/config.json, which is absent, like the Hermes plugin on a fresh machine.
+		const home = join(root, "home");
+		mkdirSync(home, { recursive: true });
+		const emptyCwd = join(root, "cwd");
+		mkdirSync(emptyCwd, { recursive: true });
+		// An empty working directory: with no config the server falls back to indexing its cwd, so the repo checkout the
+		// tests run from would be indexed and the search would not fail the way a fresh machine's does.
+		const connection = await connect(config, binDir, { AUTORAG_CONFIG: "", AUTORAG_HOME: home }, emptyCwd);
+
+		const before = await connection.client.callTool({
+			name: "autorag.search",
+			arguments: { query: "Who approves refund exceptions?", topK: 3 },
+		});
+		// No config, no index: the server answers "index-not-ready" (this is what the user saw after setup: nothing to search).
+		expect(before.isError).toBe(true);
+		expect(field(before.structuredContent, "errorCode")).toBe("index-not-ready");
+
+		writeFileSync(join(home, "config.json"), written);
+
+		const refresh = await connection.client.callTool({ name: "autorag.refresh", arguments: {} });
+		expect(refresh.isError).not.toBe(true);
+		const search = await connection.client.callTool({
+			name: "autorag.search",
+			arguments: { query: "Who approves refund exceptions?", topK: 3 },
+		});
+		expect(search.isError).not.toBe(true);
+		expectRefundEvidence(resultsArray(search.structuredContent), docs);
+	}, 90000);
 });

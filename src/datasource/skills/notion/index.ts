@@ -12,7 +12,7 @@ const NOTCRAWL_PROFILE: CrawlerProfile = {
 	binaryName: "notcrawl",
 	allowedEnvPrefixes: ["NOTCRAWL_"],
 	syncArgs: (options) => [...globalArgs(options), "sync"],
-	// notcrawl search has no --json flag (checked through v0.6.0): it prints one
+	// notcrawl search has no --json flag (checked through v0.6.10): it prints one
 	// tab-separated `kind\tid\ttitle\ttext` row per hit, so parse that instead.
 	searchArgs: (options, query, topK) => [...globalArgs(options), "search", query, "--limit", String(topK)],
 	parseSyncCount: parseCount,

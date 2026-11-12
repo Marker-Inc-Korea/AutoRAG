@@ -3,7 +3,13 @@ import { TuiAltScreen } from "@earendil-works/pi-tui";
 import { AutoRAGAgent, type AutoRAGAgentOptions, type AutoRAGThinkingLevel } from "../../agent/agent.ts";
 import { resolveInteractiveTuiMode } from "../../agent/pi-session.ts";
 import { warmFileeBinary } from "../../convert/index.ts";
-import { buildAgentOptions, resolveConfig, resolveQueryDecompositionModel, resolveTuiAgentModel } from "../config.ts";
+import {
+	buildAgentOptions,
+	resolveConfig,
+	resolveQueryDecompositionModel,
+	resolveSllmDecisionModel,
+	resolveTuiAgentModel,
+} from "../config.ts";
 import { openCitationTarget } from "../open-target.ts";
 import { renderError } from "../output.ts";
 import { checkAutoRAGUpdate, renderAutoRAGUpdateNotice } from "../update-check.ts";
@@ -79,6 +85,8 @@ async function createTuiAgent(ctx: CommandContext): Promise<AutoRAGAgent> {
 	}
 	const decompositionModel = await resolveQueryDecompositionModel(config);
 	if (decompositionModel !== undefined) options.queryDecomposition = decompositionModel;
+	const sllm = await resolveSllmDecisionModel(config);
+	if (sllm !== undefined) options.jev = { ...options.jev, sllm };
 	// Installed together with the agent: fetch filee-cli in the background so the first conversion is instant.
 	if (options.filee !== undefined) void warmFileeBinary(options.filee);
 	return new AutoRAGAgent(options);

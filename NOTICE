@@ -6,22 +6,22 @@ legacy/ package license: Apache-2.0
 
 Third-party production dependencies:
 
-@earendil-works/pi-agent-core@1.2.0
+@earendil-works/pi-agent-core@1.4.0
 License: MIT
 
-@earendil-works/pi-ai@1.2.0
+@earendil-works/pi-ai@1.4.0
 License: MIT
 
-@earendil-works/pi-coding-agent@1.2.0
+@earendil-works/pi-coding-agent@1.4.0
 License: MIT
 
-@earendil-works/pi-tui@1.2.0
+@earendil-works/pi-tui@1.4.0
 License: MIT
 
-@llblab/pi-telegram@0.57.2
+@llblab/pi-telegram@0.58.3
 License: MIT
 
-@modelcontextprotocol/server@2.3.1
+@modelcontextprotocol/server@2.4.0
 License: Apache-2.0
 
 @parcel/watcher@2.6.0
@@ -36,6 +36,9 @@ License: Apache-2.0
 fast-xml-parser@5.11.2
 License: MIT
 
+gpt-tokenizer@4.1.0
+License: MIT
+
 iconv-lite@0.7.3
 License: MIT
 
@@ -45,10 +48,10 @@ License: MIT
 jszip@3.10.2
 License: (MIT OR GPL-3.0-or-later)
 
-kordoc@4.21.30
+kordoc@4.24.19
 License: MIT
 
-mailparser@3.9.38
+mailparser@3.13.0
 License: MIT
 
 pdfjs-dist@6.4.299
@@ -60,7 +63,7 @@ License: MIT
 pi-discord-remote@0.2.4
 License: MIT
 
-puppeteer-core@25.13.0
+puppeteer-core@25.16.0
 License: Apache-2.0
 
 slides-grab@1.5.2
@@ -74,6 +77,9 @@ License: Apache-2.0
 
 typebox@1.3.37
 License: MIT
+
+xlsx@0.20.3
+License: Apache-2.0
 
 Bundled Windows binaries (vendor/everything, extracted only on Windows):
 Everything 1.4.1.1032 portable (voidtools, David Carpenter)

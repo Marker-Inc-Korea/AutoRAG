@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
-import type { Api, Model } from "@earendil-works/pi-ai";
+import { type Api, InMemoryCredentialStore, type Model } from "@earendil-works/pi-ai";
 import { findEnvKeys, getEnvApiKey } from "@earendil-works/pi-ai/compat";
 import { getAgentDir, ModelRuntime, SettingsManager } from "@earendil-works/pi-coding-agent";
 import type { AutoRAGAgentOptions, AutoRAGRefreshLimits, AutoRAGRetrievalLimits } from "../agent/agent.ts";
-import type { JevBackendName } from "../agent/jev-extension.ts";
+import { type IndexSchedule, validateIndexSchedule } from "../agent/index-schedule.ts";
+import type { JevToolOptions } from "../agent/jev-extension.ts";
 import {
 	type LoadLocalAutoRAGModelOptions,
 	type LocalAutoRAGModel,
@@ -19,6 +20,7 @@ import {
 } from "../agent/permission-gate.ts";
 import type { DecompositionModel } from "../agent/query-decomposition.ts";
 import type { SearchDocumentDiagnostic } from "../agent/search-documents.ts";
+import { SLLM_BACKEND, type SllmDecisionModel } from "../agent/sllm-decision.ts";
 import {
 	DAZZI_INPUT_LIMITS,
 	PROVIDER_ID as DAZZI_PROVIDER_ID,
@@ -33,14 +35,15 @@ import { discrawlEmbeddingRuntimeFor } from "../datasource/skills/discrawl/embed
 import { buildDatasourceSkills, type DatasourcesConfig } from "../datasource/skills/factory.ts";
 import { createEmbedderFromConfig } from "../embedding/index.ts";
 import { acquireFileLock, type FileLockHandle } from "../filesystem/file-lock.ts";
+import { isGlobExclusion } from "../filesystem/path-exclusions.ts";
 import { LanguageError, type LanguageTag, normalizeLanguages } from "../language.ts";
 import type { EnsureMinSyncBinaryOptions, MinSyncEmbedderConfig } from "../minsync/index.ts";
 import { renameWithRetry } from "../mirror/atomic-write.ts";
+import { MAX_FUSION_DEPTH, MAX_PER_RECORD, type RecordCutOptions } from "../retrieval/record-cut.ts";
 import {
 	DEFAULT_RERANK_PROVIDER,
 	DEFAULT_RERANK_TOP_N,
 	defaultRerankApiKeyEnv,
-	defaultRerankModel,
 	SUPPORTED_RERANK_PROVIDERS,
 } from "../retrieval/rerank.ts";
 import { isSearchProviderId } from "../web/search/types.ts";
@@ -111,20 +114,37 @@ export interface WebSearchCliConfig {
 }
 
 /**
- * Jev decision-tool config. Absent disables the tool; `enabled: false` disables
- * it explicitly. Secrets never appear here: `jev-use` reads the backend
- * credential from its own environment variable (`TYPESAFE_API_KEY`,
- * `OPENROUTER_API_KEY`, or `AI_GATEWAY_API_KEY`), and the hosted Dazzi Models
- * `dazzi` backend uses the credential stored by `/login`.
+ * Decision-model config. The decision model is required: an absent section or `{}` uses
+ * {@link defaultJevBackend}, and there is no opt-out. It is either Jev (`backend` names `dazzi` or a pi
+ * provider with decision models) or the small chat LLM (`backend: "sllm"`, see {@link JevCliConfig.sllm}).
+ * Secrets never appear here: a pi provider's credential comes from its
+ * environment variable (`OPENROUTER_API_KEY`, `OPENAI_API_KEY`, ...) or pi's
+ * `auth.json`, and the hosted Dazzi Models `dazzi` backend uses the credential
+ * stored by `/login`.
  */
 export interface JevCliConfig {
-	enabled?: boolean;
-	/** Force one backend (`openrouter`, `typesafe`, `vercel`, or `dazzi`); omit to let the first credential present win. */
-	backend?: JevBackendName;
-	/** Model id sent with every call, e.g. `jev-latest`. */
+	/**
+	 * `dazzi`, or a pi provider with decision models: `openrouter`, `openai`, `typesafe`,
+	 * `vercel-ai-gateway`, `cloudflare-workers-ai`, or `opencode` (`autorag models list --decision`).
+	 * `sllm` decides with the small chat LLM ({@link JevCliConfig.sllm}) and never calls Jev.
+	 */
+	backend?: string;
+	/** Jev model id within the backend, e.g. `openai/gpt-6-luna-decisions` on OpenRouter. Not valid with `backend: "sllm"`. */
 	model?: string;
 	/** Escalate verdicts below this confidence (0-1). Default: per-source thresholds. */
 	confidenceThreshold?: number;
+	/**
+	 * The small chat LLM (sLLM). It is the decision model when `backend` is `sllm`, and otherwise the
+	 * fallback a session moves to when Jev is unavailable. Absent or `{}` uses the question-decomposition model.
+	 */
+	sllm?: JevSllmConfig;
+	/** Move to the sLLM when Jev is unavailable. Default true; `false` fails the session instead. Ignored with `backend: "sllm"`. */
+	fallback?: boolean;
+}
+
+/** The sLLM; same model reference shape and auth rules as the top-level `model`. */
+export interface JevSllmConfig {
+	model?: AgentModelConfig;
 }
 
 /** Question-decomposition config. Secrets stay in env/pi auth like the main model. */
@@ -134,19 +154,17 @@ export interface QueryDecompositionConfig {
 }
 
 /**
- * Post-merge reranking config. Routes merged evidence through a dedicated
- * rerank model. `provider` is `openrouter` (default) or the hosted Dazzi Models
- * plan (`dazzi`); each provider supplies its own default `model`. OpenRouter
- * reads its key from `apiKeyEnv`; Dazzi uses the credential stored by `/login`.
- * Secrets never appear here — only the environment-variable name that holds a
- * provider API key.
+ * Post-merge reranking config. Opt-in: reranking runs only when a `model` is named, and a block without one is treated
+ * as off (reported once at startup). `provider` is `openrouter` (default) or the hosted Dazzi Models plan (`dazzi`).
+ * OpenRouter reads its key from `apiKeyEnv`; Dazzi uses the credential stored by `/login`. Secrets never appear
+ * here, only the environment-variable name that holds a provider API key.
  */
 export interface RerankConfig {
-	/** `false` disables reranking. Missing means enabled when the block is present. */
+	/** `false` disables reranking. Missing means enabled when the block is present and names a model. */
 	enabled?: boolean;
 	/** Provider id (`openrouter` or `dazzi`). @default "openrouter" */
 	provider?: string;
-	/** Wire model id. @default "voyageai/rerank-3-lite" (`openrouter`) / "qwen/qwen3-reranker-8b" (`dazzi`) */
+	/** Wire model id. Required to turn reranking on; there is no default model. */
 	model?: string;
 	/** Environment variable holding the provider API key (`openrouter` only). @default "OPENROUTER_API_KEY" */
 	apiKeyEnv?: string;
@@ -213,13 +231,13 @@ export interface CliConfig {
 		| false;
 	webSearch?: WebSearchCliConfig;
 	/**
-	 * Jev query routing (direct / local), the decomposition check, the
-	 * post-fast-answer follow-up check, and the `jev` tool. On by default with
-	 * the OpenRouter backend; `false` or `enabled: false` disables it. Secrets
-	 * never appear here: `jev-use` reads the backend key from its own
-	 * environment variable.
+	 * Jev, the required decision model: query routing, the decomposition
+	 * check, the post-fast-answer follow-up check, citation and evidence
+	 * judgment, the `auto` permission gate, and the `jev` tool. Absent or `{}`
+	 * uses the default backend. Secrets never appear here: `jev-use` reads the
+	 * backend key from its own environment variable.
 	 */
-	jev?: JevCliConfig | false;
+	jev?: JevCliConfig;
 	/**
 	 * Question decomposition for the Jev query pipeline. `model` names the LLM
 	 * that splits one question into at most five search queries; absent or `{}`
@@ -426,7 +444,9 @@ function resolveExcludePaths(value: unknown, origin: string): string[] | undefin
 	if (!Array.isArray(value) || value.some((path) => typeof path !== "string" || path.length === 0)) {
 		throw new ConfigError("Config field 'excludePaths' must be a non-empty string array");
 	}
-	return resolveSearchPaths(value, origin);
+	// A glob (`**/node_modules/**`) matches absolute paths anywhere; resolving it against the workspace would pin it
+	// to one directory and it would silently stop matching.
+	return (value as string[]).map((entry) => (isGlobExclusion(entry) ? entry : resolvePersistedPath(entry, origin)));
 }
 
 function resolvePersistedPath(path: string, origin: string): string {
@@ -787,11 +807,23 @@ const LIMITS_ALLOWLIST: Record<string, true> = {
 	minSyncScopedQueryTopK: true,
 	toolDescriptionInstanceScopes: true,
 	prefetch: true,
+	recordCut: true,
+};
+
+const LIMITS_RECORD_CUT_ALLOWLIST: Record<string, true> = {
+	enabled: true,
+	depth: true,
+	newRecordShare: true,
+	perRecordFloor: true,
+	perRecordDivisor: true,
+	resultChars: true,
+	minReadChars: true,
 };
 
 const LIMITS_PREFETCH_ALLOWLIST: Record<string, true> = {
 	jikjiTopK: true,
 	minSyncTopK: true,
+	datasourceTopK: true,
 	jikjiPathLimit: true,
 	sectionLimit: true,
 };
@@ -803,6 +835,56 @@ function positiveLimitField(record: Record<string, unknown>, key: string, path: 
 		throw new ConfigError(`${path}.${key} must be a positive integer`);
 	}
 	return value;
+}
+
+function boundedIntegerField(
+	record: Record<string, unknown>,
+	key: string,
+	path: string,
+	low: number,
+	high: number,
+): number | undefined {
+	const value = record[key];
+	if (value === undefined) return undefined;
+	if (typeof value !== "number" || !Number.isInteger(value) || value < low || value > high) {
+		throw new ConfigError(`${path}.${key} must be an integer from ${low} to ${high}`);
+	}
+	return value;
+}
+
+/** Validate `limits.recordCut`: the switch plus bounded tuning. Unknown keys fail, like every other limits field. */
+function normalizeRecordCutConfig(raw: unknown): RecordCutOptions {
+	if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+		throw new ConfigError("limits.recordCut must be an object");
+	}
+	const record = raw as Record<string, unknown>;
+	for (const key of Object.keys(record)) {
+		if (!Object.hasOwn(LIMITS_RECORD_CUT_ALLOWLIST, key)) {
+			throw new ConfigError(`limits.recordCut.${key} is not a recognized field`);
+		}
+	}
+	const path = "limits.recordCut";
+	if (record.enabled !== undefined && typeof record.enabled !== "boolean") {
+		throw new ConfigError(`${path}.enabled must be a boolean`);
+	}
+	const share = record.newRecordShare;
+	if (share !== undefined && (typeof share !== "number" || !(share >= 0 && share <= 1))) {
+		throw new ConfigError(`${path}.newRecordShare must be a number from 0 to 1`);
+	}
+	const depth = boundedIntegerField(record, "depth", path, 1, MAX_FUSION_DEPTH);
+	const perRecordFloor = boundedIntegerField(record, "perRecordFloor", path, 1, MAX_PER_RECORD);
+	const perRecordDivisor = boundedIntegerField(record, "perRecordDivisor", path, 1, MAX_PER_RECORD);
+	const resultChars = positiveLimitField(record, "resultChars", path);
+	const minReadChars = positiveLimitField(record, "minReadChars", path);
+	return {
+		...(record.enabled !== undefined ? { enabled: record.enabled as boolean } : {}),
+		...(depth !== undefined ? { depth } : {}),
+		...(share !== undefined ? { newRecordShare: share as number } : {}),
+		...(perRecordFloor !== undefined ? { perRecordFloor } : {}),
+		...(perRecordDivisor !== undefined ? { perRecordDivisor } : {}),
+		...(resultChars !== undefined ? { resultChars } : {}),
+		...(minReadChars !== undefined ? { minReadChars } : {}),
+	};
 }
 
 /** Validate the `limits` section and map it onto the agent option. */
@@ -833,15 +915,18 @@ export function normalizeLimitsConfig(raw: unknown): AutoRAGRetrievalLimits {
 		}
 		const jikjiTopK = positiveLimitField(prefetchRecord, "jikjiTopK", "limits.prefetch");
 		const prefetchMinSyncTopK = positiveLimitField(prefetchRecord, "minSyncTopK", "limits.prefetch");
+		const datasourceTopK = positiveLimitField(prefetchRecord, "datasourceTopK", "limits.prefetch");
 		const jikjiPathLimit = positiveLimitField(prefetchRecord, "jikjiPathLimit", "limits.prefetch");
 		const sectionLimit = positiveLimitField(prefetchRecord, "sectionLimit", "limits.prefetch");
 		prefetch = {
 			...(jikjiTopK !== undefined ? { jikjiTopK } : {}),
 			...(prefetchMinSyncTopK !== undefined ? { minSyncTopK: prefetchMinSyncTopK } : {}),
+			...(datasourceTopK !== undefined ? { datasourceTopK } : {}),
 			...(jikjiPathLimit !== undefined ? { jikjiPathLimit } : {}),
 			...(sectionLimit !== undefined ? { sectionLimit } : {}),
 		};
 	}
+	const recordCut = record.recordCut === undefined ? undefined : normalizeRecordCutConfig(record.recordCut);
 	return {
 		...(mergedEvidenceCeiling !== undefined ? { mergedEvidenceCeiling } : {}),
 		...(singleDatasourceTopK !== undefined ? { singleDatasourceTopK } : {}),
@@ -849,6 +934,7 @@ export function normalizeLimitsConfig(raw: unknown): AutoRAGRetrievalLimits {
 		...(minSyncScopedQueryTopK !== undefined ? { minSyncScopedQueryTopK } : {}),
 		...(toolDescriptionInstanceScopes !== undefined ? { toolDescriptionInstanceScopes } : {}),
 		...(prefetch !== undefined ? { prefetch } : {}),
+		...(recordCut !== undefined ? { recordCut } : {}),
 	};
 }
 
@@ -857,6 +943,11 @@ const REFRESH_ALLOWLIST: Record<string, true> = {
 	maxScannedEntries: true,
 	maxDepth: true,
 	transientRetries: true,
+	cloudMaxFiles: true,
+	cloudMaxBytes: true,
+	cloudEvictAfterParse: true,
+	cloudEvictRetries: true,
+	schedule: true,
 };
 
 /** Validate the `refresh` section and map it onto the agent option. */
@@ -890,11 +981,37 @@ export function normalizeRefreshConfig(raw: unknown): AutoRAGRefreshLimits {
 	) {
 		throw new ConfigError("refresh.transientRetries must be a non-negative integer");
 	}
+	const cloudMaxFiles = positiveLimitField(record, "cloudMaxFiles", "refresh");
+	const cloudMaxBytes = positiveLimitField(record, "cloudMaxBytes", "refresh");
+	const cloudEvictAfterParse = record.cloudEvictAfterParse;
+	if (cloudEvictAfterParse !== undefined && typeof cloudEvictAfterParse !== "boolean") {
+		throw new ConfigError("refresh.cloudEvictAfterParse must be a boolean");
+	}
+	const cloudEvictRetries = record.cloudEvictRetries;
+	if (
+		cloudEvictRetries !== undefined &&
+		(typeof cloudEvictRetries !== "number" || !Number.isInteger(cloudEvictRetries) || cloudEvictRetries < 0)
+	) {
+		throw new ConfigError("refresh.cloudEvictRetries must be a non-negative integer");
+	}
+	let schedule: IndexSchedule | undefined;
+	if (record.schedule !== undefined) {
+		try {
+			schedule = validateIndexSchedule(record.schedule);
+		} catch (error) {
+			throw new ConfigError((error as Error).message);
+		}
+	}
 	return {
+		...(schedule !== undefined ? { schedule } : {}),
 		...(maxDeleteRatio !== undefined ? { maxDeleteRatio } : {}),
 		...(maxScannedEntries !== undefined ? { maxScannedEntries } : {}),
 		...(maxDepth !== undefined ? { maxDepth } : {}),
 		...(transientRetries !== undefined ? { transientRetries } : {}),
+		...(cloudMaxFiles !== undefined ? { cloudMaxFiles } : {}),
+		...(cloudMaxBytes !== undefined ? { cloudMaxBytes } : {}),
+		...(cloudEvictAfterParse !== undefined ? { cloudEvictAfterParse } : {}),
+		...(cloudEvictRetries !== undefined ? { cloudEvictRetries } : {}),
 	};
 }
 
@@ -984,7 +1101,8 @@ export function resolveConfig(input: ResolveConfigInput): CliConfig {
 		}
 		config.fsearch = file.fsearch as CliConfig["fsearch"];
 	}
-	if (file.jev !== undefined) config.jev = file.jev === false ? false : normalizeJevConfig(file.jev);
+	if (file.jev !== undefined) config.jev = normalizeJevConfig(file.jev);
+	if (file.webSearch !== undefined) config.webSearch = file.webSearch;
 	config.permissionMode = resolvePermissionMode(
 		flags,
 		env,
@@ -1061,38 +1179,66 @@ function resolvePermissionMode(
 }
 
 const JEV_CONFIG_FIELDS: Record<string, true> = {
-	enabled: true,
 	backend: true,
 	model: true,
 	confidenceThreshold: true,
+	sllm: true,
+	fallback: true,
 };
 
-/** Jev backends AutoRAG can build: jev-use's own plus the hosted Dazzi Models plan. */
-const JEV_BACKEND_NAMES: readonly JevBackendName[] = ["typesafe", "openrouter", "vercel", "dazzi"];
+const JEV_REQUIRED_MESSAGE = `AutoRAG requires its decision model (Jev, or the sLLM with jev.backend "${SLLM_BACKEND}") and cannot run without it; remove the setting, or point jev.backend at a backend you can reach`;
 
 /** Validate and normalize the `jev` config section. */
 export function normalizeJevConfig(raw: unknown): JevCliConfig {
+	if (raw === false) throw new ConfigError(`Config field 'jev' cannot be false: ${JEV_REQUIRED_MESSAGE}`);
 	if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
-		throw new ConfigError("Config field 'jev' must be an object or false");
+		throw new ConfigError("Config field 'jev' must be an object");
 	}
 	const record = raw as Record<string, unknown>;
+	if (record.enabled !== undefined)
+		throw new ConfigError(`jev.enabled is no longer supported: ${JEV_REQUIRED_MESSAGE}`);
 	for (const key of Object.keys(record)) {
 		if (JEV_CONFIG_FIELDS[key] !== true) {
 			throw new ConfigError(`jev.${key} is not a recognized field`);
 		}
 	}
 	const out: JevCliConfig = {};
-	if (record.enabled !== undefined) {
-		if (typeof record.enabled !== "boolean") throw new ConfigError("jev.enabled must be a boolean");
-		out.enabled = record.enabled;
-	}
 	if (record.backend !== undefined) {
-		const backend = record.backend;
-		if (typeof backend !== "string" || !JEV_BACKEND_NAMES.some((known) => known === backend)) {
-			throw new ConfigError(`jev.backend must be one of: ${JEV_BACKEND_NAMES.join(", ")}`);
+		if (typeof record.backend !== "string" || record.backend.trim().length === 0) {
+			throw new ConfigError("jev.backend must be a non-empty string: dazzi, or a pi provider with decision models");
 		}
-		// Narrowed by the membership check above.
-		out.backend = backend as JevBackendName;
+		const backend = record.backend.trim();
+		// jev-use's name for Vercel AI Gateway; decision backends are pi provider ids now.
+		if (backend === "vercel")
+			throw new ConfigError('jev.backend "vercel" is now "vercel-ai-gateway", its pi provider id');
+		out.backend = backend;
+	}
+	if (record.sllm !== undefined) {
+		if (typeof record.sllm !== "object" || record.sllm === null || Array.isArray(record.sllm)) {
+			throw new ConfigError("jev.sllm must be an object");
+		}
+		const sllm = record.sllm as Record<string, unknown>;
+		for (const key of Object.keys(sllm)) {
+			if (key !== "model") throw new ConfigError(`jev.sllm.${key} is not a recognized field`);
+		}
+		const model = modelReference(sllm.model, "jev.sllm.model");
+		out.sllm = model === undefined ? {} : { model };
+	}
+	if (record.fallback !== undefined) {
+		if (typeof record.fallback !== "boolean") {
+			throw new ConfigError("jev.fallback must be true or false; name the fallback model in jev.sllm.model");
+		}
+		out.fallback = record.fallback;
+	}
+	if (out.backend === SLLM_BACKEND) {
+		if (record.model !== undefined) {
+			throw new ConfigError(`jev.model picks a Jev model; with jev.backend "${SLLM_BACKEND}" use jev.sllm.model`);
+		}
+		if (record.fallback !== undefined) {
+			throw new ConfigError(
+				`jev.fallback has no meaning with jev.backend "${SLLM_BACKEND}": the sLLM is the decision model`,
+			);
+		}
 	}
 	if (record.model !== undefined) {
 		if (typeof record.model !== "string" || record.model.trim().length === 0) {
@@ -1118,7 +1264,7 @@ export function normalizeJevConfig(raw: unknown): JevCliConfig {
  * Jev backend used when the config names none (absent section or `{}`): the
  * hosted Dazzi Models plan when the user is signed in, else OpenRouter.
  */
-export function defaultJevBackend(agentDir: string = getAgentDir()): JevBackendName {
+export function defaultJevBackend(agentDir: string = getAgentDir()): string {
 	return isDazziSignedIn(agentDir) ? "dazzi" : "openrouter";
 }
 
@@ -1155,19 +1301,13 @@ export function normalizeQueryDecompositionConfig(raw: unknown): QueryDecomposit
 }
 
 /**
- * Map the `jev` config section onto the agent option. Jev is on by default:
- * an absent section or `{}` enables it on {@link defaultJevBackend} (Dazzi
- * Models when signed in, else OpenRouter); `false` and `enabled: false` are the
- * opt-out.
+ * Map the `jev` config section onto the agent option. An absent section or
+ * `{}` uses {@link defaultJevBackend} (Dazzi Models when signed in, else
+ * OpenRouter).
  */
-function buildJevAgentOption(
-	raw: JevCliConfig | false | undefined,
-	agentDir: string | undefined,
-): AutoRAGAgentOptions["jev"] {
-	if (raw === false) return false;
-	const normalized = normalizeJevConfig(raw ?? {});
-	if (normalized.enabled === false) return false;
-	const { enabled: _omitJevEnabled, ...fields } = normalized;
+function buildJevAgentOption(raw: JevCliConfig | undefined, agentDir: string | undefined): JevToolOptions {
+	// The sLLM needs its credential resolved; resolveSllmDecisionModel adds it.
+	const { sllm: _sllm, fallback: _fallback, ...fields } = normalizeJevConfig(raw ?? {});
 	return { backend: defaultJevBackend(agentDir), ...fields };
 }
 
@@ -1237,7 +1377,10 @@ function buildWebSearchAgentOption(
 
 const RERANK_ALLOWLIST = new Set<string>(["enabled", "provider", "model", "apiKeyEnv", "baseUrl", "topN", "timeoutMs"]);
 
-/** Normalize and validate the `rerank` config section, filling in defaults. */
+/**
+ * Normalize and validate the `rerank` config section, filling in the provider, key-env, and `topN` defaults. It never
+ * invents a model: reranking is opt-in and runs only on a model the operator names.
+ */
 export function normalizeRerankConfig(raw: unknown, path: string): RerankConfig | false {
 	if (raw === false) return false;
 	let record: Record<string, unknown> = {};
@@ -1250,7 +1393,7 @@ export function normalizeRerankConfig(raw: unknown, path: string): RerankConfig 
 			if (!RERANK_ALLOWLIST.has(key)) throw new ConfigError(`${path}.${key} is not a recognized field`);
 		}
 	}
-	// The provider decides the model and key-env defaults, so resolve it first.
+	// The provider decides the key-env default, so resolve it first.
 	let provider = DEFAULT_RERANK_PROVIDER;
 	if (record.provider !== undefined) {
 		if (typeof record.provider !== "string" || record.provider.trim() === "") {
@@ -1264,7 +1407,6 @@ export function normalizeRerankConfig(raw: unknown, path: string): RerankConfig 
 	const defaultApiKeyEnv = defaultRerankApiKeyEnv(provider);
 	const out: RerankConfig = {
 		provider,
-		model: defaultRerankModel(provider),
 		...(defaultApiKeyEnv !== undefined ? { apiKeyEnv: defaultApiKeyEnv } : {}),
 		topN: DEFAULT_RERANK_TOP_N,
 	};
@@ -1306,17 +1448,6 @@ export function normalizeRerankConfig(raw: unknown, path: string): RerankConfig 
 	return out;
 }
 
-/**
- * Rerank block `autorag init` writes when none is given: the hosted Dazzi
- * Models reranker when signed in, else OpenRouter's.
- */
-export function defaultRerankConfig(agentDir: string = getAgentDir()): RerankConfig {
-	return normalizeRerankConfig(
-		{ provider: isDazziSignedIn(agentDir) ? DAZZI_PROVIDER_ID : DEFAULT_RERANK_PROVIDER },
-		"rerank",
-	) as RerankConfig;
-}
-
 export function buildAgentOptions(config: CliConfig, agentDir?: string): Omit<AutoRAGAgentOptions, "model"> {
 	const opts: Record<string, unknown> = {
 		searchPaths: config.searchPaths,
@@ -1343,8 +1474,8 @@ export function buildAgentOptions(config: CliConfig, agentDir?: string): Omit<Au
 	opts.webSearch = buildWebSearchAgentOption(config.webSearch);
 	opts.jev = buildJevAgentOption(config.jev, agentDir);
 	opts.permissionMode = config.permissionMode;
-	// The Jev `config` branch edits the very file this process resolved; it only
-	// takes effect when Jev is on, so the option is always safe to pass.
+	// The Jev `config` branch edits the very file this process resolved, so the
+	// option is always safe to pass.
 	if (config.configPath !== undefined) {
 		opts.selfConfig = {
 			configPath: config.configPath,
@@ -1392,7 +1523,7 @@ export function buildAgentOptions(config: CliConfig, agentDir?: string): Omit<Au
 	const embedder = createEmbedderFromConfig({ embedder: config.minSync?.embedder });
 	opts.embedder = embedder;
 	if (config.datasources !== undefined) {
-		const { skills, unknown } = buildDatasourceSkills(config.datasources, config.workspacePath, {
+		const { skills, unknown, retired } = buildDatasourceSkills(config.datasources, config.workspacePath, {
 			embedder,
 			discrawl: async () => discrawlEmbeddingRuntimeFor(await embedder.describeEndpoint()),
 			cliEndpoint: embeddingEndpointSource(embedder),
@@ -1404,16 +1535,26 @@ export function buildAgentOptions(config: CliConfig, agentDir?: string): Omit<Au
 			},
 		});
 		if (skills.length > 0) opts.datasourceSkills = skills;
+		const diagnostics: SearchDocumentDiagnostic[] = [];
+		if (retired.length > 0) {
+			const names = retired.map((name) => name.replace(/[^A-Za-z0-9._-]/g, "?").slice(0, 80));
+			diagnostics.push({
+				code: "retired-datasource-skill",
+				severity: "warning",
+				message: `Datasource config ignored because the Spotlight datasource was removed: ${names.join(", ")}. Delete these entries; use fsearch/mirror search (searchPaths) instead.`,
+				source: "datasources",
+			});
+		}
 		if (unknown.length > 0) {
-			const safeNames = unknown.map((name) => name.replace(/[^A-Za-z0-9._-]/g, "?").slice(0, 80));
-			const diagnostic: SearchDocumentDiagnostic = {
+			const names = unknown.map((name) => name.replace(/[^A-Za-z0-9._-]/g, "?").slice(0, 80));
+			diagnostics.push({
 				code: "unknown-datasource-skill",
 				severity: "warning",
-				message: `Unknown datasource skill(s) in config were skipped: ${safeNames.join(", ")}`,
+				message: `Unknown datasource skill(s) in config were skipped: ${names.join(", ")}`,
 				source: "datasources",
-			};
-			opts.startupDiagnostics = [diagnostic];
+			});
 		}
+		if (diagnostics.length > 0) opts.startupDiagnostics = diagnostics;
 	}
 	return opts as Omit<AutoRAGAgentOptions, "model">;
 }
@@ -1526,9 +1667,19 @@ function resolveAgentDir(options: ResolveAgentModelOptions): string {
  * refresh is disabled so model resolution stays fast and offline-safe.
  */
 function getModelRuntime(agentDir: string): Promise<ModelRuntime> {
-	const cached = modelRuntimeCache.get(agentDir);
+	const environmentOnly = process.env.AUTORAG_AUTH_MODE === "environment";
+	const cacheKey = `${environmentOnly ? "environment" : "stored"}:${agentDir}`;
+	const cached = modelRuntimeCache.get(cacheKey);
 	if (cached !== undefined) return cached;
 	const created = (async () => {
+		if (environmentOnly) {
+			return ModelRuntime.create({
+				credentials: new InMemoryCredentialStore(),
+				modelsPath: null,
+				allowModelNetwork: false,
+				refreshOnCreate: false,
+			});
+		}
 		const runtime = await ModelRuntime.create({
 			authPath: join(agentDir, "auth.json"),
 			modelsPath: join(agentDir, "models.json"),
@@ -1540,9 +1691,9 @@ function getModelRuntime(agentDir: string): Promise<ModelRuntime> {
 		await registerDazziProvider(runtime);
 		return runtime;
 	})();
-	modelRuntimeCache.set(agentDir, created);
+	modelRuntimeCache.set(cacheKey, created);
 	created.catch(() => {
-		modelRuntimeCache.delete(agentDir);
+		modelRuntimeCache.delete(cacheKey);
 	});
 	return created;
 }
@@ -1656,6 +1807,7 @@ async function resolvePiDefaultModel(
 	runtime: ModelRuntime,
 	options: ResolveAgentModelOptions,
 ): Promise<Model<Api> | undefined> {
+	if (process.env.AUTORAG_AUTH_MODE === "environment") return undefined;
 	let provider: string | undefined;
 	let id: string | undefined;
 	try {
@@ -1939,6 +2091,25 @@ export async function resolveQueryDecompositionModel(
 	return { model: resolved.model, ...(apiKey !== undefined ? { apiKey } : {}) };
 }
 
+/**
+ * Resolve the sLLM and its credential through the same chain as the agent model. `jev.sllm.model` names it;
+ * absent, it is the question-decomposition model (its configured one, else {@link defaultQueryDecompositionModel}).
+ * It decides in Jev's place when `jev.backend` is `sllm`, and otherwise is Jev's fallback; `jev.fallback: false`
+ * returns undefined for the fallback, so a session without Jev fails.
+ */
+export async function resolveSllmDecisionModel(
+	config: CliConfig,
+	options: ResolveAgentModelOptions = {},
+): Promise<SllmDecisionModel | undefined> {
+	if (config.jev?.backend !== SLLM_BACKEND && config.jev?.fallback === false) return undefined;
+	const decomposition = config.queryDecomposition === false ? undefined : config.queryDecomposition?.model;
+	const reference =
+		config.jev?.sllm?.model ?? decomposition ?? defaultQueryDecompositionModel(resolveAgentDir(options));
+	const resolved = await resolveAgentModel({ ...config, model: reference }, options);
+	const apiKey = resolved.apiKey ?? resolved.providerApiKeys?.[resolved.model.provider];
+	return { model: resolved.model, ...(apiKey !== undefined ? { apiKey } : {}) };
+}
+
 function providerApiKeyEnvName(provider: string): string {
 	return `${provider.replace(/[^A-Za-z0-9_]/g, "_").toUpperCase()}_API_KEY`;
 }
@@ -2061,7 +2232,8 @@ export function writeDefaultConfig(
 	if (partial.limits !== undefined) full.limits = normalizeLimitsConfig(partial.limits);
 	if (partial.refresh !== undefined) full.refresh = normalizeRefreshConfig(partial.refresh);
 	if (partial.parserOptions) full.parserOptions = partial.parserOptions;
-	full.rerank = partial.rerank ?? defaultRerankConfig();
+	// Reranking is opt-in and sends text to a remote model, so a new config carries no `rerank` block.
+	if (partial.rerank !== undefined) full.rerank = partial.rerank;
 	// Jev routing and question decomposition are on by default; new configs
 	// spell the defaults out so they are visible and editable.
 	full.jev = partial.jev ?? { backend: defaultJevBackend() };

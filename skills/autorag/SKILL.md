@@ -73,6 +73,34 @@ from it instead of probing. `"filee": { "enabled": false }` in `config.json` rem
 tools; `filee.timeoutMs` (default 30 minutes) and `filee.dataDir` (Filee's
 own settings and engines, `FILEE_DATA_DIR`) tune them.
 
+### Calculating numbers and dates
+
+The `calculator` Agent tool does every calculation the model would otherwise
+do in its head; the system prompt and each phase prompt (the fast answer
+included) tell the model never to compute these itself. It is read-only,
+in-process, and needs no configuration. Operations:
+
+- `evaluate`: exact decimal arithmetic to 40 significant digits (`0.1 + 0.2`
+  is `0.3`), `+ - * / % ^ !`, percent and percent change, rounding, sums,
+  means, medians, standard deviations, roots, logs, and trig. `exact: false`
+  in the result means a step rounded; `exp`, `ln`, `log`, trig, and fractional
+  powers are accurate to about 15 digits, not 40. A bare `log(x)` is refused as
+  ambiguous; use `ln`, `log10`, or `log(x, base)`.
+- `date_diff`, `date_add`, `date_info`: day counts, calendar spans
+  (`10 months, 7 days`), month-end clamping (Jan 31 + 1 month is Feb 28),
+  weekday, ISO week, and leap year. Dates read as `YYYY-MM-DD`, `YYYY/MM/DD`,
+  `YYYYMMDD`, `YYYY년 M월 D일`, ISO datetimes with an offset, epoch seconds,
+  `today`, or `now`.
+- `business_days_between` and `add_business_days`: Monday to Friday minus a
+  `holidays` list. The tool knows no public holidays; pass them in.
+- `now` and `convert_timezone`: the current time and DST-aware zone
+  conversion. An omitted `timeZone` means the host zone and the result says so;
+  a datetime with no offset needs its zone. A zone abbreviation other than
+  UTC, KST, and JST is refused, and the error names what to pass instead: PST,
+  PDT, MST, MDT, EST, and EDT are fixed offsets (PST is `-08:00` all year, so
+  it differs from `America/Los_Angeles` in summer), and CST, IST, and BST mean
+  several zones, so the user has to say which.
+
 ### Excluding local files from the index
 
 `"excludePaths"` in `config.json` lists files or folders (absolute, or relative
@@ -81,8 +109,9 @@ A folder entry excludes everything under it. Removing an entry and running
 `autorag refresh --method minsync` indexes the file again. Excluded sources are
 recorded as `user-excluded` skips, so they are not reported as stale. Jikji
 indexes the source folders directly and is not refreshed here, so AutoRAG also
-drops excluded paths from the `jikji_find` answer pack and the baseline prefetch
-at retrieval time; the on-disk `.jikji_agent_map.md` stays complete, and direct
+drops excluded paths from the `jikji_find` answer pack and from the files Jikji
+hands to the verification step as starting points, at retrieval time; the
+on-disk `.jikji_agent_map.md` stays complete, and direct
 file reads remain available.
 
 `status` is model-free and path-opaque. `health` resolves the single model,
@@ -223,8 +252,10 @@ grant an agent more than its profile has. `retrieval` optionally adds
 Retrieval memory is never connected to an automation agent.
 
 Every agent run gets a loop guard appended to its system prompt, naming the
-rule's folders, file types and events, and forbidding any change that would
-fire the rule again, editing the rules file, and running `autorag automate`. At
+rule's folders, file types and events, and how the rule decides what fires it.
+The agent must make no change that fires the rule again (a rename or write whose
+events the rule does not pick up is fine), designs a non-firing change before it
+declines, and never edits the rules file or runs `autorag automate`. At
 most one agent run is in flight across all rules, and an agent rule is
 disabled after 6 runs within 60 seconds (command rules: 20). The run's final
 reply is the `stdout` of its log entry.
