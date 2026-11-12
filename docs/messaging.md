@@ -22,7 +22,23 @@ The agent can send a message out of your machine when you ask it to: "tell the o
   error never echoes it.
 - Secrets are read when a message is sent, not at startup.
 
-Channel kinds each document their own fields in their own section below as they ship.
+Channel kinds each document their own fields in their own section below.
+
+## `discord`: a bot posting to one channel
+
+```json
+{ "kind": "discord", "tokenEnv": "DISCORD_BOT_TOKEN", "channelId": "1234567890123456789" }
+```
+
+| Field | |
+|---|---|
+| `tokenEnv` | Name of the variable holding the bot token. The bot must be in the server with View Channel and Send Messages in that channel. |
+| `channelId` | The channel's numeric id (Developer Mode, Copy Channel ID). |
+
+The channel is fixed by the config. Nothing the model writes can notify anyone: `@everyone`, role, and user
+mentions are sent as inert text (`allowed_mentions` parses nothing), and link embeds are suppressed. A subject is
+put on a bold first line. Over 2000 characters the text is split into ordered parts; if a part fails, the error says
+how many went out so nothing is sent twice. Success needs Discord to return a message id.
 
 ## Approval
 
