@@ -22,7 +22,23 @@ The agent can send a message out of your machine when you ask it to: "tell the o
   error never echoes it.
 - Secrets are read when a message is sent, not at startup.
 
-Channel kinds each document their own fields in their own section below as they ship.
+Channel kinds each document their own fields in their own section below.
+
+## `slack`: an incoming webhook
+
+```json
+{ "kind": "slack", "webhookEnv": "SLACK_WEBHOOK_URL" }
+```
+
+The webhook URL (`https://hooks.slack.com/services/T.../B.../...`) is itself the credential: it fixes the workspace
+and the channel and carries the secret. So the config holds only `webhookEnv`, the name of the variable that contains
+it, and a value that is not a Slack webhook URL is refused before any request is made.
+
+Text goes out as plain text: no mrkdwn, no link previews, and `&`, `<`, `>` are escaped so `<!channel>`, `<!here>`,
+and `<@U...>` in model text cannot notify anyone (Slack shows them as typed). A subject is put on a first line. Over
+3000 characters the text is split into ordered parts; if a part fails, the error says how many went out so nothing
+is sent twice. A webhook returns no message id, so success means Slack answered exactly `ok`; anything else is
+reported as unconfirmed.
 
 ## Approval
 
