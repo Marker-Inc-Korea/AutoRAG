@@ -22,7 +22,24 @@ The agent can send a message out of your machine when you ask it to: "tell the o
   error never echoes it.
 - Secrets are read when a message is sent, not at startup.
 
-Channel kinds each document their own fields in their own section below as they ship.
+Channel kinds each document their own fields in their own section below.
+
+## `telegram`: a bot posting to one chat
+
+```json
+{ "kind": "telegram", "tokenEnv": "TELEGRAM_BOT_TOKEN", "chatId": "-1001234567890" }
+```
+
+| Field | |
+|---|---|
+| `tokenEnv` | Name of the variable holding the bot token from @BotFather. |
+| `chatId` | Numeric chat id (groups and channels are negative) or `@channelname`. The bot must already be in the chat; a user must have started the bot before it can message them. |
+| `threadId` | Optional forum topic to post into. |
+
+The chat is fixed by the config, so the model cannot redirect a message. Text is sent as plain text (no Markdown or
+HTML parsing). A subject, if given, is put on a first line. Over 4096 characters the text is split into ordered
+parts; if a part fails, the error says how many went out so nothing is sent twice. Success needs Telegram to return
+a message id.
 
 ## Approval
 
