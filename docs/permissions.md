@@ -10,7 +10,7 @@ reading, searching, copying, and creating new files never ask.
 | Mode | Behavior |
 | --- | --- |
 | `auto` (default) | Jev (the judgment model) classifies each call first. A call that changes no existing file runs. A flagged one is approved silently when Jev is at least 80% sure the user's request covers exactly that change. Otherwise, or when Jev is unreachable, the question goes to you, with Jev's reason shown. |
-| `ask` | You approve every `bash`, `write`, `edit`, and saved-automation call, including harmless ones like `ls`. Jev is never consulted, so it works with no Jev backend. Reads, searches, and AutoRAG's own tools never ask. "Allow all such calls this session" ends the questions until the mode changes. |
+| `ask` | You approve every `bash`, `write`, `edit`, and saved-automation call, including harmless ones like `ls`. Jev is never consulted, so it works with no Jev backend. Reads, searches, and AutoRAG's own tools never ask, except `send_message`, which asks for every message in `ask` and `auto` (see [messaging.md](messaging.md)). "Allow all such calls this session" ends the questions until the mode changes. |
 | `full` | No gate. The agent does everything itself. |
 
 Not asked about in `auto`, because Jev finds they do not delete, move, rename, overwrite, or edit an existing file: `ls`, `cat`, `grep`,

@@ -919,3 +919,97 @@ describe("system prompt", () => {
 		expect(text).not.toMatch(/never need approval/i);
 	});
 });
+
+describe("sending a message", () => {
+	const SEND = {
+		channel: "ops",
+		text: "Quarterly numbers are attached.",
+		to: ["cfo@example.com"],
+		subject: "Q3",
+	};
+
+	it("asks the user about every send in ask and in auto, and never asks Jev", async () => {
+		for (const mode of ["ask", "auto"] as const) {
+			const jev = spy(SAFE());
+			const h = harness({ mode, jev: jev.backend, answers: [ALLOW_ONCE] });
+			expect(await h.call("send_message", SEND)).toBeUndefined();
+			expect(h.dialogs).toHaveLength(1);
+			expect(jev.requests).toHaveLength(0);
+		}
+	});
+
+	it("shows the channel, the recipients, the subject, and the whole text", async () => {
+		const h = harness({ mode: "auto", answers: [ALLOW_ONCE] });
+		await h.call("send_message", SEND);
+		const title = h.dialogs[0]?.title ?? "";
+		expect(title).toContain("ops");
+		expect(title).toContain("cfo@example.com");
+		expect(title).toContain("Q3");
+		expect(title).toContain("Quarterly numbers are attached.");
+	});
+
+	it("asks again for the next send: there is no allow-all for sending", async () => {
+		const h = harness({ mode: "auto", answers: [ALLOW_ONCE, ALLOW_ONCE] });
+		await h.call("send_message", SEND);
+		await h.call("send_message", SEND);
+		expect(h.dialogs).toHaveLength(2);
+		for (const dialog of h.dialogs) expect(dialog.options.join("|")).not.toMatch(/Allow all/i);
+	});
+
+	it("is not unlocked by an allow-all the user gave for file changes", async () => {
+		const allowSession = (_title: string, options: string[]) =>
+			options.find((option) => option.startsWith("Allow all"));
+		const h = harness({ mode: "ask", answers: [allowSession, DENY] });
+		expect(await h.bash("ls")).toBeUndefined();
+		const result = await h.call("send_message", SEND);
+		expect(result?.block).toBe(true);
+		expect(h.dialogs).toHaveLength(2);
+	});
+
+	it("blocks a denied send and tells the model not to retry it", async () => {
+		const h = harness({ mode: "auto", answers: [DENY] });
+		const result = await h.call("send_message", SEND);
+		expect(result?.block).toBe(true);
+		expect(result?.reason).toMatch(/not sent|did not send/i);
+		expect(result?.reason).toMatch(/do not retry/i);
+	});
+
+	it("passes the user's note on a denial back to the model", async () => {
+		const h = harness({ mode: "auto", answers: ["Deny and tell the model what to do instead"] });
+		const result = await h.call("send_message", SEND);
+		expect(result?.reason).toContain("use a copy");
+	});
+
+	it("blocks every send when nobody can answer", async () => {
+		const h = harness({ mode: "auto", hasUI: false });
+		const result = await h.call("send_message", SEND);
+		expect(result?.block).toBe(true);
+		expect(result?.reason).toMatch(/--permission-mode full/);
+		expect(h.select).not.toHaveBeenCalled();
+	});
+
+	it("sends without asking only in full mode", async () => {
+		const h = harness({ mode: "full" });
+		expect(await h.call("send_message", SEND)).toBeUndefined();
+		expect(h.select).not.toHaveBeenCalled();
+	});
+
+	it("does not record a send as a file the agent created", async () => {
+		const h = harness({ mode: "auto", answers: [ALLOW_ONCE] });
+		await h.call("send_message", { ...SEND, text: join(root, "never-created.txt") });
+		expect(h.controller.isCreated(join(root, "never-created.txt"))).toBe(false);
+	});
+
+	it("tells the model in the prompt that each send needs the user's approval", async () => {
+		for (const mode of ["ask", "auto"] as const) {
+			const text = (
+				await harness({ mode }).emit("before_agent_start", {
+					messageType: "user",
+					prompt: "hi",
+					systemPrompt: "BASE",
+				})
+			)?.systemPrompt;
+			expect(text).toMatch(/send_message/);
+		}
+	});
+});

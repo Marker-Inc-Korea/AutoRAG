@@ -37,6 +37,7 @@ import { createEmbedderFromConfig } from "../embedding/index.ts";
 import { acquireFileLock, type FileLockHandle } from "../filesystem/file-lock.ts";
 import { isGlobExclusion } from "../filesystem/path-exclusions.ts";
 import { LanguageError, type LanguageTag, normalizeLanguages } from "../language.ts";
+import { type MessagingConfig, MessagingConfigError, normalizeMessagingConfig } from "../messaging/index.ts";
 import type { EnsureMinSyncBinaryOptions, MinSyncEmbedderConfig } from "../minsync/index.ts";
 import { renameWithRetry } from "../mirror/atomic-write.ts";
 import { MAX_FUSION_DEPTH, MAX_PER_RECORD, type RecordCutOptions } from "../retrieval/record-cut.ts";
@@ -231,6 +232,12 @@ export interface CliConfig {
 		| false;
 	webSearch?: WebSearchCliConfig;
 	/**
+	 * Outbound channels behind the `send_message` tool: chats, channels, and email addresses the agent may message
+	 * when the user asks. Each channel names the environment variable that holds its secret; the secret itself never
+	 * appears here. Absent means the tool is not offered.
+	 */
+	messaging?: MessagingConfig;
+	/**
 	 * Jev, the required decision model: query routing, the decomposition
 	 * check, the post-fast-answer follow-up check, citation and evidence
 	 * judgment, the `auto` permission gate, and the `jev` tool. Absent or `{}`
@@ -250,6 +257,11 @@ export interface CliConfig {
 	 * (the user approves every file-capable call, Jev unused), or `full` (no gate). `--permission-mode` and `AUTORAG_PERMISSION_MODE` override the file.
 	 */
 	permissionMode?: PermissionMode;
+	/**
+	 * True when {@link permissionMode} is only the entry point's default (neither a flag, the environment, nor the
+	 * file chose it). A default `full` is not consent to send messages unattended, so `send_message` is withheld.
+	 */
+	permissionModeImplicit?: true;
 	/** Post-merge reranking. Absent ⇒ reranking disabled. `false` disables it. */
 	rerank?: RerankConfig | false;
 	parserOptions?: Record<string, unknown>;
@@ -1103,12 +1115,20 @@ export function resolveConfig(input: ResolveConfigInput): CliConfig {
 	}
 	if (file.jev !== undefined) config.jev = normalizeJevConfig(file.jev);
 	if (file.webSearch !== undefined) config.webSearch = file.webSearch;
+	if (file.messaging !== undefined) config.messaging = parseMessagingConfig(file.messaging);
 	config.permissionMode = resolvePermissionMode(
 		flags,
 		env,
 		file.permissionMode,
 		input.defaultPermissionMode ?? DEFAULT_PERMISSION_MODE,
 	);
+	if (
+		flagString(flags, "permission-mode") === undefined &&
+		envString(env, "AUTORAG_PERMISSION_MODE") === undefined &&
+		file.permissionMode === undefined
+	) {
+		config.permissionModeImplicit = true;
+	}
 	if (file.queryDecomposition !== undefined) {
 		config.queryDecomposition = normalizeQueryDecompositionConfig(file.queryDecomposition);
 	}
@@ -1311,6 +1331,16 @@ function buildJevAgentOption(raw: JevCliConfig | undefined, agentDir: string | u
 	return { backend: defaultJevBackend(agentDir), ...fields };
 }
 
+/** Validate the `messaging` section; a bad one is a config error that names the field and never echoes a value. */
+function parseMessagingConfig(raw: unknown): MessagingConfig {
+	try {
+		return normalizeMessagingConfig(raw);
+	} catch (error) {
+		if (error instanceof MessagingConfigError) throw new ConfigError(error.message);
+		throw error;
+	}
+}
+
 /** Validate and map the webSearch config section onto the agent option. */
 function buildWebSearchAgentOption(
 	raw: WebSearchCliConfig | undefined,
@@ -1472,6 +1502,12 @@ export function buildAgentOptions(config: CliConfig, agentDir?: string): Omit<Au
 		opts.fsearch = fsearchFields;
 	}
 	opts.webSearch = buildWebSearchAgentOption(config.webSearch);
+	if (
+		config.messaging !== undefined &&
+		!(config.permissionMode === "full" && config.permissionModeImplicit === true)
+	) {
+		opts.messaging = config.messaging;
+	}
 	opts.jev = buildJevAgentOption(config.jev, agentDir);
 	opts.permissionMode = config.permissionMode;
 	// The Jev `config` branch edits the very file this process resolved, so the
