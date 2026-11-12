@@ -20,6 +20,7 @@ vi.mock("../../src/cli/config.ts", async (importOriginal) => ({
 	...(await importOriginal<typeof import("../../src/cli/config.ts")>()),
 	resolveTuiAgentModel: async () => undefined,
 	resolveQueryDecompositionModel: async () => undefined,
+	resolveSllmDecisionModel: async () => undefined,
 }));
 
 vi.mock("../../src/cli/whatsapp-extension.ts", () => ({
@@ -55,8 +56,7 @@ beforeEach(() => {
 			jikji: false,
 			everything: false,
 			fsearch: false,
-			webSearch: false,
-			jev: false,
+			webSearch: { enabled: false },
 			dupey: { enabled: false },
 			filee: { enabled: false },
 		}),

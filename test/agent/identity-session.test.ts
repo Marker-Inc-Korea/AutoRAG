@@ -6,6 +6,7 @@ import { fauxAssistantMessage, getCurrentSystemPrompt } from "@earendil-works/pi
 import { type FauxProviderRegistration, registerFauxProvider } from "@earendil-works/pi-ai/compat";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AutoRAGAgent, type AutoRAGAgentOptions } from "../../src/agent/agent.ts";
+import { baselineJev } from "../helpers/baseline-jev.ts";
 
 interface SeenRequest {
 	systemPrompt: string;
@@ -77,7 +78,7 @@ function createAgent(registration: FauxProviderRegistration, options: Partial<Au
 		fsearch: false,
 		webSearch: false,
 		memoryEmbedder: false,
-		jev: false,
+		jev: baselineJev(),
 		piAgentDir: join(root, "pi-agent"),
 		piSessionDir: join(root, "sessions"),
 		piExtensionPaths: [],
@@ -111,8 +112,8 @@ describe("IDENTITY.md in actual Pi model requests", () => {
 		const { registration, seen } = provider(2);
 		const agent = createAgent(registration);
 
-		// No bound TUI: searchDocuments creates its own Pi session. With Jev disabled,
-		// the first answer always proceeds to verification; the suite's MinSync is inert.
+		// No bound TUI: searchDocuments creates its own Pi session. The deterministic
+		// decision backend always requests verification; the suite's MinSync is inert.
 		const response = await agent.searchDocuments("Synthetic question");
 
 		expect(response.answer).toBe("Synthetic answer.");
