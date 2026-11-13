@@ -41,7 +41,7 @@ export function portableSpawnCommand(
 
 function hasShebang(path: string, interpreter: string): boolean {
 	try {
-		const prefix = readFileSync(path, "utf8").slice(0, 128);
+		const prefix = readFileSync(path, "utf8").slice(0, 128).split("\n", 1)[0] ?? "";
 		return prefix.startsWith("#!") && prefix.includes(interpreter);
 	} catch {
 		return false;
