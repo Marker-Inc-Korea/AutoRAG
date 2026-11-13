@@ -239,7 +239,8 @@ describe("batched refresh", () => {
 			const failures = diagnostics?.filter((d) => d.code === "minsync-sync-failed");
 			expect(failures).toHaveLength(1);
 			expect(failures?.[0]).toMatchObject({ source: "minsync", reason: "check-failed", severity: "error" });
-			expect(failures?.[0]?.message).toContain(message);
+			expect(failures?.[0]?.message).toContain("exit status 1: <path> invalid compact_target_rows");
+			expect(failures?.[0]?.message).not.toContain("/tmp/index");
 			expect(failures?.[0]?.message).toContain("next refresh resumes");
 		}
 		const committed = loadMirrorIndex(root, { minSyncBinaryPath: binary }).entries;
@@ -303,7 +304,8 @@ describe("batched refresh", () => {
 		expect(diagnostic?.code).toBe(
 			code === "embedder-unavailable" || code === "minsync-lock-held" ? code : "minsync-sync-failed",
 		);
-		if (code !== undefined) expect(diagnostic?.message).toContain(`failure ${attempts} at /tmp/index`);
+		if (code !== undefined) expect(diagnostic?.message).toContain(`failure ${attempts} at <path>`);
+		expect(diagnostic?.message).not.toContain("/tmp/index");
 		if (reason !== "lock-held") {
 			expect(diagnostic?.reason).toBe(reason ?? code ?? "unknown failure");
 			expect(diagnostic?.message).toContain("next refresh resumes");
@@ -409,7 +411,7 @@ describe("batched refresh", () => {
 						failures?.filter((d) => d.message.includes(`${batches * 100_000 - 100} additional per-file`)),
 					).toHaveLength(1);
 					expect(failures?.find((d) => d.severity === "error")?.message).toBe(
-						"exit 1: /tmp/config.toml: invalid compact_target_rows",
+						"exit 1: <path> invalid compact_target_rows",
 					);
 				}
 			}
