@@ -4001,7 +4001,7 @@ export class AutoRAGAgent {
 									minSyncBatchFailures.push({
 										code: "minsync-sync-failed",
 										severity: "warning",
-										message: `This file stayed at its previous index entry: the sync that covered it could not index it and the next sync retries it. ${result.diagnostic?.message ?? result.reason ?? "MinSync sync failed."}`,
+										message: `This file stayed at its previous index entry: the sync that covered it could not index it and the next sync retries it. ${sanitizeDiagnosticMessage(result.diagnostic?.message ?? result.reason ?? "MinSync sync failed.")}`,
 										source: virtualPaths[pathIndex],
 									});
 								}
@@ -4172,7 +4172,7 @@ export class AutoRAGAgent {
 				const terminal = minsyncDiagnostics[0] ?? toMinSyncReasonDiagnostic(minsync.reason ?? "unknown failure");
 				minsyncDiagnostics.splice(0, minsyncDiagnostics.length, {
 					...terminal,
-					reason: minsync.reason ?? minsync.diagnostic?.code ?? "unknown failure",
+					reason: sanitizeDiagnosticMessage(minsync.reason ?? minsync.diagnostic?.code ?? "unknown failure"),
 					message: `${terminal.message} MinSync refresh stopped after ${MINSYNC_SYSTEMIC_FAILURE_THRESHOLD} consecutive sync failures with the same cause. Committed mirrors are retained; the next refresh resumes the committed work after the cause is fixed.`,
 				});
 			} else {
@@ -4190,7 +4190,7 @@ export class AutoRAGAgent {
 				? {
 						ok: minsync.ok,
 						synced: minsync.synced,
-						...(minsync.reason !== undefined ? { reason: minsync.reason } : {}),
+						...(minsync.reason !== undefined ? { reason: sanitizeDiagnosticMessage(minsync.reason) } : {}),
 						...(minsyncDiagnostics.length > 0 ? { diagnostics: minsyncDiagnostics } : {}),
 						...(minsync.stagingExcluded !== undefined && minsync.stagingExcluded.length > 0
 							? { stagingExcludedCount: minsync.stagingExcluded.length }
@@ -5445,7 +5445,7 @@ function toMinSyncDiagnostic(diag: MinSyncDiagnostic, ok: boolean): SearchDocume
 	return {
 		code,
 		severity: ok ? "info" : "error",
-		message: diag.message,
+		message: sanitizeDiagnosticMessage(diag.message),
 		source: "minsync",
 	};
 }
@@ -5454,7 +5454,7 @@ function toMinSyncReasonDiagnostic(reason: string): SearchDocumentDiagnostic {
 	return {
 		code: "minsync-sync-failed",
 		severity: "error",
-		message: `MinSync sync failed: ${reason}`,
+		message: `MinSync sync failed: ${sanitizeDiagnosticMessage(reason)}`,
 		source: "minsync",
 	};
 }
