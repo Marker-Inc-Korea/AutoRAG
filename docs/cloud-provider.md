@@ -238,3 +238,69 @@ The provider lives in `src/cloud/`. A single registration point,
 created (`src/cli/config.ts`, `src/agent/pi-session.ts`, and
 `src/cli/commands/models.ts` for `autorag models list`). `readDazziLoginToken`
 (`src/cloud/credential.ts`) reads the stored login for Jev and rerank.
+
+## Quick reference (moved from the README)
+
+AutoRAG can run on the hosted **Dazzi Models** plan as a first-class model provider named
+`dazzi`. The provider speaks the server's OpenAI Responses API surface (`<root>/v1`),
+so streaming, tool calls, and usage are handled by Pi's built-in `openai-responses`
+implementation, and the model catalog is discovered live from the server — no model id
+is baked into AutoRAG.
+
+Sign in from the interactive TUI. Login is the only way to authenticate; there is no API-key
+environment variable:
+
+```text
+autorag tui
+/login          # choose "Dazzi Models"; the browser completes a PKCE login
+```
+
+The provider, Jev, and rerank all use the credential `/login` stores. A login flow for
+machines with no browser is not available yet and is tracked in [#1913](https://github.com/Marker-Inc-Korea/AutoRAG/issues/1913).
+
+On a fresh agent home, pin the model with an explicit endpoint so it resolves
+offline without a catalog snapshot:
+
+```json
+{
+  "model": {
+    "provider": "dazzi",
+    "id": "anthropic/claude-haiku-5.5",
+    "baseUrl": "https://api.dazziapp.com/v1",
+    "api": "openai-responses"
+  }
+}
+```
+
+The `provider`/`id`-only shorthand (`{ "provider": "dazzi", "id": "anthropic/claude-haiku-5.5" }`)
+only resolves once a TUI `/login` or a model refresh has persisted the catalog
+snapshot; with no snapshot there is nothing to restore offline, and resolution
+fails with `Unknown configured model: dazzi/<id>`.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `AUTORAG_BASE_URL` | `https://api.dazziapp.com` | Server **root** (not the `/v1` path); the API base is `<root>/v1`. |
+
+The catalog is persisted after a `/login` (or any model refresh), so the
+`provider`/`id` shorthand `model: { provider: "dazzi", id }`
+keeps resolving offline. When you are not signed in the provider still registers — it appears under
+`/login`, contributes no models, and makes no network call. See
+[Hosted Dazzi Models provider](cloud-provider.md) for the full flow.
+
+The same sign-in can also serve the **Jev** judgment model and **rerank** stage, so
+the whole librarian loop runs on the hosted account:
+
+```json
+{
+  "jev": { "backend": "dazzi", "model": "jev-1.13" },
+  "rerank": { "provider": "dazzi", "model": "qwen/qwen3-reranker-8b" }
+}
+```
+
+`jev.backend: "dazzi"` posts Jev's native dialect to `<root>/v1/jev`
+(default model `jev-1.13`); `rerank.provider: "dazzi"` reranks against
+`<root>/v1/rerank`. Both use the stored `/login` credential. Reranking is opt-in and
+has no default model: it runs only when `rerank.model` names one, and an explicit
+`rerank.baseUrl` overrides the endpoint.
+
+---

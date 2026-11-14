@@ -182,3 +182,62 @@ function escapeXml(value: string): string {
 		.replaceAll('"', "&quot;")
 		.replaceAll("'", "&apos;");
 }
+
+/**
+ * A PPTX with real slide order. `slides[i]` lives in `ppt/slides/slide{fileNumber}.xml`; `order` lists file
+ * numbers in presentation order (so a reordered deck has a file number that differs from its slide number),
+ * and `notes[fileNumber]` attaches a speaker note through the slide's relationships.
+ */
+export async function createDeckPptxFixture(options: {
+	readonly slides: Readonly<Record<number, string>>;
+	readonly order: readonly number[];
+	readonly notes?: Readonly<Record<number, string>>;
+}): Promise<Buffer> {
+	const zip = new JSZip();
+	zip.file(
+		"[Content_Types].xml",
+		xml(`<?xml version="1.0" encoding="UTF-8"?>
+		<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+			<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+			<Default Extension="xml" ContentType="application/xml"/>
+		</Types>`),
+	);
+	zip.file(
+		"ppt/presentation.xml",
+		xml(`<?xml version="1.0" encoding="UTF-8"?>
+		<p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+			xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+			<p:sldIdLst>${options.order.map((file) => `<p:sldId id="${255 + file}" r:id="rId${file}"/>`).join("")}</p:sldIdLst>
+		</p:presentation>`),
+	);
+	zip.file(
+		"ppt/_rels/presentation.xml.rels",
+		xml(`<?xml version="1.0" encoding="UTF-8"?>
+		<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${options.order
+			.map(
+				(file) =>
+					`<Relationship Id="rId${file}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide${file}.xml"/>`,
+			)
+			.join("")}</Relationships>`),
+	);
+	const text = (value: string) =>
+		`<p:cSld><p:spTree><p:sp><p:txBody><a:p><a:r><a:t>${escapeXml(value)}</a:t></a:r></a:p></p:txBody></p:sp></p:spTree></p:cSld>`;
+	const wrap = (tag: string, value: string) =>
+		`<?xml version="1.0" encoding="UTF-8"?><p:${tag} xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">${text(value)}</p:${tag}>`;
+	for (const [file, value] of Object.entries(options.slides)) {
+		zip.file(`ppt/slides/slide${file}.xml`, wrap("sld", value));
+		const note = options.notes?.[Number(file)];
+		if (note !== undefined) {
+			const noteFile = Number(file) + 100;
+			zip.file(`ppt/notesSlides/notesSlide${noteFile}.xml`, wrap("notes", note));
+			zip.file(
+				`ppt/slides/_rels/slide${file}.xml.rels`,
+				xml(`<?xml version="1.0" encoding="UTF-8"?>
+				<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+					<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/notesSlide" Target="../notesSlides/notesSlide${noteFile}.xml"/>
+				</Relationships>`),
+			);
+		}
+	}
+	return Buffer.from(await zip.generateAsync({ type: "uint8array" }));
+}

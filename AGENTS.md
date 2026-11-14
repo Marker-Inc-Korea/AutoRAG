@@ -635,6 +635,9 @@ configured for the run is never shown. See
 | `src/minsync/method.ts` | MinSync retrieval method (vector / SPLADE sparse / hybrid over shared CDC chunks) |
 | `src/minsync/version.ts` | MinSync version floor (`MINSYNC_MIN_VERSION`) and the `--version` probe that gates PATH and cached binaries |
 | `src/language.ts` | Curated global language tags, normalization, and defaults |
+| `src/retrieval/chunk-location.ts` | `locateChunk`: measured location of a retrieved chunk in its parsed document: `lineStart`/`lineEnd`, nearest `section`, and `pageStart`/`pageEnd` when the document has real pages. Unique match only; a chunk that occurs twice or that the chunker rewrote reports nothing. `describeLocation`/`locationSuffix` render it for `[eN]` lines and CLI output |
+| `src/parser/pages.ts` | Page index of a parsed document (`ParsedPages`: `mode` `"layout"` or `"section"`, `pageCount`, per-page line `spans`). `alignPages` places kordoc's `pages[]` in the markdown tolerating a missing/empty page; `joinPages` builds PPTX markdown and spans together. `"section"` pages are an approximation and are never reported as a page number. Formats without pages (DOCX, text, spreadsheets) have none |
+| `src/mirror/pages-sidecar.ts` | Persists the page index beside each parsed mirror entry (`.autorag/parsed/pages/<hash>.json`, keyed to the SHA-256 of the markdown it was measured on; ignored when that text changed). Written and removed by `syncParsedMirrors`; read by `MinSyncVectorMethod` at result-mapping time |
 | `src/parser/kordoc.ts` | Default document parser (kordoc) for HWP/HWPX/HWPML, PDF, DOCX, XLSX/XLS |
 | `src/parser/ocr-engines.ts` | OCR switch options, Tesseract runtime (worker lifecycle, timeout, cache path) and the language → engine split |
 | `src/datasource/` | Datasource skill contracts, scope filtering, polling metadata, diagnostics, and KakaoTalk/lazykatok skill implementation |

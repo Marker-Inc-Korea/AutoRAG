@@ -34,6 +34,9 @@ import {
 } from "../../src/minsync/index.ts";
 import type { MinSyncEmbedderConfig } from "../../src/minsync/types.ts";
 import { MINSYNC_MIN_VERSION } from "../../src/minsync/version.ts";
+import { writePagesSidecar } from "../../src/mirror/pages-sidecar.ts";
+import { parsedOutputPath } from "../../src/mirror/paths.ts";
+import type { ParsedPages } from "../../src/parser/pages.ts";
 import type { ParsedMirrorEntry } from "../../src/mirror/index-store.ts";
 import { RetrievalEngine } from "../../src/retrieval/engine.ts";
 import type { RetrievalFallbackEvent } from "../../src/retrieval/types.ts";
@@ -681,6 +684,192 @@ describe("MinSyncVectorMethod", () => {
 		expect(lstatSync(stagedPolicy).isSymbolicLink()).toBe(false);
 		expect(lstatSync(stagedPolicy).isFile()).toBe(true);
 		expect(readFileSync(stagedPolicy, "utf8")).toContain("cancellation terms");
+	});
+
+	describe("page of a chunk (#2111)", () => {
+		const PAGED = [
+			"# Report",
+			"",
+			"alpha page one",
+			"",
+			"bravo page two",
+			"bravo more",
+			"",
+			"charlie page three",
+			"",
+		].join("\n");
+
+		async function retrieveWith(
+			sidecar: unknown,
+			chunks: string[],
+			markdown = PAGED,
+		): Promise<Record<string, unknown>[]> {
+			writeFileSync(parsedOutput, markdown);
+			if (sidecar !== undefined) {
+				writePagesSidecar(parsedOutputPath(root, "/docs/policy.txt"), markdown, sidecar as ParsedPages);
+			}
+			await seedMinSyncStage(root, {
+				version: 1,
+				entries: {
+					"/docs/policy.txt": {
+						virtualPath: "/docs/policy.txt",
+						sourcePath: join(source, "policy.txt"),
+						outputPath: parsedOutput,
+						parserName: "kordoc",
+						sourceMtimeNs: 2,
+						sourceSizeBytes: 18,
+						updatedAt: "2026-01-02T00:00:00.000Z",
+					},
+				},
+			});
+			writeFakeMinSync(
+				JSON.stringify({ results: chunks.map((text) => ({ path: parsedOutput, score: 0.9, text })) }),
+			);
+			const method = new MinSyncVectorMethod({ binaryPath: minsyncBinary, root, workspacePath: minsyncWorkspace });
+			return (await method.retrieve("q", { topK: chunks.length })).map((result) => result.metadata);
+		}
+
+		const LAYOUT = {
+			mode: "layout",
+			pageCount: 4,
+			spans: [
+				{ page: 1, lineStart: 1, lineEnd: 3 },
+				{ page: 2, lineStart: 5, lineEnd: 6 },
+				{ page: 4, lineStart: 8, lineEnd: 8 },
+			],
+		};
+
+		it("stamps the page range next to the line range, both pages for a chunk across a break", async () => {
+			const [one, across, last] = await retrieveWith(LAYOUT, [
+				"bravo page two",
+				"alpha page one\n\nbravo page two",
+				"charlie page three",
+			]);
+			expect(one).toMatchObject({ lineNumber: 5, lineEnd: 5, pageStart: 2, pageEnd: 2 });
+			expect(across).toMatchObject({ lineNumber: 3, lineEnd: 5, pageStart: 1, pageEnd: 2 });
+			expect(last).toMatchObject({ lineNumber: 8, pageStart: 4, pageEnd: 4 });
+		});
+
+		it("locates a chunk whose text MinSync prefixed with its own path line, and keeps the content as returned", async () => {
+			writeFileSync(parsedOutput, PAGED);
+			writePagesSidecar(parsedOutputPath(root, "/docs/policy.txt"), PAGED, LAYOUT as ParsedPages);
+			await seedMinSyncStage(root, {
+				version: 1,
+				entries: {
+					"/docs/policy.txt": {
+						virtualPath: "/docs/policy.txt",
+						sourcePath: join(source, "policy.txt"),
+						outputPath: parsedOutput,
+						parserName: "kordoc",
+						sourceMtimeNs: 2,
+						sourceSizeBytes: 18,
+						updatedAt: "2026-01-02T00:00:00.000Z",
+					},
+				},
+			});
+			const path = "files/docs/policy.txt.md";
+			// MinSync truncates the heading it prepends, so the first line is not always the whole path.
+			const heading = "files/docs/policy.tx";
+			writeFakeMinSync(
+				JSON.stringify({
+					results: [
+						{ path, heading_path: heading, score: 0.9, text: `${heading}\nbravo page two\nbravo more` },
+						{ path, heading_path: path, score: 0.8, text: `${path}\nbravo page two` },
+					],
+				}),
+			);
+			const method = new MinSyncVectorMethod({ binaryPath: minsyncBinary, root, workspacePath: minsyncWorkspace });
+			const [truncated, whole] = await method.retrieve("q", { topK: 2 });
+			expect(truncated?.metadata).toMatchObject({ lineNumber: 5, lineEnd: 6, pageStart: 2, pageEnd: 2 });
+			expect(truncated?.content).toBe(`${heading}\nbravo page two\nbravo more`);
+			expect(whole?.metadata).toMatchObject({ lineNumber: 5, lineEnd: 5, pageStart: 2 });
+		});
+
+		it("never strips a first line that is not MinSync's heading", async () => {
+			writeFileSync(parsedOutput, "files/docs/policy.tx\nreal first line\n");
+			await seedMinSyncStage(root, {
+				version: 1,
+				entries: {
+					"/docs/policy.txt": {
+						virtualPath: "/docs/policy.txt",
+						sourcePath: join(source, "policy.txt"),
+						outputPath: parsedOutput,
+						parserName: "plain-text",
+						sourceMtimeNs: 2,
+						sourceSizeBytes: 18,
+						updatedAt: "2026-01-02T00:00:00.000Z",
+					},
+				},
+			});
+			writeFakeMinSync(
+				JSON.stringify({
+					results: [
+						{
+							path: "files/docs/policy.txt.md",
+							heading_path: "other heading",
+							score: 0.9,
+							text: "files/docs/policy.tx\nreal first line",
+						},
+					],
+				}),
+			);
+			const method = new MinSyncVectorMethod({ binaryPath: minsyncBinary, root, workspacePath: minsyncWorkspace });
+			const [result] = await method.retrieve("q", { topK: 1 });
+			expect(result?.metadata).toMatchObject({ lineNumber: 1, lineEnd: 2 });
+		});
+
+		it("keeps line and section locations unchanged for a document without pages", async () => {
+			const [result] = await retrieveWith(undefined, ["bravo page two"]);
+			expect(result).toMatchObject({ lineNumber: 5, lineEnd: 5, section: "Report" });
+			expect(result).not.toHaveProperty("pageStart");
+			expect(result).not.toHaveProperty("pageEnd");
+		});
+
+		it("never stamps an exact page for a section-mode document", async () => {
+			const [result] = await retrieveWith({ ...LAYOUT, mode: "section" }, ["bravo page two"]);
+			expect(result).toMatchObject({ lineNumber: 5 });
+			expect(result).not.toHaveProperty("pageStart");
+		});
+
+		it("stamps no page for a chunk the chunker rewrote or one that occurs twice", async () => {
+			const [rewritten] = await retrieveWith(LAYOUT, ["alpha | page | one"]);
+			expect(rewritten).not.toHaveProperty("lineNumber");
+			expect(rewritten).not.toHaveProperty("pageStart");
+		});
+
+		it("stamps no page for a chunk that occurs twice", async () => {
+			const [twice] = await retrieveWith(LAYOUT, ["alpha page one"], `${PAGED}\nalpha page one\n`);
+			expect(twice).not.toHaveProperty("lineNumber");
+			expect(twice).not.toHaveProperty("pageStart");
+		});
+
+		it("ignores a page index measured on a different text than the mirror now holds", async () => {
+			writeFileSync(parsedOutput, PAGED);
+			writePagesSidecar(
+				parsedOutputPath(root, "/docs/policy.txt"),
+				"an older version of the document\n",
+				LAYOUT as ParsedPages,
+			);
+			await seedMinSyncStage(root, {
+				version: 1,
+				entries: {
+					"/docs/policy.txt": {
+						virtualPath: "/docs/policy.txt",
+						sourcePath: join(source, "policy.txt"),
+						outputPath: parsedOutput,
+						parserName: "kordoc",
+						sourceMtimeNs: 2,
+						sourceSizeBytes: 18,
+						updatedAt: "2026-01-02T00:00:00.000Z",
+					},
+				},
+			});
+			writeFakeMinSync(JSON.stringify({ results: [{ path: parsedOutput, score: 0.9, text: "bravo page two" }] }));
+			const method = new MinSyncVectorMethod({ binaryPath: minsyncBinary, root, workspacePath: minsyncWorkspace });
+			const [result] = await method.retrieve("q", { topK: 1 });
+			expect(result?.metadata).toMatchObject({ lineNumber: 5 });
+			expect(result?.metadata).not.toHaveProperty("pageStart");
+		});
 	});
 
 	it("stamps the line range and enclosing article of a chunk found in the parsed mirror (#1692)", async () => {
