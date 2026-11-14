@@ -38,6 +38,7 @@ import {
 	type ParsedMirrorIndex,
 	type ParsedMirrorSkipReason,
 } from "./index-store.ts";
+import { writePagesSidecar } from "./pages-sidecar.ts";
 import { parsedMirrorRoot, parsedOutputPath } from "./paths.ts";
 
 /** Refuse to fully load/parse sources larger than this. Keeps Node heap stable on home folders. */
@@ -630,6 +631,7 @@ async function syncWithRegistry(
 				const path = pathsByKey.get(decision.key);
 				await session.delete(decision.key);
 				if (path === undefined) continue;
+				writePagesSidecar(parsedOutputPath(options.root, path), "", undefined);
 				if (previous.entries[path]) deleted += 1;
 				if (!currentPaths.has(path))
 					diagnostics.push({
@@ -826,6 +828,18 @@ async function syncWithRegistry(
 							...(code !== undefined ? { reason: code } : {}),
 						});
 						continue;
+					}
+					try {
+						writePagesSidecar(outputPath, markdown, parsed.pages);
+					} catch (error) {
+						// Pages are an addition to the text: losing them leaves line locations intact, so the file
+						// stays indexed, but the loss is reported rather than hidden.
+						diagnostics.push({
+							code: "mirror-write-failed",
+							severity: "warning",
+							message: `The page index could not be saved, so evidence from this document names no page: ${error instanceof Error ? error.message : String(error)}`,
+							source: entry.virtualPath,
+						});
 					}
 					await session.commit(mirrorStageKey(entry.virtualPath), versions.get(entry.virtualPath)!, {
 						path: basename(outputPath),

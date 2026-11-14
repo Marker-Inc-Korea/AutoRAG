@@ -69,6 +69,91 @@ describe("autorag lite lifecycle dispatch", () => {
 		expect(String(err.mock.calls.at(-1)?.[0] ?? "")).toContain("positive integer");
 	});
 
+	it("rejects an invalid --since/--until with the parse error verbatim before touching config", async () => {
+		const err = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+		expect(await main(["lite", "retrieve", "query", "--since", "last month", "--json"])).toBe(2);
+		expect(JSON.parse(String(err.mock.calls.at(-1)?.[0] ?? "")).error).toContain(
+			'Invalid since "last month": expected an ISO-8601',
+		);
+		expect(await main(["lite", "retrieve", "query", "--since", "2026-10-01", "--until", "2026-09-01"])).toBe(2);
+		expect(String(err.mock.calls.at(-1)?.[0] ?? "")).toMatch(/since .* must be before until/);
+	});
+
+	it("forwards --since/--until as epoch ms and reports the window, including an empty range", async () => {
+		const root = mkdtempSync(join(tmpdir(), "autorag-lite-window-"));
+		const configPath = join(root, "config.json");
+		writeConfig(root, configPath);
+		const out = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+		try {
+			expect(await main(["lite", "refresh", "--config", configPath, "--json"])).toBe(0);
+			const retrieve = vi.spyOn(RetrievalEngine.prototype, "retrieve").mockResolvedValue({
+				results: [],
+				diagnostics: [],
+				unsearched: [],
+				window: {
+					since: Date.UTC(2026, 8, 1),
+					until: Date.UTC(2026, 9, 1),
+					examined: 12,
+					matched: 0,
+					untimed: 0,
+					ceilingHit: true,
+					fetchDepth: 50,
+				},
+			});
+
+			expect(
+				await main([
+					"lite",
+					"retrieve",
+					"query",
+					"--config",
+					configPath,
+					"--since",
+					"2026-09-01T00:00:00Z",
+					"--until",
+					"2026-10-01T00:00:00Z",
+					"--json",
+				]),
+			).toBe(0);
+
+			expect(retrieve.mock.calls.at(-1)?.[1]).toMatchObject({
+				since: Date.UTC(2026, 8, 1),
+				until: Date.UTC(2026, 9, 1),
+			});
+			const envelope = JSON.parse(String(out.mock.calls.at(-1)?.[0] ?? ""));
+			expect(envelope.results).toEqual([]);
+			expect(envelope.window).toEqual({
+				since: "2026-09-01T00:00:00.000Z",
+				until: "2026-10-01T00:00:00.000Z",
+				examined: 12,
+				matched: 0,
+				untimed: 0,
+				ceilingHit: true,
+				fetchDepth: 50,
+			});
+
+			// Human output says why the list is empty, not just "no results".
+			expect(await main(["lite", "retrieve", "query", "--config", configPath, "--since", "2026-09-01"])).toBe(0);
+			expect(String(out.mock.calls.at(-1)?.[0] ?? "")).toContain("Nothing in this time range");
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("omits window from the envelope when the query had none", async () => {
+		const root = mkdtempSync(join(tmpdir(), "autorag-lite-nowindow-"));
+		const configPath = join(root, "config.json");
+		writeConfig(root, configPath);
+		const out = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+		try {
+			expect(await main(["lite", "refresh", "--config", configPath, "--json"])).toBe(0);
+			expect(await main(["lite", "retrieve", "query", "--config", configPath, "--json"])).toBe(0);
+			expect(JSON.parse(String(out.mock.calls.at(-1)?.[0] ?? ""))).not.toHaveProperty("window");
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
 	it("does not treat a datasource-only refresh as a parsed index refresh", async () => {
 		const root = mkdtempSync(join(tmpdir(), "autorag-lite-readiness-"));
 		const configPath = join(root, "config.json");

@@ -1,32 +1,23 @@
-# Catalog entry for NousResearch/hermes-agent: plugin-catalog/autorag.yaml
-# `sha` is the commit on Marker-Inc-Korea/AutoRAG main that contains plugins/hermes with the pinned
-# @autorag/librarian below (see plugins/hermes-submission/SUBMISSION.md). Move it to a newer main commit whenever the
-# plugin changes before this entry is merged upstream; it must always be a 40-char commit that exists on main.
 name: autorag
 title: AutoRAG
 repo: https://github.com/Marker-Inc-Korea/AutoRAG
-sha: 8b0ea0ab9bf5860676ce097cf0854ea915afe7ff
+sha: 40ef977a1262fb1090b2be04556739994eb29225
 subdir: plugins/hermes
 version: "1.0.0"
 description: >-
-  Search your own files and chat/mail archives from Hermes. Indexing and retrieval run locally. Runs the model-free
-  AutoRAG Lite MCP server (pinned @autorag/librarian@2.13.11 over npx stdio) for hybrid
-  BM25 + dense + sparse retrieval over PDF, DOCX, PPTX, XLSX, Markdown, email and Korean HWP/HWPX,
-  plus Slack, Discord, Telegram, WhatsApp, KakaoTalk, email, Notion and Obsidian archives through
-  the local crawler CLIs you already have. File-name search and duplicate detection; it never edits your
-  documents. Bundles four skills (search, setup, automate, schedule) and a Hermes Desktop search pane. Setup,
-  automate and schedule each bundle a standard-library Python helper the agent runs only on request
-  (macOS/Linux): a read-only folder inventory, a rule that runs a Hermes cron job when files appear, and
-  no-agent cron jobs that refresh the index or report new duplicates. Portable Agent Plugins v1 package
-  (mcp.json + skills/ + desktop/); needs Node.js 24+.
-  Disclosure - first start downloads the pinned server from npm through npx (the Desktop pane runs npm install of the
-  same pinned package once into $HERMES_HOME/plugin-data/autorag/runtime, no lifecycle scripts); the first refresh
-  provisions the local helpers minsync and jikji (cargo, or a sha256-verified GitHub release for
-  minsync) and downloads the local embedding models (Qwen3-Embedding-0.6B about 1.2 GB and
-  KURE-Sparse-nano about 290 MB, from Hugging Face). It reads only the folders and crawler archives
-  you configure, writes only its own index and report state, runs as a long-lived stdio child, sends
-  no analytics, and reads no credentials; a remote embedder is used only if you configure one.
-  Chunks a search returns are read by your Hermes model, so they reach whichever provider it uses.
+  Search your own files and configured chat/mail archives from Hermes with AutoRAG Lite.
+  Local hybrid retrieval, file-name search, cited evidence and duplicate detection without
+  editing original documents. Supports PDF, DOCX, PPTX, XLSX, Markdown and Korean HWP/HWPX;
+  existing integrations include Slack, Discord, Telegram, WhatsApp, KakaoTalk, email,
+  Notion and Obsidian. Bundles four skills and a Hermes Desktop Finder pane.
+  Requires Node.js 24+; runs pinned @autorag/librarian@2.13.12 through npx stdio.
+  The Desktop backend installs that same pinned package once in plugin data, with npm
+  lifecycle scripts disabled. First refresh can provision minsync and jikji and download
+  local embedding models (roughly 1.5 GB). Reads only configured folders and archives;
+  writes its own index/report state. User-requested automation also writes rule/scripts
+  and creates Hermes cron jobs. No telemetry, self-update or stored-login discovery.
+  Search snippets read by Hermes reach its selected model provider; configured remote
+  connectors or embedders use their selected services.
 maintainer: Marker-Inc-Korea
 tier: community
 category: tools
@@ -34,7 +25,8 @@ requires_hermes: ">=0.22.3"
 docs_url: https://github.com/Marker-Inc-Korea/AutoRAG/tree/main/plugins/hermes
 platforms: [macos]
 known_issues:
-  - "Tested on macOS only. The MCP server (npx) is portable, but the setup, automate and schedule helpers target macOS and Linux, and Linux and Windows are not verified."
+  - "Verified on macOS only; Linux and Windows have not been verified for this plugin."
+  - "Local chat/mail search requires existing configured crawler archives; installation does not sign into those services."
 capabilities:
   provides_tools: []
   provides_hooks: []

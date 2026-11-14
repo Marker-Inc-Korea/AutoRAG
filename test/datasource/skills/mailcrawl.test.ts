@@ -533,6 +533,7 @@ describe("MailcrawlSkill", () => {
 			.retrievalMethods()[0]
 			?.retrieve("approval", { topK: 5, scope: "/mailcrawl/personal/**" });
 		expect(result?.[0]?.source).toBe("/mailcrawl/personal/chunks/m1:latest:0");
+		expect(result?.[0]?.metadata.publishedAt).toBe(Date.UTC(2026, 7, 30));
 		expect(skill.skillManifest().content).toContain("mailcrawl");
 	});
 

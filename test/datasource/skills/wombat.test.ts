@@ -214,7 +214,14 @@ describe("WombatSkill", () => {
 			id: "wombat:me:doc-abc123",
 			source: "/wombat/me/chunks/doc-abc123",
 			content: expect.stringContaining(hit.snippet),
-			metadata: { datasourceId: "wombat", agent: "omp", sessionKey: "omp:01a16380-3970", startTurn: 3, endTurn: 5 },
+			metadata: {
+				datasourceId: "wombat",
+				agent: "omp",
+				sessionKey: "omp:01a16380-3970",
+				startTurn: 3,
+				endTurn: 5,
+				publishedAt: Date.UTC(2026, 9, 22, 12, 6, 50),
+			},
 		});
 		// The source never carries a real filesystem path or a fragment.
 		expect(results?.[0]?.source).not.toContain("/home/");

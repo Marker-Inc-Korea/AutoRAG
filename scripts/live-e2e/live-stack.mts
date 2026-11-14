@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { AutoRAGAgent, type AutoRAGRefreshProgress } from "../../src/agent/agent.ts";
 import { QWEN3_QUERY_PREFIX } from "../../src/embedding/prefixes.ts";
@@ -7,6 +7,7 @@ import {
 	assertKoreanLexicalHit,
 	assertLiteRetrieveHealthy,
 	assertLiteRetrieveReportsSkippedSurface,
+	assertLiteRetrieveWindowExcludes,
 	buildLiveStackOptions,
 	REPO_ROOT,
 } from "./workflow.mjs";
@@ -216,6 +217,56 @@ embedderDown = {
 		.filter((line: string) => line.startsWith("warning: not searched:")),
 };
 
+// Time window (#1958): files dated across months, one of which would rank first without a window. The fixed corpus is
+// digest-pinned and undated, so this lane writes its own dated copy inside the workspace and refreshes it through the
+// same native embedder. Local files are dated by last modification.
+const datedWorkspace = join(workspace, "dated-window");
+const datedCorpus = join(datedWorkspace, "corpus");
+rmSync(datedWorkspace, { recursive: true, force: true });
+mkdirSync(datedCorpus, { recursive: true });
+const datedFiles = [
+	["refund-july.txt", "Refund exceptions require director approval before payout. Refund exceptions need director approval.", "2026-07-10T12:00:00Z"],
+	["refund-august.txt", "Finance acknowledged that refund exceptions require director approval in the August review.", "2026-08-10T12:00:00Z"],
+	["refund-september.txt", "The September revision keeps director approval for refund exceptions.", "2026-09-10T12:00:00Z"],
+] as const;
+for (const [name, text, modified] of datedFiles) {
+	const path = join(datedCorpus, name);
+	writeFileSync(path, `${text}\n`);
+	utimesSync(path, new Date(modified), new Date(modified));
+}
+const datedOptions = {
+	...buildLiveStackOptions(root, datedWorkspace),
+	searchPaths: [datedCorpus],
+	minSync: { ...buildLiveStackOptions(root, datedWorkspace).minSync, workspacePath: datedWorkspace },
+};
+const datedConfig = join(datedWorkspace, "config.json");
+writeFileSync(datedConfig, `${JSON.stringify(datedOptions, null, 2)}\n`);
+const datedEnv: NodeJS.ProcessEnv = { ...process.env };
+for (const name of ["AUTORAG_WORKSPACE", "AUTORAG_SEARCH_PATHS", "AUTORAG_MEMORY_PATH", "AUTORAG_CONFIG"]) delete datedEnv[name];
+const datedRefresh = await new AutoRAGAgent(datedOptions).refresh(true, { methods: ["parsed", "minsync"] });
+if (datedRefresh.minsync?.ok !== true) throw new Error(`dated-window-sync-${datedRefresh.minsync?.reason ?? "unready"}`);
+const datedQuery = ["lite", "retrieve", "refund exceptions director approval", "--config", datedConfig, "--top-k", "10", "--json"];
+const runDated = (extra: readonly string[]) => {
+	const run = spawnSync("bun", ["src/cli/index.ts", ...datedQuery, ...extra], {
+		cwd: REPO_ROOT,
+		env: datedEnv,
+		encoding: "utf8",
+		timeout: 5 * 60 * 1000,
+	});
+	if (run.status !== 0) throw new Error(`dated-window-retrieve-exit-${run.status}`);
+	return JSON.parse(run.stdout ?? "{}");
+};
+const datedUnwindowed = runDated([]);
+const datedWindowed = runDated(["--since", "2026-08-01", "--until", "2026-09-01"]);
+// refund-july has the most matching text, so it ranks first until the window excludes it.
+const datedExcluded = realpathSync(join(datedCorpus, "refund-july.txt"));
+const datedKept = realpathSync(join(datedCorpus, "refund-august.txt"));
+assertLiteRetrieveWindowExcludes(datedUnwindowed, datedWindowed, datedExcluded, datedKept);
+const datedEmpty = runDated(["--since", "2025-01-01", "--until", "2026-01-01"]);
+if (datedEmpty.results.length !== 0 || datedEmpty.window?.matched !== 0 || datedEmpty.window?.examined < 1) {
+	throw new Error("dated-window-empty-range-not-explicit");
+}
+
 const status = await agent.getRefreshStatus();
 const result = {
 	mode,
@@ -230,6 +281,14 @@ const result = {
 	koreanLexical: { status: "PASS", query: "인증서", fixture: "korean-policy.txt" },
 	hit: { source: hit.source, sourceAbsolute: true, sourceExists: true, sourceReadable: true, score: hit.score },
 	status: { state: status.state, stale: status.stale, components: status.components },
+	timeWindow: {
+		status: "PASS",
+		unwindowedFirst: "refund-july.txt",
+		excludedByWindow: "refund-july.txt",
+		windowedResults: datedWindowed.results.map((item: { source: string }) => item.source),
+		window: datedWindowed.window,
+		emptyRange: datedEmpty.window,
+	},
 	liteRetrieve: {
 		healthy: {
 			exitCode: healthyRun.exitCode,
