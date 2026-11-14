@@ -5,7 +5,30 @@ Hermes, Claude Code and Codex start `autorag-mcp` as a local child process (stdi
 `autorag-mcp --http` is that URL: the same tools as stdio, served over streamable HTTP, with your index staying on
 your machine. The agent's model reads the chunks a search returns, so they go wherever that agent runs.
 
+## Using the Dazzi app
+
+If you use the Dazzi app, it runs all of this for you: no terminal, no `cloudflared` to start by hand.
+
+1. Open **Settings → MCP Servers → Cloud agents** and turn on **Allow cloud agents**.
+2. The app starts the read-only search server and its own Cloudflare tunnel, then shows an address
+   (`https://<words>.trycloudflare.com/mcp`). **Copy address** and give it to the agent as described under
+   [Per agent](#per-agent).
+3. Agents that sign in through a page you approve never need the owner token. **Copy token** is for an agent that asks
+   for a bearer token or header; **Reset token** disconnects every agent connected so far.
+4. **Let agents change files and the index** is off by default. Turn it on only for an agent you trust.
+
+This is **not** the app's **Remote Access** page. Remote Access serves the Finder window to a person on a phone or
+another computer behind a pairing code; Cloud agents serve search tools to an agent behind an owner token. They are
+separate switches with separate tunnels, domains and credentials, and a browser paired through Remote Access cannot
+read or reset the agent token.
+
+The temporary address changes every time the tunnel starts, so an agent you connected earlier loses it. For an
+address that stays, open **Use my own domain** and enter a hostname on a domain whose DNS is in Cloudflare.
+
 ## Start the server
+
+The rest of this page is for running the server without the Dazzi app (for example on a headless machine, or from the
+`autorag` package alone).
 
 ```bash
 export AUTORAG_MCP_TOKEN="$(openssl rand -base64 32)"   # optional; see "Owner token"
@@ -95,7 +118,6 @@ Then **Create as a plugin**; ask the dot to use AutoRAG. Codex on your computer 
 
 Copy-paste prompt: [`plugins/remote-agents/connect/grok-bot.md`](../plugins/remote-agents/connect/grok-bot.md).
 
-
 Ask a Bot to add a custom MCP server (or use Plugins and paste the URL). Give it `https://<public>/mcp`, then either
 sign in through OAuth or add the header `Authorization: Bearer <owner token>`. All of an account's Bots share one
 cloud computer and the connected apps, so a connected AutoRAG is visible to every Bot on that account; connect it
@@ -104,7 +126,6 @@ read-only (the default) and keep it off accounts you share.
 ### Meta Muse
 
 Copy-paste prompt: [`plugins/remote-agents/connect/muse.md`](../plugins/remote-agents/connect/muse.md).
-
 
 Ask Muse in chat to create a custom connector for an MCP server at `https://<public>/mcp`. Muse keeps credentials in
 its Secure Credentials Store. Prefer the OAuth sign-in (the owner token is typed only on your own consent page);

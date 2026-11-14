@@ -35,3 +35,40 @@ describe("docs/remote-agents.md matches the server", () => {
 		for (const flag of accepted) if (flag !== "--help") expect(documented, flag).toContain(flag);
 	});
 });
+
+describe("docs/remote-agents.md for Dazzi app users", () => {
+	const section = (heading: string): string => {
+		const start = DOC.indexOf(`## ${heading}`);
+		if (start < 0) return "";
+		const next = DOC.indexOf("\n## ", start + 1);
+		return DOC.slice(start, next < 0 ? undefined : next);
+	};
+
+	it("has a Dazzi section that tells app users the app runs the server and the tunnel", () => {
+		const text = section("Using the Dazzi app");
+		expect(text).not.toBe("");
+		expect(text).toMatch(/Settings/);
+		expect(text).toMatch(/Cloud agents/);
+		expect(text).toMatch(/tunnel/i);
+		// The app does the work, so the section must not tell its reader to run the commands by hand.
+		expect(text).not.toMatch(/^\s*(?:autorag-mcp|cloudflared)\b/m);
+	});
+
+	it("says this is not the app's remote access, which serves the Finder UI to a person", () => {
+		const text = section("Using the Dazzi app");
+		expect(text).toMatch(/Remote Access/);
+		expect(text).toMatch(/separate|independent|not the same/i);
+		expect(text).toMatch(/pairing code/i);
+	});
+
+	it("keeps the by-hand cloudflared steps, but labels them as for people not using the app", () => {
+		const start = section("Start the server");
+		expect(start).toMatch(/cloudflared tunnel/);
+		expect(start).toMatch(/without the Dazzi app|not using the Dazzi app|if you do not use the Dazzi app/i);
+	});
+
+	it("warns that a Quick Tunnel address changes, which breaks an agent connected earlier", () => {
+		expect(DOC).toMatch(/changes (?:on|every|each) (?:every )?(?:start|restart)/i);
+		expect(DOC).toMatch(/own domain|named tunnel/i);
+	});
+});
