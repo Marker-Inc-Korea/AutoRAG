@@ -93,12 +93,18 @@ Then **Create as a plugin**; ask the dot to use AutoRAG. Codex on your computer 
 
 ### Grok Bot
 
+Copy-paste prompt: [`plugins/remote-agents/connect/grok-bot.md`](../plugins/remote-agents/connect/grok-bot.md).
+
+
 Ask a Bot to add a custom MCP server (or use Plugins and paste the URL). Give it `https://<public>/mcp`, then either
 sign in through OAuth or add the header `Authorization: Bearer <owner token>`. All of an account's Bots share one
 cloud computer and the connected apps, so a connected AutoRAG is visible to every Bot on that account; connect it
 read-only (the default) and keep it off accounts you share.
 
 ### Meta Muse
+
+Copy-paste prompt: [`plugins/remote-agents/connect/muse.md`](../plugins/remote-agents/connect/muse.md).
+
 
 Ask Muse in chat to create a custom connector for an MCP server at `https://<public>/mcp`. Muse keeps credentials in
 its Secure Credentials Store. Prefer the OAuth sign-in (the owner token is typed only on your own consent page);
