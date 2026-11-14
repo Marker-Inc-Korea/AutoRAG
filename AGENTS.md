@@ -118,8 +118,8 @@ evidence remains in the mounted clone under `.omo/evidence`.
 Use `--config <path>` or `AUTORAG_CONFIG=<path>` when replacement is intentional.
 First-time implicit initialization remains allowed.
 
-The QA image is based on Ubuntu 24.04 so current Linux MinSync release assets
-run against the image's glibc; `make test-linux` continues to use the existing
+The QA image is based on Ubuntu 26.04 so current Linux MinSync release assets
+(built against glibc 2.43) run against the image's glibc; `make test-linux` continues to use the existing
 Java 17 CI image. Native-store lanes are expected to skip inside the isolated
 container unless their stores are deliberately provisioned inside it; never
 mount a real host home to make a lane pass.

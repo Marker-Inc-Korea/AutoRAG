@@ -1,6 +1,7 @@
 import { AutoRAGAgent, type RefreshMethod } from "../../agent/agent.ts";
 import { buildAgentOptions, ConfigError, resolveConfig } from "../config.ts";
 import { renderError, renderRefresh } from "../output.ts";
+import { abortOnSignal, SIGNAL_EXIT_CODES } from "../signal-abort.ts";
 import type { CommandContext } from "./types.ts";
 
 /**
@@ -11,8 +12,13 @@ import type { CommandContext } from "./types.ts";
  *
  * `--method minsync,parsed` restricts which methods run. When omitted, all
  * methods run. Parsed mirrors are always synced when MinSync is selected.
+ *
+ * SIGINT and SIGTERM abort the refresh: the MinSync and parser children are stopped, the run is recorded as
+ * failed, and the command exits 130 or 143 like any process a signal ended. A long first index can run for
+ * hours, so an operator or a service manager needs to be able to stop it.
  */
 export async function runRefresh(ctx: CommandContext): Promise<number> {
+	const stop = abortOnSignal();
 	try {
 		const config = resolveConfig({ flags: ctx.flags, cwd: ctx.cwd });
 		const agent = new AutoRAGAgent(buildAgentOptions(config));
@@ -20,13 +26,17 @@ export async function runRefresh(ctx: CommandContext): Promise<number> {
 		const options = {
 			...(methods ? { methods } : {}),
 			...(ctx.flags["retry-failed"] === true ? { retrySkipped: true } : {}),
+			signal: stop.signal,
 		};
 		const result = await agent.refresh(ctx.flags.force === true, options);
 		ctx.stdout(renderRefresh(result, { json: ctx.json, debug: ctx.debug }));
 		return 0;
 	} catch (error) {
 		ctx.stderr(renderError(error, { json: ctx.json, debug: ctx.debug }));
+		if (stop.received !== undefined) return SIGNAL_EXIT_CODES[stop.received];
 		return error instanceof ConfigError ? 2 : 1;
+	} finally {
+		stop.dispose();
 	}
 }
 

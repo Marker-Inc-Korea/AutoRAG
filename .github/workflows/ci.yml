@@ -38,16 +38,10 @@ jobs:
         if: steps.filter.outputs.autorag != 'true'
         run: echo "No AutoRAG 2.0 paths in this diff; succeeding required build check. Legacy workflows (test.yml / sphinx.yml) own legacy/**."
 
-      # pi-coding-agent's grep/find tools need ripgrep and fd; preinstall
-      # them so tests don't depend on their on-demand binary downloads (which
-      # fail in CI's network-restricted environment). On Ubuntu, the fd binary
-      # is shipped as `fdfind`, which pi-coding-agent recognizes via its
-      # systemBinaryNames fallback.
+      # Pin official upstream tools with checksums; Ubuntu mirror DNS is not a build dependency.
       - name: Install ripgrep and fd
         if: steps.filter.outputs.autorag == 'true'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ripgrep fd-find
+        run: bash scripts/ci/install-search-tools.sh
 
       - uses: oven-sh/setup-bun@v2
         if: steps.filter.outputs.autorag == 'true'

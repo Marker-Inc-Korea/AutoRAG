@@ -1,0 +1,12 @@
+{
+  "name": "autorag",
+  "interface": { "displayName": "AutoRAG" },
+  "plugins": [
+    {
+      "name": "autorag-remote",
+      "source": { "source": "local", "path": "./plugins/remote-agents" },
+      "policy": { "installation": "AVAILABLE", "authentication": "ON_USE" },
+      "category": "Productivity"
+    }
+  ]
+}

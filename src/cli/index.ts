@@ -43,6 +43,8 @@ const VALUE_FLAGS = new Set([
 	"scope",
 	"since",
 	"until",
+	"groups",
+	"query",
 	"result",
 	"debounce-ms",
 	"power",
