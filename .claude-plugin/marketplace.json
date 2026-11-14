@@ -5,7 +5,7 @@
   "plugins": [
     {
       "name": "autorag-remote",
-      "source": "./remote-agents",
+      "source": "./plugins/remote-agents",
       "description": "Search your own files and archives with AutoRAG from a cloud agent. Skill only; you register your own server URL."
     }
   ]
