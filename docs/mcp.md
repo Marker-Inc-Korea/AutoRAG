@@ -21,8 +21,10 @@ hard-code a tool count.
 Core Lite tools include `autorag.status`, `autorag.search`,
 `autorag.search.files`, `autorag.datasources.list`, `autorag.datasources.get`,
 `autorag.refresh`, `autorag.report`, and `autorag.evidence`. Configured
-integrated datasources expose additional scoped search tools. Read-only MCP
-mode omits mutating tools such as refresh and report.
+integrated datasources expose additional scoped search tools. Searches take an
+optional ISO-8601 `since` (inclusive) / `until` (exclusive) time window; see
+[Time windows](datasource-skills.md#time-windows) for how each method dates its
+results. Read-only MCP mode omits mutating tools such as refresh and report.
 
 Always-on cloud agents (Grok Bot, OpenAI dots, Claude Duet, Meta Muse) connect by URL
 instead: `autorag-mcp --http` serves the same tools over streamable HTTP with bearer

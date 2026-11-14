@@ -380,7 +380,7 @@ Trusted server/API configuration only decides which connections exist (the
 `search_datasource_<id>` tool, and each one's schema is exactly:
 
 ```ts
-{ query: string; topK?: number; scope?: string }
+{ query: string; topK?: number; scope?: string; since?: string; until?: string }
 ```
 
 There is no datasource fan-out tool: a question that spans every datasource (or everything else) uses `search_all_documents`, which already registers every configured connection's retrieval methods alongside the local ones. Skill descriptor `tags` are descriptive metadata only, never authority, and model-controlled tool arguments cannot change which connections exist.
@@ -388,6 +388,45 @@ There is no datasource fan-out tool: a question that spans every datasource (or 
 `scope` is an ordinary per-query narrowing filter for datasource methods that advertise the `scoped` capability. A result from such a method is kept only when its source matches the requested scope, and datasource sources always reject `#` fragments. Datasources without that capability (for example, lazykatok's chat-identity results) own any narrower filtering themselves.
 
 Generated tools, retrieval, and memory provenance reference the datasource IDs of configured connections; provenance is not an authorization decision.
+
+## Time windows
+
+`search_all_documents`, every `search_datasource_<id>`, MCP `autorag.search` and `autorag.search_datasource_<id>`, and `autorag lite retrieve` (`--since`, `--until`) accept a time window. It only narrows: it composes with `scope` (a result must match both) and never widens what a datasource's trusted config reaches, and it cannot change connector configuration.
+
+- `since` is inclusive, `until` is exclusive: `[since, until)`. "All of September" is `since 2026-09-01`, `until 2026-10-01`.
+- Values are ISO-8601. A date-only value, or a datetime without an offset, is local midnight / local time in the host's time zone; `Z` and `±HH:MM` are honored exactly. Calendar-invalid values (`2026-02-31`) are rejected, not rolled over.
+- A malformed value or an empty window (`since >= until`) is returned verbatim as the tool error (MCP error code `invalid-time-window`; `lite retrieve` exits 2). Nothing is searched.
+- The agent's system prompt carries the current date and time zone (`<current_date>`) and tells the model to translate "last month" / "this week" into `since`/`until`; the values the model chose are visible in the run's tool calls.
+
+**How a result is dated.** `metadata.publishedAt` (epoch ms, the document's own timestamp) first; otherwise `metadata.sourceMtimeMs`, the local source file's last-modified time from the mirror index. Local mtime is "last modified", not "authored", and a cloud/iCloud placeholder may carry a sync time.
+
+**No store filters by time on its own** (`minsync query` takes only `-k`, `--mode`, `--format`), so the pipeline over-fetches when a window is set — the same shape as the `scope` over-fetch, `max(5 × topK, topK + 20)`, bounded at 300 — and post-filters each method's candidates (`ParallelRetriever.retrieveWithDiagnostics`). Stores that can filter natively (the SQLite sidecar, the connector chunk store) do so before their own `topK` cut, so an in-window message that ranks low is still found.
+
+**A method that cannot date a result excludes it.** Such results are dropped, never passed through as in range, and the method is reported in `unsearched` and a `time-window-untimed` diagnostic with the reason verbatim (for example `2 of 3 result(s) from "gallery" were excluded from the time window [...]: they have neither metadata.publishedAt nor a source mtime, so their time cannot be judged.`).
+
+**An empty range is explicit.** Every windowed search returns a `window` report: `{ since, until, examined, matched, untimed, ceilingHit, fetchDepth }`. The agent tools print "Nothing in this time range …" with those counts; `lite retrieve --json` and MCP carry `window`. When `ceilingHit` is true (some method returned as many candidates as it was asked for), a `time-window-ceiling` diagnostic says a thin or empty list is not proof that nothing exists in the range.
+
+### Per-method support
+
+| Surface | Time source | Window applied |
+| --- | --- | --- |
+| Local files (`minsync`, `hybrid`; bm25 and hybrid modes alike) | `sourceMtimeMs` (mirror index, last modified) | post-filter over over-fetch |
+| Slack, Telegram, WhatsApp, Discord, KakaoTalk sidecar (`*-sidecar-bm25`, `*-hybrid`) | `publishedAt` from the crawler's message time | native SQL, before `topK` (BM25, semantic, hybrid) |
+| RSS, GitHub, GitHub Gist lexical (connector chunk store) | `publishedAt` (`pubDate`/`updated`, `updated_at`) | native, before `topK`; chunks with no date rank last and are excluded + reported |
+| GitHub Gist semantic | `publishedAt` (`updated_at`) | post-filter over over-fetch |
+| Slack / Telegram / WhatsApp / Notion CLI-backed `*-fts` | `publishedAt` from the hit timestamp (Notion: `last_edited_time`) | post-filter over over-fetch |
+| Discord (`discrawl` methods) | `publishedAt` from `timestamp` | post-filter over over-fetch |
+| KakaoTalk (`lazykatok` methods) | `publishedAt` from `startedAt` of the chat chunk | post-filter over over-fetch |
+| Mailcrawl | `publishedAt` from the message `date` | post-filter over over-fetch |
+| Wombat | `publishedAt` from the session's `startedAt` | post-filter over over-fetch |
+| Hister (browser history) | `publishedAt` from the page's last visit | post-filter over over-fetch |
+| Lark / Feishu | `publishedAt` from `create_time` / `update_time` | post-filter over over-fetch |
+| Obsidian | `sourceMtimeMs` of the staged note | post-filter over over-fetch |
+| ClawGallery | none (no timestamp in results) | unsupported: every result is excluded and the method is reported |
+
+A hit whose store reported no usable time falls into the same rule as an unsupported method: excluded and reported, per result count. The `mail-export` and `cloud-drive` connectors no longer exist (see "Removed: the `cloud-drive` datasource"); the mailcrawl `.mbox`/`.eml` path and a mounted cloud folder indexed as local files are covered by the rows above.
+
+Out of scope: a query-less "newest N" listing, date flags on the external MinSync binary, recency-weighted ranking, and file-name search (use `dm:` there).
 
 ### Migrating from datasource access controls
 

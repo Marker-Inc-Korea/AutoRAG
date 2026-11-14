@@ -1,11 +1,13 @@
 import { MinSyncRequiredError } from "../minsync/errors.ts";
 import type { RecordCut } from "./record-cut.ts";
 import { describeRetrievalError, groupUnsearchedSurfaces, type RetrievalSkip, retrievalSurfaceFor } from "./skip.ts";
+import { applyTimeWindow, describeTimeWindow, expandedWindowTopK, windowFromOptions } from "./time-window.ts";
 import type {
 	RetrievalDiagnostic,
 	RetrievalMethod,
 	RetrievalOptions,
 	RetrievalResult,
+	RetrievalWindowReport,
 	RetrievalWithDiagnostics,
 } from "./types.ts";
 
@@ -211,6 +213,11 @@ export class ParallelRetriever {
 	 * a diagnostic quoting the underlying error, and an entry in `unsearched`
 	 * carrying that error verbatim. The legacy {@link retrieve} return shape is
 	 * intentionally unchanged for compatibility.
+	 *
+	 * When `options` carries a `since`/`until` window, every method is asked for an over-fetched candidate list
+	 * (stores cannot filter by time), each result is kept only if its time lies in `[since, until)`, and results with
+	 * no time are excluded and reported through `unsearched` and a `time-window-untimed` diagnostic. The returned
+	 * `window` report says how many candidates were examined and whether the over-fetch ceiling was hit.
 	 */
 	async retrieveWithDiagnostics(
 		methods: RetrievalMethod[],
@@ -221,29 +228,56 @@ export class ParallelRetriever {
 		for (const method of methods) results.set(method.describe().name, []);
 		const diagnostics: RetrievalDiagnostic[] = [];
 		const skips: RetrievalSkip[] = [];
+		const window = windowFromOptions(options);
+		const fetchDepth = window === undefined ? undefined : expandedWindowTopK(options.topK);
+		const report: { examined: number; matched: number; untimed: number; ceilingHit: boolean } = {
+			examined: 0,
+			matched: 0,
+			untimed: 0,
+			ceilingHit: false,
+		};
 		await Promise.all(
 			methods.map(async (method) => {
 				const descriptor = method.describe();
 				const name = descriptor.name;
 				try {
-					results.set(
-						name,
-						await method.retrieve(query, {
-							...options,
-							// A method that answered through a fallback still searched, but not with the strength it
-							// was registered for: report the surface with the primary's real error, like a skip.
-							onFallback: ({ method: failed, fallback, reason }) => {
-								skips.push({ method: failed, surface: retrievalSurfaceFor(descriptor), reason });
-								diagnostics.push({
-									code: "retrieval-method-failed",
-									severity: "warning",
-									message: `Retrieval method "${failed}" failed and was answered by its fallback "${fallback}": ${reason}`,
-									source: failed,
-									reason,
-								});
-							},
-						}),
-					);
+					const candidates = await method.retrieve(query, {
+						...options,
+						...(fetchDepth === undefined ? {} : { topK: fetchDepth }),
+						// A method that answered through a fallback still searched, but not with the strength it
+						// was registered for: report the surface with the primary's real error, like a skip.
+						onFallback: ({ method: failed, fallback, reason }) => {
+							skips.push({ method: failed, surface: retrievalSurfaceFor(descriptor), reason });
+							diagnostics.push({
+								code: "retrieval-method-failed",
+								severity: "warning",
+								message: `Retrieval method "${failed}" failed and was answered by its fallback "${fallback}": ${reason}`,
+								source: failed,
+								reason,
+							});
+						},
+					});
+					if (window === undefined || fetchDepth === undefined) {
+						results.set(name, candidates);
+						return;
+					}
+					const { kept, untimed } = applyTimeWindow(candidates, window);
+					results.set(name, kept);
+					report.examined += candidates.length;
+					report.matched += kept.length;
+					report.untimed += untimed;
+					if (candidates.length >= fetchDepth) report.ceilingHit = true;
+					if (untimed > 0) {
+						const reason = `${untimed} of ${candidates.length} result(s) from "${name}" were excluded from the time window ${describeTimeWindow(window)}: they have neither metadata.publishedAt nor a source mtime, so their time cannot be judged.`;
+						skips.push({ method: name, surface: retrievalSurfaceFor(descriptor), reason });
+						diagnostics.push({
+							code: "time-window-untimed",
+							severity: "warning",
+							message: reason,
+							source: name,
+							reason,
+						});
+					}
 				} catch (error) {
 					if (error instanceof MinSyncRequiredError) throw error;
 					results.set(name, []);
@@ -259,6 +293,20 @@ export class ParallelRetriever {
 				}
 			}),
 		);
-		return { results, diagnostics, unsearched: groupUnsearchedSurfaces(skips) };
+		const windowReport: RetrievalWindowReport | undefined =
+			window === undefined || fetchDepth === undefined ? undefined : { ...window, ...report, fetchDepth };
+		if (windowReport?.ceilingHit === true) {
+			diagnostics.push({
+				code: "time-window-ceiling",
+				severity: "info",
+				message: `A method returned as many candidates as the over-fetch depth of ${fetchDepth}, so matches inside ${describeTimeWindow(window ?? {})} may rank below it and be unexamined; an empty or thin result is not proof that nothing exists in the range. Narrow the query or the window.`,
+			});
+		}
+		return {
+			results,
+			diagnostics,
+			unsearched: groupUnsearchedSurfaces(skips),
+			...(windowReport === undefined ? {} : { window: windowReport }),
+		};
 	}
 }

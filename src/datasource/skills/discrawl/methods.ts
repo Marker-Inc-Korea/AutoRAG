@@ -1,3 +1,4 @@
+import { publishedAtFrom } from "../../../retrieval/time-window.ts";
 import type {
 	RetrievalMethod,
 	RetrievalMethodDescriptor,
@@ -203,6 +204,7 @@ function toRetrievalResult(
 			...(hit.guildId !== undefined ? { guildId: hit.guildId } : {}),
 			...(hit.authorName !== undefined ? { authorName: hit.authorName } : {}),
 			...(hit.timestamp !== undefined ? { timestamp: hit.timestamp } : {}),
+			...publishedAtFrom(hit.timestamp),
 		},
 	};
 }

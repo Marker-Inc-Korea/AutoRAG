@@ -46,6 +46,8 @@ export type SearchDocumentDiagnosticCode =
 	| "cloud-fingerprint-failed"
 	| "pdf-extract-thin"
 	| "retrieval-method-failed"
+	| "time-window-untimed"
+	| "time-window-ceiling"
 	| "rerank-failed"
 	| "rerank-disabled"
 	| "jikji-unavailable"
@@ -139,6 +141,8 @@ export interface SearchDocumentRetrievalTraceResult {
 export interface SearchDocumentRetrievalTraceEntry {
 	readonly tool: string;
 	readonly query?: string;
+	/** The time window the model asked for, as ISO instants: `since` inclusive, `until` exclusive. */
+	readonly window?: { readonly since?: string; readonly until?: string };
 	readonly resultCount: number;
 	readonly results: readonly SearchDocumentRetrievalTraceResult[];
 }

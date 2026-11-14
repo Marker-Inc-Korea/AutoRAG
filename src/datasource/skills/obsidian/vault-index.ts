@@ -226,6 +226,8 @@ export class ObsidianVaultIndex {
 						file: relativePath,
 						title: basename(relativePath, extname(relativePath)),
 						path: note.sourcePath,
+						// The window's time for a note: when it was last modified, as recorded when it was staged.
+						sourceMtimeMs: Number(BigInt(note.mtimeNs) / 1_000_000n),
 					},
 				});
 				if (results.length >= topK) break;

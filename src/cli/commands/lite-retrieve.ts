@@ -1,7 +1,14 @@
 import type { AutoRAGRefreshResult } from "../../agent/agent.ts";
+import { windowNotice } from "../../agent/time-window-tool.ts";
 import { createAutoRAGLite } from "../../core.ts";
 import { isParsedRefreshComplete } from "../../mirror/paths.ts";
-import type { RetrievalDiagnostic, RetrievalResult, RetrievalUnsearchedSurface } from "../../retrieval/types.ts";
+import { parseTimeWindow, TimeWindowError } from "../../retrieval/time-window.ts";
+import type {
+	RetrievalDiagnostic,
+	RetrievalResult,
+	RetrievalUnsearchedSurface,
+	RetrievalWindowReport,
+} from "../../retrieval/types.ts";
 import { renderError } from "../output.ts";
 import type { CommandContext } from "./types.ts";
 
@@ -25,8 +32,25 @@ export interface LiteRetrieveEnvelope {
 	 * the workspace lock, leaving only datasource hits.
 	 */
 	readonly unsearched: readonly LiteRetrieveUnsearched[];
+	/**
+	 * Present only when `--since`/`--until` was given: what the window did to the candidates, so an empty `results`
+	 * can be told apart as "nothing in that range" (and whether the over-fetch ceiling was hit) from a failed search.
+	 */
+	readonly window?: LiteRetrieveWindow;
 
 	readonly diagnostics: readonly LiteRetrieveDiagnostic[];
+}
+
+export interface LiteRetrieveWindow {
+	/** ISO-8601 instant, inclusive. Absent for an open bound. */
+	readonly since?: string;
+	/** ISO-8601 instant, exclusive. Absent for an open bound. */
+	readonly until?: string;
+	readonly examined: number;
+	readonly matched: number;
+	readonly untimed: number;
+	readonly ceilingHit: boolean;
+	readonly fetchDepth: number;
 }
 
 export interface LiteRetrieveUnsearched {
@@ -91,6 +115,8 @@ interface RejectionEnvelope {
 interface LiteRetrieveOptions {
 	topK?: number;
 	scope?: string;
+	since?: number;
+	until?: number;
 }
 
 function parseIntOptional(value: string | boolean | undefined): number | undefined {
@@ -161,6 +187,18 @@ function diagnosticProjection(d: {
  * copied through untouched so the caller sees the failure the retrieval method
  * actually hit.
  */
+function windowProjection(report: RetrievalWindowReport): LiteRetrieveWindow {
+	return {
+		...(report.since === undefined ? {} : { since: new Date(report.since).toISOString() }),
+		...(report.until === undefined ? {} : { until: new Date(report.until).toISOString() }),
+		examined: report.examined,
+		matched: report.matched,
+		untimed: report.untimed,
+		ceilingHit: report.ceilingHit,
+		fetchDepth: report.fetchDepth,
+	};
+}
+
 function unsearchedProjection(entry: RetrievalUnsearchedSurface): LiteRetrieveUnsearched {
 	return { surface: entry.surface, methods: [...entry.methods], reason: entry.reason };
 }
@@ -190,6 +228,19 @@ function renderLiteRetrieveHuman(envelope: LiteRetrieveEnvelope | IndexNotReadyE
 	// Skipped surfaces are reported without --debug: the results below are partial.
 	for (const entry of okEnvelope.unsearched) {
 		lines.push(`warning: not searched: ${entry.surface} (${entry.methods.join(", ")}): ${entry.reason}`);
+	}
+	if (okEnvelope.window !== undefined) {
+		const { since, until, ...counts } = okEnvelope.window;
+		lines.push(
+			windowNotice(
+				{
+					...(since === undefined ? {} : { since: Date.parse(since) }),
+					...(until === undefined ? {} : { until: Date.parse(until) }),
+					...counts,
+				},
+				okEnvelope.results.length,
+			) ?? "",
+		);
 	}
 	if (okEnvelope.results.length === 0) {
 		lines.push("retrieve: no results");
@@ -276,10 +327,13 @@ export async function runLiteRetrieve(ctx: CommandContext): Promise<number> {
 	const query = ctx.positionals.join(" ").trim();
 	if (query.length === 0) {
 		ctx.stderr(
-			renderError(new Error("Usage: autorag lite retrieve <query> [--top-k N] [--scope SCOPE]"), {
-				json: ctx.json,
-				debug: ctx.debug,
-			}),
+			renderError(
+				new Error("Usage: autorag lite retrieve <query> [--top-k N] [--scope SCOPE] [--since ISO] [--until ISO]"),
+				{
+					json: ctx.json,
+					debug: ctx.debug,
+				},
+			),
 		);
 		return 2;
 	}
@@ -289,6 +343,33 @@ export async function runLiteRetrieve(ctx: CommandContext): Promise<number> {
 	if (topKResult.kind === "reject") {
 		const envelope: RejectionEnvelope = { ok: false, error: topKResult.error };
 		ctx.stderr(renderLiteRetrieveJson(envelope));
+		return 2;
+	}
+
+	// An invalid --since/--until is a usage error: its message is printed verbatim and nothing is searched.
+	let window: { readonly since?: number; readonly until?: number };
+	try {
+		window =
+			parseTimeWindow({
+				since: typeof ctx.flags.since === "string" ? ctx.flags.since : undefined,
+				until: typeof ctx.flags.until === "string" ? ctx.flags.until : undefined,
+			}) ?? {};
+	} catch (error) {
+		if (!(error instanceof TimeWindowError)) throw error;
+		ctx.stderr(renderError(error, { json: ctx.json, debug: ctx.debug }));
+		return 2;
+	}
+	if (
+		(ctx.flags.since === true || ctx.flags.until === true) &&
+		window.since === undefined &&
+		window.until === undefined
+	) {
+		ctx.stderr(
+			renderError(new Error("--since and --until need an ISO-8601 value, e.g. --since 2026-09-01."), {
+				json: ctx.json,
+				debug: ctx.debug,
+			}),
+		);
 		return 2;
 	}
 
@@ -367,11 +448,13 @@ export async function runLiteRetrieve(ctx: CommandContext): Promise<number> {
 		results: RetrievalResult[];
 		diagnostics: RetrievalDiagnostic[];
 		unsearched: RetrievalUnsearchedSurface[];
+		window?: RetrievalWindowReport;
 	};
 	try {
 		retrievalResult = await lite.retrieve(query, {
 			topK: topKResult.value ?? options.topK,
 			scope: options.scope,
+			...window,
 		});
 	} catch (error) {
 		ctx.stderr(renderError(error, { json: ctx.json, debug: ctx.debug }));
@@ -400,6 +483,7 @@ export async function runLiteRetrieve(ctx: CommandContext): Promise<number> {
 		stale: refreshStatus.stale,
 		results,
 		unsearched: retrievalResult.unsearched.map(unsearchedProjection),
+		...(retrievalResult.window === undefined ? {} : { window: windowProjection(retrievalResult.window) }),
 		diagnostics,
 	};
 

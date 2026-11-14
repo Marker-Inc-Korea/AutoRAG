@@ -1,3 +1,4 @@
+import { publishedAtFrom } from "../../../retrieval/time-window.ts";
 import type {
 	RetrievalMethod,
 	RetrievalMethodDescriptor,
@@ -87,6 +88,7 @@ export class WombatMethod implements RetrievalMethod {
 					endTurn: hit.endTurn,
 					startedAt: hit.startedAt,
 					endedAt: hit.endedAt,
+					...publishedAtFrom(hit.startedAt),
 				},
 			}))
 			.slice(0, topK);

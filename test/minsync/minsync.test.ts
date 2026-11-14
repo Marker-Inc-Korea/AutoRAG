@@ -34,6 +34,7 @@ import {
 } from "../../src/minsync/index.ts";
 import type { MinSyncEmbedderConfig } from "../../src/minsync/types.ts";
 import { MINSYNC_MIN_VERSION } from "../../src/minsync/version.ts";
+import type { ParsedMirrorEntry } from "../../src/mirror/index-store.ts";
 import { writePagesSidecar } from "../../src/mirror/pages-sidecar.ts";
 import { parsedOutputPath } from "../../src/mirror/paths.ts";
 import type { ParsedPages } from "../../src/parser/pages.ts";
@@ -1107,6 +1108,106 @@ console.log(JSON.stringify({ results: [{ path: ${JSON.stringify(parsedOutput)}, 
 				cwd: minSyncCwd(),
 			}),
 		);
+	});
+
+	describe("time window", () => {
+		const day = (month: number, d: number): number => Date.UTC(2026, month - 1, d);
+		const NS_PER_MS = 1_000_000;
+
+		/** Three documents dated across July, August and September, all matching the fake query. */
+		async function seedDatedCorpus(): Promise<void> {
+			const entries: Record<string, ParsedMirrorEntry> = {};
+			const hits: { path: string; score: number; text: string; doc_id: string }[] = [];
+			const dated = [
+				["jul", day(7, 10), 0.99],
+				["aug", day(8, 10), 0.8],
+				["sep", day(9, 10), 0.7],
+			] as const;
+			for (const [name, mtimeMs, score] of dated) {
+				const output = join(root, ".autorag", "parsed", "files", "docs", `${name}.txt.md`);
+				writeFileSync(join(source, `${name}.txt`), `raw ${name}\n`);
+				writeFileSync(output, `Parsed ${name} renewal notes.\n`);
+				entries[`/docs/${name}.txt`] = {
+					virtualPath: `/docs/${name}.txt`,
+					sourcePath: join(source, `${name}.txt`),
+					outputPath: output,
+					parserName: "plain-text",
+					sourceMtimeNs: mtimeMs * NS_PER_MS,
+					sourceSizeBytes: 10,
+					updatedAt: "2026-10-01T00:00:00.000Z",
+				};
+				hits.push({
+					path: `files/docs/${name}.txt.md`,
+					score,
+					text: `Parsed ${name} renewal notes.`,
+					doc_id: name,
+				});
+			}
+			await seedMinSyncStage(root, { version: 1, entries });
+			writeFakeMinSync(JSON.stringify({ results: hits }));
+		}
+
+		it.each(["sparse", "hybrid"] as const)(
+			"%s: reports each hit's source mtime and the window keeps only the requested month",
+			async (mode) => {
+				await seedDatedCorpus();
+				const method = new MinSyncVectorMethod({
+					binaryPath: minsyncBinary,
+					root,
+					workspacePath: minsyncWorkspace,
+					mode,
+				});
+
+				const all = await method.retrieve("renewal", { topK: 10 });
+				expect(all.map((r) => r.metadata.sourceMtimeMs)).toEqual([day(7, 10), day(8, 10), day(9, 10)]);
+
+				const engine = new RetrievalEngine();
+				engine.register(method);
+				const august = await engine.retrieve("renewal", { topK: 10, since: day(8, 1), until: day(9, 1) });
+				// The July document ranks first by score, and must not survive an August window.
+				expect(august.results.map((r) => r.metadata.virtualPath)).toEqual(["/docs/aug.txt"]);
+				expect(august.window).toMatchObject({ examined: 3, matched: 1, untimed: 0 });
+			},
+		);
+
+		it("asks MinSync for the over-fetched depth, not the caller's topK, when a window is set", async () => {
+			await seedDatedCorpus();
+			const method = new MinSyncVectorMethod({
+				binaryPath: minsyncBinary,
+				root,
+				workspacePath: minsyncWorkspace,
+				mode: "sparse",
+			});
+			const engine = new RetrievalEngine();
+			engine.register(method);
+
+			await engine.retrieve("renewal", { topK: 2, since: day(8, 1), until: day(9, 1) });
+
+			const queries = loggedCalls()
+				.map((line) => JSON.parse(line) as { args: string[] })
+				.filter((c) => c.args[0] === "query");
+			expect(queries[0]?.args).toContain("22");
+		});
+
+		it("window and scope compose: a window never surfaces a result scope excludes", async () => {
+			await seedDatedCorpus();
+			const method = new MinSyncVectorMethod({
+				binaryPath: minsyncBinary,
+				root,
+				workspacePath: minsyncWorkspace,
+				mode: "sparse",
+			});
+			const engine = new RetrievalEngine();
+			engine.register(method);
+
+			const { results } = await engine.retrieve("renewal", {
+				topK: 10,
+				scope: "/docs/sep.txt",
+				since: day(8, 1),
+			});
+
+			expect(results.map((r) => r.metadata.virtualPath)).toEqual(["/docs/sep.txt"]);
+		});
 	});
 
 	it("never auto-installs during retrieval; a missing binary fails with MinSyncRequiredError", async () => {

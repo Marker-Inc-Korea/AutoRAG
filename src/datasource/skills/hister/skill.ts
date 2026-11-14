@@ -296,7 +296,9 @@ export class HisterSkill implements DatasourceSkill {
 				url: hit.url,
 				domain: hit.domain,
 				title: hit.title,
-				...(hit.updatedAt === undefined ? {} : { visitedAt: new Date(hit.updatedAt).toISOString() }),
+				...(hit.updatedAt === undefined
+					? {}
+					: { visitedAt: new Date(hit.updatedAt).toISOString(), publishedAt: hit.updatedAt }),
 				...(hit.addedAt === undefined ? {} : { firstVisitedAt: new Date(hit.addedAt).toISOString() }),
 				...(hit.language === undefined ? {} : { language: hit.language }),
 			},

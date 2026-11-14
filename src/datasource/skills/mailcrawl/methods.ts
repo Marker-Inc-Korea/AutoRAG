@@ -1,3 +1,4 @@
+import { publishedAtFrom } from "../../../retrieval/time-window.ts";
 import type {
 	RetrievalMethod,
 	RetrievalMethodDescriptor,
@@ -81,6 +82,7 @@ export class MailcrawlMethod implements RetrievalMethod {
 						from: hit.from,
 						to: hit.to,
 						date: hit.date,
+						...publishedAtFrom(hit.date),
 					},
 				};
 			})

@@ -15,11 +15,15 @@ import { renameWithRetry } from "../mirror/atomic-write.ts";
 import { loadMirrorIndex } from "../mirror/index-store.ts";
 import { minSyncDocumentPath, minSyncWorkspaceRoot } from "./paths.ts";
 
+const NS_PER_MS = 1_000_000;
+
 export interface MinSyncWorkspaceEntry {
 	readonly virtualPath: string;
 	readonly sourcePath: string;
 	readonly parsedOutputPath: string;
 	readonly minSyncPath: string;
+	/** The source file's last-modified time (epoch ms) as the mirror index recorded it; not when it was authored. */
+	readonly sourceMtimeMs: number;
 }
 
 export interface MinSyncWorkspaceSyncResult {
@@ -63,6 +67,7 @@ export function syncMinSyncWorkspace(
 				sourcePath: entry.sourcePath,
 				parsedOutputPath: entry.outputPath,
 				minSyncPath,
+				sourceMtimeMs: Math.floor(entry.sourceMtimeNs / NS_PER_MS),
 			};
 		});
 	const previousState = loadStagingState(workspacePath);
@@ -200,6 +205,7 @@ export function buildMinSyncPathMap(
 			sourcePath: entry.sourcePath,
 			parsedOutputPath: entry.outputPath,
 			minSyncPath,
+			sourceMtimeMs: Math.floor(entry.sourceMtimeNs / NS_PER_MS),
 		};
 		byPath.set(entry.outputPath, mapped);
 		byPath.set(minSyncPath, mapped);
