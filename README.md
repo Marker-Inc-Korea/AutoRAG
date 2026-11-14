@@ -115,6 +115,14 @@ re-indexing that runs even while the app is closed · an *Ask* entry in the
 Finder and Explorer right-click menu · light and dark mode · Korean, English,
 Japanese, and Simplified Chinese.
 
+### Every place, one search
+
+<p align="center">
+  <img src="assets/autorag-agent-datasources.png" alt="Supported sources: KakaoTalk, Slack, Discord, Telegram, WhatsApp, Mail, Notion, GitHub, Obsidian, browser history, RSS" width="100%" />
+</p>
+
+Plus local documents, GitHub Gists, coding-agent sessions, and photos. Data stays in each tool's own store. [Full list and setup](docs/datasource-skills.md).
+
 ### Private by design
 
 - **Embedded on your machine.** Semantic indexing runs on MinSync's local
@@ -171,19 +179,6 @@ The app is one way in. The same librarian runs everywhere else:
 | **MCP server** | Feeding retrieval to Claude Code, Codex, and other agents | [AutoRAG Lite MCP Server](docs/mcp.md) |
 | **TypeScript API** | Embedding the librarian in your own app | [Programmatic usage](docs/api.md) |
 | **Agent skills** | Letting a coding agent install and drive AutoRAG | [For AI Agents](docs/agent-setup.md) |
-
-## What an answer looks like
-
-Not a list of paths: a short answer, each claim numbered and linked to its source.
-
-```text
-You ask:  "What changes were made to the cloud infrastructure contract in Q3?"
-
-AutoRAG Agent:
-[1] Enterprise Compute Discount — AWS annual discount tier increased to 28% based on commitment volume. (contracts/cloud-2026.pdf:p.4)
-[2] Regional Data Residency — Explicit compliance clause pinning customer data storage to the Seoul AWS region. (/slack/legal-ops/chunks/318)
-[3] SLA Guarantee — Guaranteed uptime threshold adjusted to 99.95% with penalty credits starting at 15 minutes downtime. (contracts/sla-addendum.md:lines 45-62)
-```
 
 ## More
 
