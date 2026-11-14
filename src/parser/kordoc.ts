@@ -3,6 +3,7 @@ import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { parse as kordocParse } from "kordoc";
 import { ParseError } from "./errors.ts";
+import { alignPages, type PageMode } from "./pages.ts";
 import { type ParseDiagnostic, type ParseInput, type ParseOutput, Parser } from "./types.ts";
 
 /**
@@ -45,10 +46,19 @@ export interface KordocWarning {
 	readonly message: string;
 }
 
+/** One page of kordoc's per-page markdown (`ParseSuccess.pages`); `pageNumber` is 1-based. */
+export interface KordocPageMarkdown {
+	readonly pageNumber: number;
+	readonly markdown: string;
+}
+
 export interface KordocParseSuccess {
 	readonly success: true;
 	readonly fileType?: string;
 	readonly markdown: string;
+	/** Per-page markdown. Can hold fewer entries than `metadata.pageCount`; absent for formats without pages. */
+	readonly pages?: readonly KordocPageMarkdown[];
+	readonly metadata?: { readonly pageCount?: number; readonly pageMode?: string };
 	readonly blocks?: readonly unknown[];
 	readonly warnings?: readonly KordocWarning[];
 }
@@ -107,6 +117,8 @@ const defaultParse: KordocParseFn = async (bytes, options) => {
 			fileType: result.fileType,
 			markdown: result.markdown,
 			warnings: result.warnings,
+			...(result.pages === undefined ? {} : { pages: result.pages }),
+			metadata: { pageCount: result.metadata?.pageCount, pageMode: result.metadata?.pageMode },
 		};
 	}
 	return { success: false, fileType: result.fileType, error: result.error, code: result.code };
@@ -121,7 +133,11 @@ const defaultParse: KordocParseFn = async (bytes, options) => {
  */
 export class KordocParser extends Parser {
 	readonly name = "kordoc";
-	readonly version = KORDOC_VERSION;
+	/**
+	 * The kordoc release plus the revision of AutoRAG's own output. `pages1`: the output carries the page
+	 * index, so mirrors parsed before it re-parse and gain pages.
+	 */
+	readonly version = `${KORDOC_VERSION}+pages1`;
 	readonly extensions: readonly string[];
 
 	readonly #parse: KordocParseFn;
@@ -157,10 +173,30 @@ export class KordocParser extends Parser {
 			message: warning.code ? `${warning.code}: ${warning.message}` : warning.message,
 		}));
 
+		const pages = kordocPages(result);
 		return {
 			markdown: result.markdown,
 			metadata: { parser: this.name, format: result.fileType ?? "unknown" },
+			...(pages === undefined ? {} : { pages }),
 			...(diagnostics.length > 0 ? { diagnostics } : {}),
 		};
 	}
+}
+
+const PAGE_MODES: ReadonlySet<string> = new Set<PageMode>(["layout", "section"]);
+
+/**
+ * The page index of a kordoc result, placed against the text the mirror stores (NFC, as the mirror writes
+ * it). Only a result that states its `pageMode` has one: without it nothing says how far the page
+ * boundaries can be trusted, so no page is reported.
+ */
+function kordocPages(result: KordocParseSuccess): ParseOutput["pages"] {
+	const mode = result.metadata?.pageMode;
+	if (result.pages === undefined || mode === undefined || !PAGE_MODES.has(mode)) return undefined;
+	return alignPages(
+		result.markdown.normalize("NFC"),
+		result.pages.map((page) => ({ page: page.pageNumber, markdown: page.markdown.normalize("NFC") })),
+		mode as PageMode,
+		result.metadata?.pageCount,
+	);
 }

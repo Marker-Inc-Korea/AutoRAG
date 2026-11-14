@@ -79,6 +79,7 @@ export type SearchDocumentDiagnosticCode =
 	| "web-search-failed"
 	| "citation-without-result"
 	| "line-reference-unverified"
+	| "page-reference-unverified"
 	| "citation-irrelevant"
 	| "citation-relevance-fallback"
 	| "evidence-judged"
@@ -105,6 +106,10 @@ export interface SearchDocumentEvidence {
 	readonly lineNumber?: number;
 	/** Last line of the chunk in its parsed document. */
 	readonly lineEnd?: number;
+	/** First page of the chunk, measured by the parser; absent when the document has no real pages. */
+	readonly pageStart?: number;
+	/** Last page of the chunk. */
+	readonly pageEnd?: number;
 	/** Article or heading the chunk sits in. */
 	readonly section?: string;
 }
@@ -238,6 +243,8 @@ function toSearchResults(
 			excerpt: evidence.excerpt,
 			...(evidence.lineNumber !== undefined ? { lineNumber: evidence.lineNumber } : {}),
 			...(evidence.lineEnd !== undefined ? { lineEnd: evidence.lineEnd } : {}),
+			...(evidence.pageStart !== undefined ? { pageStart: evidence.pageStart } : {}),
+			...(evidence.pageEnd !== undefined ? { pageEnd: evidence.pageEnd } : {}),
 			...(evidence.section !== undefined ? { section: evidence.section } : {}),
 		})),
 		...(result.confidence !== undefined ? { confidence: confidenceFrom(result.confidence) } : {}),
@@ -309,6 +316,8 @@ export function normalizeEntryEvidenceRefs(entry: AutoRAGMappingEntry): SessionE
 			...(ref.documentArea !== undefined ? { documentArea: ref.documentArea } : {}),
 			...(ref.evidenceType !== undefined ? { evidenceType: ref.evidenceType } : {}),
 			...(ref.lineEnd !== undefined ? { lineEnd: ref.lineEnd } : {}),
+			...(ref.pageStart !== undefined ? { pageStart: ref.pageStart } : {}),
+			...(ref.pageEnd !== undefined ? { pageEnd: ref.pageEnd } : {}),
 			...(ref.section !== undefined ? { section: ref.section } : {}),
 			...(ref.confidence !== undefined ? { confidence: ref.confidence } : {}),
 		});

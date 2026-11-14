@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { ParsedPages } from "../../src/parser/pages.ts";
 import { describeLocation, locateChunk, locationSuffix } from "../../src/retrieval/chunk-location.ts";
 
 const STATUTE = [
@@ -82,5 +83,81 @@ describe("locationSuffix", () => {
 		);
 		expect(locationSuffix({ method: "bm25" })).toBe("");
 		expect(locationSuffix({ lineNumber: "7", section: "" })).toBe("");
+	});
+});
+
+const PAGED_DOC = ["alpha one", "alpha two", "", "bravo one", "bravo two", "", "charlie one", "", "delta one", ""].join(
+	"\n",
+);
+const LAYOUT: ParsedPages = {
+	mode: "layout",
+	pageCount: 4,
+	spans: [
+		{ page: 1, lineStart: 1, lineEnd: 2 },
+		{ page: 2, lineStart: 4, lineEnd: 5 },
+		{ page: 4, lineStart: 9, lineEnd: 9 },
+	],
+};
+
+describe("locateChunk pages", () => {
+	it("reports the page a chunk sits on, next to its line range", () => {
+		expect(locateChunk(PAGED_DOC, "bravo one", LAYOUT)).toEqual({
+			lineStart: 4,
+			lineEnd: 4,
+			pageStart: 2,
+			pageEnd: 2,
+		});
+	});
+
+	it("reports both pages for a chunk that spans a page break", () => {
+		expect(locateChunk(PAGED_DOC, "alpha two\nbravo one", LAYOUT)).toMatchObject({
+			lineStart: 2,
+			lineEnd: 4,
+			pageStart: 1,
+			pageEnd: 2,
+		});
+	});
+
+	it("keeps the real page number when an earlier page is missing from kordoc's pages", () => {
+		expect(locateChunk(PAGED_DOC, "delta one", LAYOUT)).toMatchObject({ pageStart: 4, pageEnd: 4 });
+	});
+
+	it("reports no page for a chunk on a line no placed page covers (the continued-table page)", () => {
+		const location = locateChunk(PAGED_DOC, "charlie one", LAYOUT);
+		expect(location).toEqual({ lineStart: 7, lineEnd: 7 });
+	});
+
+	it("reports no page when only one end of the chunk lands on a placed page", () => {
+		const location = locateChunk(PAGED_DOC, "bravo two\ncharlie one", LAYOUT);
+		expect(location).toEqual({ lineStart: 5, lineEnd: 7 });
+	});
+
+	it("never reports an exact page for section-mode pages", () => {
+		expect(locateChunk(PAGED_DOC, "bravo one", { ...LAYOUT, mode: "section" })).toEqual({ lineStart: 4, lineEnd: 4 });
+	});
+
+	it("reports no page, and no line, for a chunk that matches in more than one place", () => {
+		expect(
+			locateChunk("same\n\nsame\n", "same", { mode: "layout", spans: [{ page: 1, lineStart: 1, lineEnd: 3 }] }),
+		).toBeUndefined();
+	});
+
+	it("leaves a document without pages exactly as before", () => {
+		expect(locateChunk(PAGED_DOC, "bravo one")).toEqual({ lineStart: 4, lineEnd: 4 });
+	});
+});
+
+describe("page rendering", () => {
+	it("renders one page, a page range, and the page after the lines", () => {
+		expect(describeLocation({ lineStart: 4, lineEnd: 5, pageStart: 2, pageEnd: 2, section: "S" })).toBe(
+			'lines 4-5, page 2, section "S"',
+		);
+		expect(describeLocation({ lineStart: 2, lineEnd: 4, pageStart: 1, pageEnd: 2 })).toBe("lines 2-4, pages 1-2");
+		expect(describeLocation({ pageStart: 3 })).toBe("page 3");
+	});
+
+	it("annotates a retrieval result with the measured page", () => {
+		expect(locationSuffix({ lineNumber: 4, lineEnd: 5, pageStart: 2, pageEnd: 3 })).toBe(" (lines 4-5, pages 2-3)");
+		expect(locationSuffix({ pageStart: "2" })).toBe("");
 	});
 });

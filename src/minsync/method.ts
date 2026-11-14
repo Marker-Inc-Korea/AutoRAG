@@ -1,5 +1,7 @@
 import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { basename, join, normalize } from "node:path";
+import { readPagesSidecar } from "../mirror/pages-sidecar.ts";
+import type { ParsedPages } from "../parser/pages.ts";
 import { abortReason } from "../process/abort-reason.ts";
 import { type ChunkLocation, locateChunk } from "../retrieval/chunk-location.ts";
 import { OVERFETCH_ABSOLUTE_CAP, type RecordCut } from "../retrieval/record-cut.ts";
@@ -171,7 +173,7 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 			});
 		}
 		const results: RetrievalResult[] = [];
-		const mirrorTexts = new Map<string, string | undefined>();
+		const mirrorTexts = new Map<string, MirrorDocument | undefined>();
 		for (const hit of hits) {
 			const entry = byPath.get(hit.path);
 			if (!entry || !matchesVirtualPathScope(entry.virtualPath, options.scope)) continue;
@@ -181,7 +183,11 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 			// merger would treat them as the same evidence.
 			const chunkDiscriminator = hit.docId ?? basename(hit.path);
 			const chunkId = `minsync:${entry.virtualPath}:${chunkDiscriminator}`;
-			const location = locateChunkInMirror(mirrorTexts, entry, hit.text);
+			const location = locateChunkInMirror(
+				mirrorTexts,
+				entry,
+				withoutHeading(hit.text, hit.headingPath ?? hit.path),
+			);
 			results.push({
 				id: chunkId,
 				content: hit.text,
@@ -196,6 +202,9 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 						? {
 								lineNumber: location.lineStart,
 								lineEnd: location.lineEnd,
+								...(location.pageStart !== undefined && location.pageEnd !== undefined
+									? { pageStart: location.pageStart, pageEnd: location.pageEnd }
+									: {}),
 								...(location.section !== undefined ? { section: location.section } : {}),
 							}
 						: {}),
@@ -251,31 +260,51 @@ export class MinSyncHybridMethod extends MinSyncVectorMethod {
 	}
 }
 
+/**
+ * MinSync starts a chunk's `text` with its `heading_path` line (the document's workspace-relative path,
+ * truncated). That line is not part of the document, so a lookup that includes it never matches. Only a first
+ * line equal to the hit's own heading is dropped; the result's `content` stays exactly as MinSync returned it.
+ */
+function withoutHeading(text: string, heading: string): string {
+	return text.startsWith(`${heading}\n`) ? text.slice(heading.length + 1) : text;
+}
+
 /** Parsed mirrors bigger than this are not searched for a chunk's line range. */
 const MAX_MIRROR_BYTES = 16 * 1024 * 1024;
+
+interface MirrorDocument {
+	readonly text: string;
+	/** Page index measured on exactly `text`; absent for a document without pages. */
+	readonly pages: ParsedPages | undefined;
+}
 
 /**
  * Where `chunk` sits in the parsed markdown MinSync indexed for `entry`. The
  * staged copy is what MinSync chunked; the parsed mirror is the same text and is
  * the fallback before the first sync. Undefined when the document cannot be read
  * or the chunk is not found in exactly one place, so a line is never guessed.
+ * The page comes from the parser's page index for the parsed mirror, kept only
+ * while it was measured on this very text.
  */
 function locateChunkInMirror(
-	cache: Map<string, string | undefined>,
+	cache: Map<string, MirrorDocument | undefined>,
 	entry: { readonly minSyncPath: string; readonly parsedOutputPath: string },
 	chunk: string,
 ): ChunkLocation | undefined {
-	let text: string | undefined;
 	const path = existsSync(entry.minSyncPath) ? entry.minSyncPath : entry.parsedOutputPath;
+	let document: MirrorDocument | undefined;
 	if (cache.has(path)) {
-		text = cache.get(path);
+		document = cache.get(path);
 	} else {
 		try {
-			text = statSync(path).size <= MAX_MIRROR_BYTES ? readFileSync(path, "utf8") : undefined;
+			if (statSync(path).size <= MAX_MIRROR_BYTES) {
+				const text = readFileSync(path, "utf8");
+				document = { text, pages: readPagesSidecar(entry.parsedOutputPath, text) };
+			}
 		} catch {
-			text = undefined;
+			document = undefined;
 		}
-		cache.set(path, text);
+		cache.set(path, document);
 	}
-	return text === undefined ? undefined : locateChunk(text, chunk);
+	return document === undefined ? undefined : locateChunk(document.text, chunk, document.pages);
 }
