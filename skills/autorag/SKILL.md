@@ -153,20 +153,27 @@ autorag evidence <sessionId> --result 1 --json
 
 The response includes the original source, retrieval method, stable evidence
 ID, raw excerpt/content, and any available `chunkIndex`, `lineNumber` and
-`lineEnd` (the chunk's line range in the parsed document), `section` (the
-article or heading it sits in), `retrievalResultId`, and metadata. Omit `--result` to inspect every result in
+`lineEnd` (the chunk's line range in the parsed document), `pageStart` and
+`pageEnd` (its 1-based page range, only for PDF, HWP/HWPX and PPTX with real
+page boundaries), `section` (the article or heading it sits in), `retrievalResultId`, and metadata. Omit `--result` to inspect every result in
 the session. Prefer this command whenever the caller wants detailed chunk text
 rather than only the curated summary.
 
 - `--scope` narrows datasource retrieval to a requested sub-path (ordinary
   per-query filtering).
 - `--json` is required for programmatic consumption.
-- Each search result carries `locations` (`lineStart`, `lineEnd`, `section`)
+- Each search result carries `locations` (`lineStart`, `lineEnd`, `pageStart`, `pageEnd`, `section`)
   when the harness measured where its evidence sits in the parsed document. Quote
   those, not line numbers or counts written in the answer prose; a
   `line-reference-unverified` diagnostic (with `--debug`) flags prose line
-  numbers no cited evidence covers. Locations are absent for chunks the chunker
-  rewrote (such as flattened tables).
+  numbers no cited evidence covers, and a `page-reference-unverified` diagnostic
+  does the same for pages. Locations are absent for chunks the chunker
+  rewrote (such as flattened tables). A page is reported only when the parser
+  measured real page boundaries (`pageMode` `layout`) and both ends of the chunk
+  land on a placed page: files whose pages are a section-level approximation,
+  formats without pages (DOCX, text, spreadsheets), and chunks on a page kordoc
+  left empty (a table continued across pages) carry no page. Existing indexes
+  gain pages when the next refresh re-parses their paged documents.
 - `--debug` is required for `sessionId` and diagnostics in search output.
 - `autorag evidence` is the detailed source/chunk inspection path.
 

@@ -1,3 +1,4 @@
+import { publishedAtFrom } from "../../../retrieval/time-window.ts";
 import type {
 	RetrievalMethod,
 	RetrievalMethodDescriptor,
@@ -203,6 +204,7 @@ export class LarkSkill implements DatasourceSkill {
 					datasourceId: this.datasourceId,
 					instanceId: this.instanceId,
 					surface,
+					...publishedAtFrom(hit.metadata?.observedAt),
 				},
 			});
 		}

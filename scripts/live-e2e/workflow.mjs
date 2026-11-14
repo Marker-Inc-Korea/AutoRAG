@@ -68,6 +68,22 @@ export function assertLiteRetrieveHealthy(envelope, expectedSource) {
 }
 
 /**
+ * A time-windowed `autorag lite retrieve --json` run (#1958): without the window `excludedSource` must rank first
+ * (otherwise excluding it proves nothing); with it, `excludedSource` is gone, `keptSource` remains, and the envelope
+ * carries the `window` report that says what the window did.
+ */
+export function assertLiteRetrieveWindowExcludes(unwindowed, windowed, excludedSource, keptSource) {
+	if (unwindowed.ok !== true || windowed.ok !== true) throw new Error("lite-retrieve-not-ok");
+	if (unwindowed.results[0]?.source !== excludedSource) throw new Error("lite-retrieve-window-excluded-not-first");
+	if (windowed.window === undefined || typeof windowed.window.examined !== "number") {
+		throw new Error("lite-retrieve-window-report-missing");
+	}
+	if (windowed.results.some((result) => result.source === excludedSource)) throw new Error("lite-retrieve-window-leaked");
+	if (!windowed.results.some((result) => result.source === keptSource)) throw new Error("lite-retrieve-window-kept-missing");
+	return true;
+}
+
+/**
  * A degraded run: local MinSync could not answer, so the envelope still returns
  * (`ok: true`) but names the skipped surface and carries the real error text
  * behind it. An empty or placeholder reason is a failure: the operator has to be

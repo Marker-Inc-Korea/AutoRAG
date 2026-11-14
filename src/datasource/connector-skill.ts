@@ -19,6 +19,7 @@
  *    privacy is the operator's responsibility (use a local LLM).
  */
 
+import { windowFromOptions } from "../retrieval/time-window.ts";
 import type {
 	RetrievalMethod,
 	RetrievalMethodDescriptor,
@@ -373,7 +374,7 @@ export class ConnectorLexicalMethod implements RetrievalMethod {
 		const topK = options.topK ?? DEFAULT_TOP_K;
 		// A store failure is surfaced, not swallowed: the retrieval pipeline reports
 		// this datasource as unsearched and quotes the error.
-		const hits = this.options.store.search(trimmed, Math.max(topK * 3, topK));
+		const hits = this.options.store.search(trimmed, Math.max(topK * 3, topK), windowFromOptions(options));
 		const { skillName, instanceId } = this.options;
 		const mapped: RetrievalResult[] = [];
 		for (const { chunk, score } of hits) {
