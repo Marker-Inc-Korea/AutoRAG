@@ -20,6 +20,10 @@ export interface EvidenceContext {
 	readonly evidenceType?: string;
 	/** Last line of the chunk in its parsed document; the first line is the ref's `lineNumber`. */
 	readonly lineEnd?: number;
+	/** First page of the chunk, measured by the parser; always set together with `pageEnd`. */
+	readonly pageStart?: number;
+	/** Last page of the chunk. */
+	readonly pageEnd?: number;
 	/** Article or heading the chunk sits in. */
 	readonly section?: string;
 	readonly confidence?: number;
@@ -266,6 +270,10 @@ function normalizeContextLabel(value: string | undefined, maxLength = MAX_CONTEX
 	return normalized;
 }
 
+function validPage(value: number | undefined): number | undefined {
+	return value !== undefined && Number.isInteger(value) && value > 0 ? value : undefined;
+}
+
 function normalizeEvidenceContext(context: EvidenceContext): EvidenceContext {
 	const retrieverMix = Array.from(
 		new Set(
@@ -283,6 +291,9 @@ function normalizeEvidenceContext(context: EvidenceContext): EvidenceContext {
 		context.lineEnd !== undefined && Number.isInteger(context.lineEnd) && context.lineEnd > 0
 			? context.lineEnd
 			: undefined;
+	const pageStart = validPage(context.pageStart);
+	const pageEnd = validPage(context.pageEnd);
+	const pages = pageStart !== undefined && pageEnd !== undefined && pageEnd >= pageStart;
 	const confidence =
 		context.confidence !== undefined && Number.isFinite(context.confidence)
 			? Math.max(0, Math.min(1, context.confidence))
@@ -294,6 +305,7 @@ function normalizeEvidenceContext(context: EvidenceContext): EvidenceContext {
 		...(documentArea !== undefined ? { documentArea } : {}),
 		...(evidenceType !== undefined ? { evidenceType } : {}),
 		...(lineEnd !== undefined ? { lineEnd } : {}),
+		...(pages ? { pageStart, pageEnd } : {}),
 		...(section !== undefined ? { section } : {}),
 		...(confidence !== undefined ? { confidence } : {}),
 	};
@@ -307,6 +319,8 @@ function normalizeEvidenceChunkRecord(record: EvidenceChunkRecord): EvidenceChun
 		documentArea: _documentArea,
 		evidenceType: _evidenceType,
 		lineEnd: _lineEnd,
+		pageStart: _pageStart,
+		pageEnd: _pageEnd,
 		section: _section,
 		confidence: _confidence,
 		// Memory files written before #1692 carry this removed free-text field; drop it on load.
@@ -750,6 +764,8 @@ export function normalizeSessionEvidenceRef(
 		documentArea: _documentArea,
 		evidenceType: _evidenceType,
 		lineEnd: _lineEnd,
+		pageStart: _pageStart,
+		pageEnd: _pageEnd,
 		section: _section,
 		confidence: _confidence,
 		...base

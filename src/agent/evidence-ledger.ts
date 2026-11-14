@@ -17,6 +17,8 @@ export interface LedgerEvidenceInput {
 	readonly chunkIndex?: number;
 	readonly lineNumber?: number;
 	readonly lineEnd?: number;
+	readonly pageStart?: number;
+	readonly pageEnd?: number;
 	readonly section?: string;
 	readonly parserType?: string;
 	readonly documentType?: string;
@@ -39,6 +41,8 @@ const ledgerEntrySchema = Type.Object({
 	chunkIndex: Type.Optional(Type.Number()),
 	lineNumber: Type.Optional(Type.Number()),
 	lineEnd: Type.Optional(Type.Number()),
+	pageStart: Type.Optional(Type.Number()),
+	pageEnd: Type.Optional(Type.Number()),
 	section: Type.Optional(Type.String()),
 	parserType: Type.Optional(Type.String()),
 	documentType: Type.Optional(Type.String()),
@@ -118,6 +122,8 @@ function toEvidenceRef(entry: LedgerEntry): AutoRAGEvidenceRef {
 		...(entry.chunkIndex !== undefined ? { chunkIndex: entry.chunkIndex } : {}),
 		...(entry.lineNumber !== undefined ? { lineNumber: entry.lineNumber } : {}),
 		...(entry.lineEnd !== undefined ? { lineEnd: entry.lineEnd } : {}),
+		...(entry.pageStart !== undefined ? { pageStart: entry.pageStart } : {}),
+		...(entry.pageEnd !== undefined ? { pageEnd: entry.pageEnd } : {}),
 		...(entry.section !== undefined ? { section: entry.section } : {}),
 		...(entry.parserType !== undefined ? { parserType: entry.parserType } : {}),
 		...(entry.documentType !== undefined ? { documentType: entry.documentType } : {}),
@@ -212,6 +218,8 @@ export class EvidenceLedger {
 		const chunkIndex = metadataNumber(metadata, "chunkIndex");
 		const lineNumber = metadataNumber(metadata, "lineNumber");
 		const lineEnd = metadataNumber(metadata, "lineEnd");
+		const pageStart = metadataNumber(metadata, "pageStart");
+		const pageEnd = metadataNumber(metadata, "pageEnd");
 		const section = metadataString(metadata, "section");
 		const parserType = metadataString(metadata, "parserType");
 		const documentType = metadataString(metadata, "documentType");
@@ -225,6 +233,7 @@ export class EvidenceLedger {
 			...(chunkIndex !== undefined ? { chunkIndex } : {}),
 			...(lineNumber !== undefined ? { lineNumber } : {}),
 			...(lineEnd !== undefined ? { lineEnd } : {}),
+			...(pageStart !== undefined && pageEnd !== undefined ? { pageStart, pageEnd } : {}),
 			...(section !== undefined ? { section } : {}),
 			...(parserType !== undefined ? { parserType } : {}),
 			...(documentType !== undefined ? { documentType } : {}),

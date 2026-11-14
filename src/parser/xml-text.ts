@@ -13,15 +13,26 @@ const MAX_XML_FILES = 64;
 const MAX_XML_BYTES = 5_000_000;
 const MAX_TEXT_CHUNKS = 20_000;
 
-export async function readZipXmlText(bytes: Uint8Array, pathPattern: RegExp): Promise<string[]> {
+export interface ZipXmlReadOptions {
+	/** Matching entries allowed before the archive is rejected. Default {@link MAX_XML_FILES}. */
+	readonly maxFiles?: number;
+}
+
+/** The XML of every archive entry whose name matches, in natural name order, under the archive budgets. */
+export async function readZipXmlFiles(
+	bytes: Uint8Array,
+	pathPattern: RegExp,
+	options: ZipXmlReadOptions = {},
+): Promise<{ readonly name: string; readonly xml: string }[]> {
+	const maxFiles = options.maxFiles ?? MAX_XML_FILES;
 	const zip = await JSZip.loadAsync(bytes);
 	const files = Object.values(zip.files)
 		.filter((file) => !file.dir && pathPattern.test(file.name))
 		.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-	if (files.length > MAX_XML_FILES) {
-		throw new Error(`archive XML file count exceeds limit of ${MAX_XML_FILES}`);
+	if (files.length > maxFiles) {
+		throw new Error(`archive XML file count exceeds limit of ${maxFiles}`);
 	}
-	const chunks: string[] = [];
+	const parts: { name: string; xml: string }[] = [];
 	let totalXmlBytes = 0;
 	for (const file of files) {
 		const declaredSize = uncompressedSize(file);
@@ -33,12 +44,31 @@ export async function readZipXmlText(bytes: Uint8Array, pathPattern: RegExp): Pr
 		if (totalXmlBytes > MAX_XML_BYTES) {
 			throw new Error(`archive XML content exceeds limit of ${MAX_XML_BYTES} bytes`);
 		}
-		chunks.push(...extractTextFromXml(xml));
-		if (chunks.length > MAX_TEXT_CHUNKS) {
+		parts.push({ name: file.name, xml });
+	}
+	return parts;
+}
+
+/** The text chunks of every matching entry, each entry's chunks kept together under its name. */
+export async function readZipXmlTextParts(
+	bytes: Uint8Array,
+	pathPattern: RegExp,
+): Promise<{ readonly name: string; readonly chunks: string[] }[]> {
+	const parts: { name: string; chunks: string[] }[] = [];
+	let total = 0;
+	for (const part of await readZipXmlFiles(bytes, pathPattern)) {
+		const chunks = extractTextFromXml(part.xml);
+		total += chunks.length;
+		if (total > MAX_TEXT_CHUNKS) {
 			throw new Error(`archive text chunk count exceeds limit of ${MAX_TEXT_CHUNKS}`);
 		}
+		parts.push({ name: part.name, chunks });
 	}
-	return chunks;
+	return parts;
+}
+
+export async function readZipXmlText(bytes: Uint8Array, pathPattern: RegExp): Promise<string[]> {
+	return (await readZipXmlTextParts(bytes, pathPattern)).flatMap((part) => part.chunks);
 }
 
 async function readXmlFile(file: JSZip.JSZipObject, remainingBytes: number): Promise<string> {

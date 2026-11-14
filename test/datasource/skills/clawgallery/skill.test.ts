@@ -7,6 +7,7 @@ import type {
 	ClawGallerySearchResult,
 	ClawGalleryVdrResult,
 } from "../../../../src/datasource/skills/clawgallery/types.ts";
+import { RetrievalEngine } from "../../../../src/retrieval/engine.ts";
 
 class StubClient implements ClawGallerySkillClient {
 	async bootstrap(): Promise<ClawGalleryIndexResult> {
@@ -60,6 +61,23 @@ describe("ClawGallerySkill", () => {
 
 		expect(modes).toEqual(["hybrid", "keyword"]);
 		expect(results?.[0]?.metadata).toMatchObject({ fallbackFrom: "clawgallery-hybrid" });
+	});
+
+	it("has no time for its results, so a window excludes them and reports the method instead of passing them through (#1958)", async () => {
+		const skill = new ClawGallerySkill({ client: new StubClient(), instanceId: "personal" });
+		const engine = new RetrievalEngine();
+		for (const method of skill.retrievalMethods()) engine.register(method);
+
+		const { results, unsearched, window } = await engine.retrieve("login", { since: Date.UTC(2026, 8, 1) });
+
+		expect(results).toEqual([]);
+		expect(window).toMatchObject({ examined: 1, matched: 0, untimed: 1 });
+		expect(unsearched).toEqual([
+			expect.objectContaining({
+				surface: "clawgallery",
+				reason: expect.stringContaining("neither metadata.publishedAt nor a source mtime"),
+			}),
+		]);
 	});
 
 	it("does not search keyword when hybrid succeeds", async () => {

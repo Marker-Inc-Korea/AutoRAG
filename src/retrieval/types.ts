@@ -31,7 +31,13 @@ export interface RetrievalFallbackEvent {
 export interface RetrievalOptions {
 	topK?: number;
 	scope?: string;
-	filters?: Record<string, unknown>;
+	/**
+	 * Time window `[since, until)` in epoch ms. Only narrows: it composes with `scope` (both must match) and never
+	 * widens what a datasource's trusted config allows. The pipeline applies it to every method's results (see
+	 * `time-window.ts`); a method may additionally push it into its own store to widen recall.
+	 */
+	since?: number;
+	until?: number;
 	signal?: AbortSignal;
 	/**
 	 * Owned by the retrieval pipeline, not by callers: invoked when a method answered through a fallback.
@@ -45,7 +51,11 @@ export interface RetrievalMethod {
 	retrieve(query: string, options: RetrievalOptions): Promise<RetrievalResult[]>;
 }
 
-export type RetrievalDiagnosticCode = "retrieval-method-failed" | "rerank-failed";
+export type RetrievalDiagnosticCode =
+	| "retrieval-method-failed"
+	| "rerank-failed"
+	| "time-window-untimed"
+	| "time-window-ceiling";
 
 /**
  * A retrieval surface (local MinSync files or one datasource) that was not
@@ -76,9 +86,30 @@ export interface RetrievalDiagnostic {
 	reason?: string;
 }
 
+/**
+ * What a time window did to the candidates, so an empty answer can say why: nothing existed in the range, results had
+ * no timestamp, or the over-fetch ceiling cut the search short.
+ */
+export interface RetrievalWindowReport {
+	readonly since?: number;
+	readonly until?: number;
+	/** Candidates the methods returned before the window was applied. */
+	readonly examined: number;
+	/** Candidates inside the window. */
+	readonly matched: number;
+	/** Candidates dropped because the method gave them neither `publishedAt` nor a source mtime. */
+	readonly untimed: number;
+	/** Some method returned as many candidates as it was asked for, so older or newer matches may be unexamined. */
+	readonly ceilingHit: boolean;
+	/** The depth each method was asked for. */
+	readonly fetchDepth: number;
+}
+
 export interface RetrievalWithDiagnostics {
 	results: Map<string, RetrievalResult[]>;
 	diagnostics: RetrievalDiagnostic[];
+	/** Present only when the query carried a time window. */
+	window?: RetrievalWindowReport;
 	/** Surfaces that were not searched for this query. Empty when every method ran. */
 	unsearched: RetrievalUnsearchedSurface[];
 }

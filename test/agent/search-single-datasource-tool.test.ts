@@ -123,6 +123,53 @@ describe("createSingleDatasourceSearchTools", () => {
 		expect(outcome?.details.datasource).toBe("kakao");
 	});
 
+	it("parses since/until at the tool boundary, forwards epoch ms, and rejects a bad bound verbatim", async () => {
+		const seen: { since?: number; until?: number }[] = [];
+		const provider: SingleDatasourceSearchProvider = {
+			searchSingleDatasourceDocuments: async (_id, _query, options) => {
+				seen.push({ since: options?.since, until: options?.until });
+				return { results: [], diagnostics: [] };
+			},
+		};
+		const [tool] = createSingleDatasourceSearchTools(provider, [
+			{ datasourceId: "slack", description: "Slack chats", instanceScopes: [] },
+		]);
+
+		expect(Object.keys(tool?.parameters.properties ?? {}).sort()).toEqual([
+			"query",
+			"scope",
+			"since",
+			"topK",
+			"until",
+		]);
+		await tool?.execute("c", { query: "deploy", since: "2026-09-01T00:00:00Z", until: "2026-10-01T00:00:00Z" });
+		expect(seen[0]).toEqual({ since: Date.UTC(2026, 8, 1), until: Date.UTC(2026, 9, 1) });
+
+		await expect(tool?.execute("c", { query: "deploy", until: "2026-13-40" })).rejects.toThrow(
+			'Invalid until "2026-13-40"',
+		);
+		expect(seen).toHaveLength(1);
+	});
+
+	it("explains an empty windowed result instead of returning a bare empty list", async () => {
+		const provider: SingleDatasourceSearchProvider = {
+			searchSingleDatasourceDocuments: async () => ({
+				results: [],
+				diagnostics: [],
+				window: { since: 1, examined: 9, matched: 0, untimed: 0, ceilingHit: false, fetchDepth: 50 },
+			}),
+		};
+		const [tool] = createSingleDatasourceSearchTools(provider, [
+			{ datasourceId: "slack", description: "Slack chats", instanceScopes: [] },
+		]);
+
+		const outcome = await tool?.execute("c", { query: "deploy", since: "2026-09-01" });
+
+		const text = outcome?.content.map((part) => (part.type === "text" ? part.text : "")).join("") ?? "";
+		expect(text).toContain("Nothing in this time range");
+		expect(text).toContain("9 candidate(s) examined");
+	});
+
 	it("short-circuits an empty query without calling the provider", async () => {
 		let called = false;
 		const provider: SingleDatasourceSearchProvider = {
