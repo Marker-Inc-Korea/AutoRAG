@@ -278,6 +278,9 @@ import {
 import { createWebFetchTool, WEB_FETCH_TOOL_NAME, type WebFetchToolOptions } from "./web-fetch-tool.ts";
 import { createWebSearchTool, WEB_SEARCH_TOOL_NAME, type WebSearchToolOptions } from "./web-search-tool.ts";
 
+const MINSYNC_SYSTEMIC_FAILURE_THRESHOLD = 3;
+const MINSYNC_BATCH_FAILURE_LIMIT = 100;
+
 /**
  * Retrieval datasource tools whose executions count toward the per-search
  * tool budget and the run's evidence origins. `bash` is a source-inspection
@@ -3944,6 +3947,10 @@ export class AutoRAGAgent {
 			const batchedMinSync = needsParsed && wants("minsync");
 			const minSyncBatches: MinSyncSyncResult[] = [];
 			const minSyncBatchFailures: SearchDocumentDiagnostic[] = [];
+			let minSyncOmittedFailures = 0;
+			let minSyncFailureIdentity: string | undefined;
+			let minSyncFailureStreak = 0;
+			let minSyncSystemicStop = false;
 			// Cumulative offsets keep the persisted MinSync counters monotonic
 			// across syncs instead of restarting at zero per sync.
 			let minSyncSyncedBase = 0;
@@ -3974,14 +3981,28 @@ export class AutoRAGAgent {
 							// indexes the files of any earlier failed sync: only failures after
 							// the last success are still real. A failed sync's content stays
 							// staged, so a later sync retries it and the pipeline moves on.
-							if (result.ok) minSyncBatchFailures.length = 0;
-							else if (result.reason !== "lock-held") {
-								for (const virtualPath of virtualPaths) {
+							if (result.ok) {
+								minSyncBatchFailures.length = 0;
+								minSyncOmittedFailures = 0;
+								minSyncFailureIdentity = undefined;
+								minSyncFailureStreak = 0;
+							} else if (result.reason !== "lock-held") {
+								// Keep both structured fields: different causes can share a public code.
+								const identity = JSON.stringify([result.reason ?? null, result.diagnostic?.code ?? null]);
+								minSyncFailureStreak = identity === minSyncFailureIdentity ? minSyncFailureStreak + 1 : 1;
+								minSyncFailureIdentity = identity;
+								minSyncSystemicStop = minSyncFailureStreak >= MINSYNC_SYSTEMIC_FAILURE_THRESHOLD;
+								const retained = Math.min(
+									virtualPaths.length,
+									MINSYNC_BATCH_FAILURE_LIMIT - minSyncBatchFailures.length,
+								);
+								minSyncOmittedFailures += virtualPaths.length - retained;
+								for (let pathIndex = 0; pathIndex < retained; pathIndex += 1) {
 									minSyncBatchFailures.push({
 										code: "minsync-sync-failed",
 										severity: "warning",
 										message: `This file stayed at its previous index entry: the sync that covered it could not index it and the next sync retries it. ${sanitizeDiagnosticMessage(result.diagnostic?.message ?? result.reason ?? "MinSync sync failed.")}`,
-										source: virtualPath,
+										source: virtualPaths[pathIndex],
 									});
 								}
 							}
@@ -3989,7 +4010,11 @@ export class AutoRAGAgent {
 							minSyncTotalBase = syncTotal;
 							// A held lock means another sync owns the index: stop the pipeline instead
 							// of failing every remaining sync against the same lock.
-							return !result.ok && result.reason === "lock-held" ? { stop: true } : undefined;
+							// Repeated systemic failures stop at the next committed-batch callback;
+							// already in-flight parsing may still commit its current batch.
+							return minSyncSystemicStop || (!result.ok && result.reason === "lock-held")
+								? { stop: true }
+								: undefined;
 						},
 					})
 				: undefined;
@@ -4142,7 +4167,25 @@ export class AutoRAGAgent {
 				finishedAt: new Date().toISOString(),
 			});
 			writeRefreshProgress(this.workspaceProjectRoot, progress);
-			const minsyncDiagnostics = [...minSyncRefreshDiagnostics(minsync), ...minSyncBatchFailures];
+			const minsyncDiagnostics = minSyncRefreshDiagnostics(minsync);
+			if (minSyncSystemicStop && minsync !== undefined) {
+				const terminal = minsyncDiagnostics[0] ?? toMinSyncReasonDiagnostic(minsync.reason ?? "unknown failure");
+				minsyncDiagnostics.splice(0, minsyncDiagnostics.length, {
+					...terminal,
+					reason: sanitizeDiagnosticMessage(minsync.reason ?? minsync.diagnostic?.code ?? "unknown failure"),
+					message: `${terminal.message} MinSync refresh stopped after ${MINSYNC_SYSTEMIC_FAILURE_THRESHOLD} consecutive sync failures with the same cause. Committed mirrors are retained; the next refresh resumes the committed work after the cause is fixed.`,
+				});
+			} else {
+				minsyncDiagnostics.push(...minSyncBatchFailures);
+				if (minSyncOmittedFailures > 0) {
+					minsyncDiagnostics.push({
+						code: "minsync-sync-failed",
+						severity: "warning",
+						source: "minsync",
+						message: `${minSyncOmittedFailures} additional per-file MinSync sync failure warnings omitted (limit ${MINSYNC_BATCH_FAILURE_LIMIT}).`,
+					});
+				}
+			}
 			const publicMinsync: AutoRAGMinSyncRefreshResult | undefined = minsync
 				? {
 						ok: minsync.ok,
