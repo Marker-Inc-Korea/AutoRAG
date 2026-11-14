@@ -935,3 +935,27 @@ and URL. For the live QA harness, see
 - Add capability-specific scope tests for scope-capable datasources; only those need multi-scope and user-scope narrowing tests. `#`-fragment rejection applies to every datasource source.
 - Add no-throw diagnostics for missing credentials/binaries/permissions.
 - Add issue labels `datasource-skill`, `integration`, and a source-specific label.
+
+## Supported datasources at a glance
+
+AutoRAG Agent connects to external tools and communication platforms using dedicated datasource skills. Data remains in each tool's native store — AutoRAG does not copy or ingest foreign databases into a centralized store:
+
+| Datasource | Skill Alias | Backend / Driver | Storage & Privacy Model | Search Capabilities |
+|---|---|---|---|---|
+| **Local Documents** | `local` | Native filesystem & MinSync | Workspace-local parsed mirrors (`.autorag/`) | Sparse (SPLADE), Semantic, Hybrid |
+| **KakaoTalk** | `kakao` | [`lazykatok`](https://github.com/changeroa/lazykatok) CLI | Native KakaoTalk archive; zero direct DB access | BM25, Semantic, Hybrid |
+| **Discord** | `discord` | [`discrawl`](https://github.com/openclaw/discrawl) CLI | Native SQLite archive; token-free wiretap mode | BM25 + native semantic hybrid ranking by default via a [read-only sidecar](datasource-skills.md#discord-bm25-ranking); native FTS supplements lexical recall |
+| **WhatsApp** | `whatsapp` | [`wacrawl`](https://github.com/openclaw/wacrawl) CLI | Local-first incremental archive + FTS5 | Lexical FTS5; BM25 + Semantic + Hybrid by default via [`sidecar`](datasource-skills.md#hybrid-search-for-chat-crawlers-sidecar) |
+| **Telegram** | `telegram` | [`telecrawl`](https://github.com/openclaw/telecrawl) CLI | Local-first desktop archive + FTS5 | Lexical FTS5; BM25 + Semantic + Hybrid by default via [`sidecar`](datasource-skills.md#hybrid-search-for-chat-crawlers-sidecar) |
+| **Slack** | `slack` | [`slacrawl`](https://github.com/openclaw/slacrawl) CLI | Local workspace/channel/thread archive + FTS5 | Lexical FTS5; BM25 + Semantic + Hybrid by default via [`sidecar`](datasource-skills.md#hybrid-search-for-chat-crawlers-sidecar) |
+| **Notion** | `notion` | [`notcrawl`](https://github.com/openclaw/notcrawl) CLI | Local page/database/block archive + FTS5 | Lexical FTS5 |
+| **Email Archives** | `mailcrawl` | [`mailcrawl`](https://github.com/NomaDamas/mailcrawl) CLI | Local Gmail, IMAP, Maildir, and `.eml`/`.mbox` mailbox backups (`--source files`) | BM25, Semantic, Hybrid |
+| **Coding-Agent Sessions** | `wombat` | [`wombat`](https://github.com/NomaDamas/wombat) CLI (`cargo install wombat-sessions`) | Codex, Claude Code, OpenCode, pi, and omp conversations; thinking, tool output, and diffs are not indexed | Keyword (SPLADE), Semantic, Hybrid |
+| **Obsidian Vaults** | `obsidian` | Indexed with MinSync in its own workspace (no external CLI) | Markdown notes, folder-scopable | Lexical (BM25), Semantic, Scoped |
+| **GitHub** | `github` | GitHub REST API | In-memory fetched Issues and Pull Requests | Lexical, Scoped |
+| **GitHub Gists** | `github-gist` | GitHub REST API | Incremental local index of own-account public and permitted secret Gist content/metadata; token not stored | Lexical (BM25), Local Semantic, Scoped |
+| **Photos & Shots** | `clawgallery` | `clawgallery` CLI | Local screenshot and photo store | Hybrid OCR/Visual Search |
+| **RSS / News** | `rss` | Native HTTP Poller | RSS 2.0 & Atom feeds (24h deduplication) | Lexical |
+| **Browser History** | `hister` | [Hister](https://github.com/asciimoo/hister) server (AGPL-3.0-or-later, separate program, HTTP API) | Pages visited in Chrome/Chromium/Firefox, captured by Hister's own extension and indexed by Hister (web pages only; its local-file indexing is never used) | Lexical full-text; optional Semantic via Hister's own embedding endpoint |
+
+For configuration syntax and connector details, see [docs/datasource-skills.md](datasource-skills.md). Non-interactive `sync`/`index` steps get a one-hour per-connector budget (`connector.indexTimeoutMs`) because first-run imports routinely take minutes; interactive search keeps its 60-second default.
