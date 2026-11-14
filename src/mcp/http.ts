@@ -127,7 +127,7 @@ function htmlResponse(status: number, body: string): Response {
 			"content-type": "text/html; charset=utf-8",
 			"cache-control": "no-store",
 			"x-frame-options": "DENY",
-			"referrer-policy": "no-referrer",
+			"referrer-policy": "same-origin",
 			// Submitting the consent form redirects to the client's callback, which the form-action directive also governs.
 			"content-security-policy":
 				"default-src 'none'; style-src 'unsafe-inline'; form-action 'self' https: http://127.0.0.1:* http://localhost:*; frame-ancestors 'none'",
