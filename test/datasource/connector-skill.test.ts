@@ -181,6 +181,28 @@ describe("ConnectorDatasourceSkill", () => {
 		expect(allowed?.length).toBe(2);
 	});
 
+	it("honors a time window by publishedAt before cutting to topK, so newer off-window chunks cannot crowd it out", async () => {
+		const connector = new StubConnector();
+		const day = (d: number): number => Date.UTC(2026, 9, d);
+		connector.result = {
+			ok: true,
+			documents: [
+				{ docId: "old-strong", content: "budget budget budget budget", publishedAt: day(2) },
+				{ docId: "old-strong-2", content: "budget budget budget", publishedAt: day(3) },
+				{ docId: "in-window", content: "budget notes for the week", publishedAt: day(15) },
+				{ docId: "undated", content: "budget budget budget budget budget" },
+			],
+		};
+		const skill = new ConnectorDatasourceSkill(DEFINITION, { connector, instanceId: "ws-1", workspaceRoot: tmpRoot });
+		await skill.index();
+		const [method] = skill.retrievalMethods();
+
+		const results = await method?.retrieve("budget", { topK: 1, since: day(10), until: day(20) });
+
+		expect(results?.map((r) => r.metadata.chunkId)).toEqual([expect.stringContaining("in-window")]);
+		expect(results?.[0]?.metadata.publishedAt).toBe(day(15));
+	});
+
 	it("maps connector failures to traceable diagnostics without throwing", async () => {
 		const connector = new StubConnector();
 		connector.result = { ok: false, reason: "auth", message: "invalid token for bob@example.com" };

@@ -227,6 +227,19 @@ describe("ObsidianSkill retrieval", () => {
 		});
 	});
 
+	it("dates each hit by its note's last-modified time so a time window can place it", async () => {
+		note("Projects/Roadmap.md", "# Roadmap\nThe mobile app beta launches in October.");
+		const modified = new Date("2026-09-12T08:00:00.000Z");
+		utimesSync(join(vault, "Projects", "Roadmap.md"), modified, modified);
+		const skill = makeSkill();
+		await skill.index();
+
+		const hits = await method(skill, "obsidian-sparse").retrieve("mobile", { topK: 10 });
+		const roadmap = hits.find((hit) => hit.source === "/obsidian/vault-1/Projects/Roadmap.md");
+
+		expect(roadmap?.metadata.sourceMtimeMs).toBe(modified.getTime());
+	});
+
 	it("filters by folder through scope without leaking sibling folders that share a prefix", async () => {
 		const skill = makeSkill();
 		await skill.index();

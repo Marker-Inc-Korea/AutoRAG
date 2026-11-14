@@ -23,6 +23,7 @@ import type {
 	RetrievalOptions,
 	RetrievalResult,
 	RetrievalUnsearchedSurface,
+	RetrievalWindowReport,
 } from "./types.ts";
 
 /**
@@ -162,6 +163,7 @@ export class RetrievalEngine {
 		results: RetrievalResult[];
 		diagnostics: RetrievalDiagnostic[];
 		unsearched: RetrievalUnsearchedSurface[];
+		window?: RetrievalWindowReport;
 	}> {
 		const topK = options.topK ?? this.defaultTopK;
 		const methods = this.registry.list();
@@ -169,6 +171,7 @@ export class RetrievalEngine {
 			results: byMethod,
 			diagnostics,
 			unsearched,
+			window,
 		} = await this.retriever.retrieveWithDiagnostics(methods, query, options);
 		const filtered = filterDatasourceScope(byMethod, methods, options.scope);
 		const merged = this.merger.merge(filtered, {
@@ -177,7 +180,7 @@ export class RetrievalEngine {
 			...(this.recordCut === undefined ? {} : { recordCut: this.recordCut }),
 		});
 		const results = await this.applyRerank(query, merged, diagnostics, options);
-		return { results, diagnostics, unsearched };
+		return { results, diagnostics, unsearched, ...(window === undefined ? {} : { window }) };
 	}
 
 	/**
@@ -223,15 +226,17 @@ export class RetrievalEngine {
 		byMethod: Map<string, RetrievalResult[]>;
 		diagnostics: RetrievalDiagnostic[];
 		unsearched: RetrievalUnsearchedSurface[];
+		window?: RetrievalWindowReport;
 	}> {
 		const methods = this.registry.list();
 		const {
 			results: byMethod,
 			diagnostics,
 			unsearched,
+			window,
 		} = await this.retriever.retrieveWithDiagnostics(methods, query, options);
 		const filtered = filterDatasourceScope(byMethod, methods, options.scope);
-		return { byMethod: filtered, diagnostics, unsearched };
+		return { byMethod: filtered, diagnostics, unsearched, ...(window === undefined ? {} : { window }) };
 	}
 
 	/**
@@ -252,6 +257,7 @@ export class RetrievalEngine {
 		results: RetrievalResult[];
 		diagnostics: RetrievalDiagnostic[];
 		unsearched: RetrievalUnsearchedSurface[];
+		window?: RetrievalWindowReport;
 	}> {
 		const topK = options.topK ?? this.defaultTopK;
 		const datasourceIds = this.datasourceIdsProvider?.() ?? derivedDatasourceIds(this.registry.list());
@@ -260,6 +266,7 @@ export class RetrievalEngine {
 			results: byMethod,
 			diagnostics,
 			unsearched,
+			window,
 		} = await this.retriever.retrieveWithDiagnostics(methods, query, options);
 		const filtered = filterDatasourceScope(byMethod, methods, options.scope);
 		return {
@@ -270,6 +277,7 @@ export class RetrievalEngine {
 			}),
 			diagnostics,
 			unsearched,
+			...(window === undefined ? {} : { window }),
 		};
 	}
 }

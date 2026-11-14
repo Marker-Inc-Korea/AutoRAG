@@ -211,6 +211,8 @@ describe("LarkSkill remote search", () => {
 			observedAt: "1710000000000",
 		});
 		expect(messages[0]?.metadata.permalink).toBeUndefined();
+		expect(messages[0]?.metadata.publishedAt).toBe(1_710_000_000_000);
+		expect(messages[1]?.metadata.publishedAt).toBe(1_710_000_001_000);
 		expect(docs).toMatchObject([
 			{
 				source: "/lark/default/docs/doxcnRefund1",
@@ -218,6 +220,7 @@ describe("LarkSkill remote search", () => {
 				metadata: {
 					permalink: "https://example.larksuite.com/docx/doxcnRefund1",
 					observedAt: "2026-07-01T00:00:00Z",
+					publishedAt: Date.UTC(2026, 6, 1),
 				},
 			},
 		]);

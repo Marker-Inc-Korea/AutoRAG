@@ -143,6 +143,7 @@ describe("HisterSkill lexical retrieval", () => {
 			domain: "example.com",
 			title: "Title of /policy/refund",
 			visitedAt: new Date(1_792_552_122 * 1000).toISOString(),
+			publishedAt: 1_792_552_122 * 1000,
 		});
 		// Same page, same identity across calls: evidence ids must not drift.
 		const again = (await lexical?.retrieve("refund", {})) ?? [];

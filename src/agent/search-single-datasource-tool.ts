@@ -2,10 +2,11 @@ import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
 import { datasourceSearchToolName } from "../datasource/tool-naming.ts";
 import { resultContextSuffix } from "../retrieval/chunk-location.ts";
-import type { RetrievalDiagnostic, RetrievalResult } from "../retrieval/types.ts";
+import type { RetrievalDiagnostic, RetrievalResult, RetrievalWindowReport } from "../retrieval/types.ts";
 import { EvidenceLedger } from "./evidence-ledger.ts";
 import { type RecordCutToolOptions, registerAndRender } from "./result-render.ts";
 import { type SearchDocumentRetrievalTraceResult, toRetrievalTraceResults } from "./search-documents.ts";
+import { diagnosticSummary, parseToolWindow, timeWindowProperties, windowNotice } from "./time-window-tool.ts";
 
 /**
  * Per-datasource search tools.
@@ -47,8 +48,19 @@ export interface SingleDatasourceSearchProvider {
 	searchSingleDatasourceDocuments(
 		datasourceId: string,
 		query: string,
-		options?: { readonly topK?: number; readonly scope?: string; readonly signal?: AbortSignal },
-	): Promise<{ readonly results: readonly RetrievalResult[]; readonly diagnostics: readonly RetrievalDiagnostic[] }>;
+		options?: {
+			readonly topK?: number;
+			readonly scope?: string;
+			readonly since?: number;
+			readonly until?: number;
+			readonly signal?: AbortSignal;
+		},
+	): Promise<{
+		readonly results: readonly RetrievalResult[];
+		readonly diagnostics: readonly RetrievalDiagnostic[];
+		/** Present only for a windowed search. */
+		readonly window?: RetrievalWindowReport;
+	}>;
 }
 
 export interface SearchSingleDatasourceDetails {
@@ -57,6 +69,8 @@ export interface SearchSingleDatasourceDetails {
 	readonly resultCount: number;
 	readonly sources: readonly string[];
 	readonly diagnostics: readonly RetrievalDiagnostic[];
+	/** Present only for a windowed search. */
+	readonly window?: RetrievalWindowReport;
 	/** Top candidates in traceable shape (additive; used for the run's retrieval trace). */
 	readonly results?: readonly SearchDocumentRetrievalTraceResult[];
 }
@@ -76,6 +90,7 @@ const searchSingleDatasourceSchema = Type.Object({
 	scope: Type.Optional(
 		Type.String({ description: "Optional scope narrowing inside this datasource, e.g. one instance root." }),
 	),
+	...timeWindowProperties,
 });
 
 function createTool(
@@ -91,7 +106,7 @@ function createTool(
 		description:
 			`Search only the "${spec.datasourceId}" datasource connection: ${spec.description} ` +
 			`This tool spawns only this connection's CLIs and returns only this connection's hits.${scopeLine} ` +
-			`Authority is server-configured; tool arguments can only provide query, topK, and an optional narrowing scope.`,
+			`Authority is server-configured; tool arguments can only provide query, topK, an optional narrowing scope, and an optional since/until time window.`,
 		parameters: searchSingleDatasourceSchema,
 		async execute(_toolCallId, params, signal): Promise<AgentToolResult<SearchSingleDatasourceDetails>> {
 			const query = params.query.trim();
@@ -107,9 +122,16 @@ function createTool(
 					},
 				};
 			}
-			const { results, diagnostics } = await provider.searchSingleDatasourceDocuments(spec.datasourceId, query, {
+			// An invalid since/until throws its parse error verbatim before anything is searched.
+			const window = parseToolWindow(params);
+			const {
+				results,
+				diagnostics,
+				window: windowReport,
+			} = await provider.searchSingleDatasourceDocuments(spec.datasourceId, query, {
 				topK: params.topK,
 				scope: params.scope,
+				...window,
 				...(signal === undefined ? {} : { signal }),
 			});
 			const { text } = registerAndRender(
@@ -120,13 +142,14 @@ function createTool(
 				options.recordCut,
 			);
 			return {
-				content: [{ type: "text", text: datasourceResultsText(text, results.length, diagnostics) }],
+				content: [{ type: "text", text: datasourceResultsText(text, results.length, diagnostics, windowReport) }],
 				details: {
 					method: "datasource",
 					datasource: spec.datasourceId,
 					resultCount: results.length,
 					sources: [...new Set(results.map((result) => result.source))],
 					diagnostics,
+					...(windowReport === undefined ? {} : { window: windowReport }),
 					results: toRetrievalTraceResults(results),
 				},
 			};
@@ -134,13 +157,17 @@ function createTool(
 	};
 }
 
-function datasourceResultsText(rows: string, resultCount: number, diagnostics: readonly RetrievalDiagnostic[]): string {
-	const diagnosticSummary =
-		diagnostics.length > 0
-			? `\n\nDiagnostics: ${diagnostics.map((d) => `${d.source ?? "datasource"}:${d.code}`).join(", ")}`
-			: "";
-	if (resultCount === 0) return `No datasource results.${diagnosticSummary}`;
-	return `Datasource results (cite evidence by its [eN] id):\n\n${rows}${diagnosticSummary}`;
+function datasourceResultsText(
+	rows: string,
+	resultCount: number,
+	diagnostics: readonly RetrievalDiagnostic[],
+	window?: RetrievalWindowReport,
+): string {
+	const notice = windowNotice(window, resultCount);
+	const noticeText = notice === undefined ? "" : `\n\n${notice}`;
+	const diagnosticText = diagnosticSummary(diagnostics, "datasource");
+	if (resultCount === 0) return `No datasource results.${noticeText}${diagnosticText}`;
+	return `Datasource results (cite evidence by its [eN] id):\n\n${rows}${noticeText}${diagnosticText}`;
 }
 
 /** Shared rendering for datasource search tool results (fan-out removed). */

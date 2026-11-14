@@ -1,0 +1,66 @@
+<!doctype html>
+<!-- README banner, 1568x392. Dazzi "Quiet Glass" look; tokens from Dazzi-landing-page/public/styles.css.
+     Render: bun assets/banner-src/render.mjs  ->  assets/autorag-agent-banner.png -->
+<html lang="en">
+<meta charset="utf-8">
+<style>
+  :root{
+    --ink:#1d1d1f; --ink2:#3a3a3f; --mute:#6e6e73; --bg:#fbfbfd;
+    --grad:linear-gradient(90deg,#f5a300,#ff6a3d 50%,#bf5af2);
+  }
+  *{box-sizing:border-box;margin:0}
+  html,body{width:1568px;height:392px;overflow:hidden}
+  body{
+    position:relative;background:var(--bg);color:var(--ink);
+    font-family:"SF Pro Display",-apple-system,BlinkMacSystemFont,Pretendard,"Helvetica Neue",Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .glow{position:absolute;border-radius:50%;filter:blur(80px)}
+  .g1{width:760px;height:620px;left:-240px;top:-260px;background:rgba(255,204,26,.42)}
+  .g2{width:560px;height:420px;left:420px;top:260px;background:rgba(255,106,61,.16)}
+  .g3{width:620px;height:520px;right:-120px;top:-300px;background:rgba(191,90,242,.20)}
+
+  /* left: words */
+  .copy{position:absolute;left:68px;top:0;bottom:0;width:760px}
+  .brand{position:absolute;top:34px;left:0;display:flex;align-items:center;gap:12px}
+  .brand img{width:46px;height:auto}
+  .brand span{font-size:27px;font-weight:650;letter-spacing:-.025em}
+  .brand span b{font-weight:650;background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+  h1{position:absolute;top:104px;left:-2px;font-size:74px;line-height:1.03;font-weight:760;letter-spacing:-.045em;white-space:nowrap}
+  h1 em{font-style:normal;background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent;padding-right:.04em}
+  .app{
+    position:absolute;left:0;bottom:36px;display:inline-flex;align-items:center;gap:10px;
+    padding:9px 18px 9px 13px;border-radius:999px;font-size:21px;color:var(--ink2);letter-spacing:-.01em;
+    background:rgba(255,255,255,.78);border:1px solid rgba(0,0,0,.07);box-shadow:0 8px 24px rgba(60,40,80,.08);
+  }
+  .app i{width:10px;height:10px;border-radius:50%;background:#f7a600;box-shadow:0 0 0 5px rgba(247,166,0,.2)}
+  .app b{font-weight:650;color:var(--ink)}
+
+  /* right: the real Dazzi window, bleeding off the edges */
+  .win{
+    position:absolute;left:900px;top:40px;width:720px;height:420px;overflow:hidden;
+    border-radius:14px;background:#fff;border:1px solid rgba(0,0,0,.1);
+    box-shadow:0 34px 70px rgba(60,40,80,.22),0 6px 18px rgba(0,0,0,.07);
+  }
+  .win img{display:block;width:960px;height:auto}
+  .ans{
+    position:absolute;left:1060px;top:128px;width:560px;border-radius:16px;overflow:hidden;
+    background:#fff;border:1px solid rgba(0,0,0,.09);
+    box-shadow:0 26px 60px rgba(60,40,80,.28),0 6px 16px rgba(0,0,0,.08);
+  }
+  .ans img{display:block;width:100%;height:auto;margin-top:-4px}
+  .ans::after{content:"";position:absolute;left:0;right:0;bottom:0;height:46px;background:linear-gradient(rgba(255,255,255,0),#fff)}
+</style>
+<body>
+  <div class="glow g1"></div><div class="glow g2"></div><div class="glow g3"></div>
+
+  <div class="win"><img src="../app/finder.webp" alt=""></div>
+  <div class="ans"><img src="ask-crop.webp" alt=""></div>
+
+  <div class="copy">
+    <div class="brand"><img src="dazzi-logo.png" alt=""><span>AutoRAG <b>Agent</b></span></div>
+    <h1>Your <em>personal</em><br>librarian agent.</h1>
+    <div class="app"><i></i><span><b>Dazzi</b> is the desktop app · Mac &amp; Windows</span></div>
+  </div>
+</body>
+</html>

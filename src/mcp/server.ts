@@ -17,11 +17,29 @@ import {
 } from "../filesystem/name-search.ts";
 import { isParsedRefreshComplete } from "../mirror/paths.ts";
 import { RetrievalSelectionError } from "../retrieval/index.ts";
+import { parseTimeWindow, TimeWindowError } from "../retrieval/time-window.ts";
+
+/** ISO-8601 window bounds, parsed once in the handler so a bad value is returned verbatim, not as a schema error. */
+const windowFields = {
+	since: z
+		.string()
+		.optional()
+		.describe(
+			"ISO-8601 lower bound, inclusive; a date-only value is local midnight. Only evidence dated at or after it.",
+		),
+	until: z
+		.string()
+		.optional()
+		.describe(
+			"ISO-8601 upper bound, EXCLUSIVE; a date-only value is local midnight. 'All of September' is since 2026-09-01, until 2026-10-01.",
+		),
+};
 
 const datasourceSearchInput = z.strictObject({
 	query: z.string().trim().min(1),
 	topK: z.number().int().positive().max(100).optional(),
 	scope: z.string().trim().min(1).optional(),
+	...windowFields,
 });
 
 const emptyInput = z.strictObject({});
@@ -32,6 +50,7 @@ const searchInput = z
 		query: z.string().trim().min(1),
 		topK: z.number().int().positive().max(100).optional(),
 		scope: z.string().trim().min(1).optional(),
+		...windowFields,
 		strict: z.boolean().optional(),
 		datasourceIds: z.array(z.string().trim().min(1)).optional(),
 		methods: z.array(z.string().trim().min(1)).optional(),
@@ -119,6 +138,21 @@ function jsonResult<T extends object>(value: T, isError = false) {
 		structuredContent: value,
 		...(isError ? { isError: true } : {}),
 	};
+}
+
+/** The parsed window, or the tool error carrying the parse message verbatim. */
+function windowOrError(
+	input: { readonly since?: string | undefined; readonly until?: string | undefined },
+	extra: Record<string, unknown>,
+):
+	| { readonly ok: true; readonly window: { readonly since?: number; readonly until?: number } }
+	| { readonly ok: false; readonly error: ReturnType<typeof toolError> } {
+	try {
+		return { ok: true, window: parseTimeWindow(input) ?? {} };
+	} catch (error) {
+		if (!(error instanceof TimeWindowError)) throw error;
+		return { ok: false, error: toolError("invalid-time-window", error.message, extra) };
+	}
 }
 
 function toolError(code: string, message: string, extra: Record<string, unknown> = {}) {
@@ -382,7 +416,9 @@ export function createAutoRAGMcpServer(lite: AutoRAGLite, options: AutoRAGMcpSer
 				outputSchema: objectOutput,
 				annotations: { readOnlyHint: true, openWorldHint: false },
 			},
-			async ({ query, topK, scope, strict, datasourceIds, methods, local }) => {
+			async ({ query, topK, scope, since, until, strict, datasourceIds, methods, local }) => {
+				const window = windowOrError({ since, until }, { query });
+				if (!window.ok) return window.error;
 				const status = await lite.getRefreshStatus();
 				if (!isParsedRefreshComplete(lite.config.workspacePath)) {
 					return toolError(
@@ -405,7 +441,11 @@ export function createAutoRAGMcpServer(lite: AutoRAGLite, options: AutoRAGMcpSer
 					);
 				}
 				try {
-					const retrieved = await lite.searchSelected(query, { datasourceIds, methods, local }, { topK, scope });
+					const retrieved = await lite.searchSelected(
+						query,
+						{ datasourceIds, methods, local },
+						{ topK, scope, ...window.window },
+					);
 					return jsonResult({
 						ok: true,
 						query,
@@ -420,6 +460,7 @@ export function createAutoRAGMcpServer(lite: AutoRAGLite, options: AutoRAGMcpSer
 							content: result.content,
 						})),
 						unsearched: retrieved.unsearched,
+						...(retrieved.window === undefined ? {} : { window: retrieved.window }),
 						diagnostics: capDiagnostics([...status.diagnostics, ...retrieved.diagnostics]),
 					});
 				} catch (error) {
@@ -452,12 +493,14 @@ export function createAutoRAGMcpServer(lite: AutoRAGLite, options: AutoRAGMcpSer
 				title: `Search ${entry.name}`,
 				description:
 					`Search only the integrated ${entry.name} datasource (${entry.datasourceId}): ${entry.description}. ` +
-					"The datasource is server-configured; query, topK, and scope only narrow the search.",
+					"The datasource is server-configured; query, topK, scope, and since/until only narrow the search.",
 				inputSchema: datasourceSearchInput,
 				outputSchema: objectOutput,
 				annotations: { readOnlyHint: true, openWorldHint: false },
 			},
-			async ({ query, topK, scope }) => {
+			async ({ query, topK, scope, since, until }) => {
+				const window = windowOrError({ since, until }, { query, datasourceId: entry.datasourceId });
+				if (!window.ok) return window.error;
 				const status = await lite.getRefreshStatus();
 				if (!isParsedRefreshComplete(lite.config.workspacePath)) {
 					return toolError(
@@ -474,7 +517,7 @@ export function createAutoRAGMcpServer(lite: AutoRAGLite, options: AutoRAGMcpSer
 					const retrieved = await lite.searchSelected(
 						query,
 						{ datasourceIds: [entry.datasourceId], local: false },
-						{ topK, scope },
+						{ topK, scope, ...window.window },
 					);
 					return jsonResult({
 						ok: true,
@@ -490,6 +533,7 @@ export function createAutoRAGMcpServer(lite: AutoRAGLite, options: AutoRAGMcpSer
 							content: result.content,
 						})),
 						unsearched: retrieved.unsearched,
+						...(retrieved.window === undefined ? {} : { window: retrieved.window }),
 						diagnostics: capDiagnostics([...status.diagnostics, ...retrieved.diagnostics]),
 					});
 				} catch (error) {
