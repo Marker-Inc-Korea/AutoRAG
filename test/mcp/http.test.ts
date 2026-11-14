@@ -590,4 +590,77 @@ describe("autorag-mcp over HTTP: OAuth for connector-only clients", () => {
 		});
 		expect(response.status).toBe(400);
 	});
+
+	it("serves a consent page whose own form post carries a real Origin, so the server's origin check passes for the user's click", async () => {
+		const server = await oauthServer();
+		const { body } = await register(server);
+		const params = {
+			response_type: "code",
+			client_id: String(body.client_id),
+			redirect_uri: "https://chatgpt.example/callback",
+			code_challenge: pkce().challenge,
+			code_challenge_method: "S256",
+			state: "s",
+			resource: `${PUBLIC}/mcp`,
+		};
+		const page = await fetch(`${local(server, "/authorize")}?${new URLSearchParams(params)}`);
+		// `no-referrer` makes a browser send `Origin: null` on this page's own form POST, which the origin check
+		// (rightly) refuses; `same-origin` sends the page's real origin and still leaks nothing to other sites.
+		expect(page.headers.get("referrer-policy")).toBe("same-origin");
+		const posted = await fetch(local(server, "/authorize"), {
+			method: "POST",
+			redirect: "manual",
+			headers: { "content-type": "application/x-www-form-urlencoded", origin: PUBLIC },
+			body: new URLSearchParams({ ...params, owner_token: OWNER_TOKEN }).toString(),
+		});
+		expect(posted.status).toBe(302);
+	});
+
+	it("refuses a null Origin on the consent post: a sandboxed page elsewhere can produce one", async () => {
+		const server = await oauthServer();
+		const { body } = await register(server);
+		const response = await fetch(local(server, "/authorize"), {
+			method: "POST",
+			redirect: "manual",
+			headers: { "content-type": "application/x-www-form-urlencoded", origin: "null" },
+			body: new URLSearchParams({
+				response_type: "code",
+				client_id: String(body.client_id),
+				redirect_uri: "https://chatgpt.example/callback",
+				code_challenge: pkce().challenge,
+				code_challenge_method: "S256",
+				owner_token: OWNER_TOKEN,
+			}).toString(),
+		});
+		expect(response.status).toBe(403);
+	});
+
+	it("still refuses a page on another site that posts to the consent endpoint", async () => {
+		const server = await oauthServer();
+		const { body } = await register(server);
+		const response = await fetch(local(server, "/authorize"), {
+			method: "POST",
+			redirect: "manual",
+			headers: {
+				"content-type": "application/x-www-form-urlencoded",
+				origin: "https://evil.example",
+				"sec-fetch-site": "cross-site",
+			},
+			body: new URLSearchParams({
+				response_type: "code",
+				client_id: String(body.client_id),
+				redirect_uri: "https://chatgpt.example/callback",
+				code_challenge: pkce().challenge,
+				code_challenge_method: "S256",
+				owner_token: OWNER_TOKEN,
+			}).toString(),
+		});
+		expect(response.status).toBe(403);
+	});
+
+	it("does not let an MCP request through on a null Origin: only the consent form gets that allowance", async () => {
+		const server = await oauthServer();
+		const response = await post(server, { authorization: `Bearer ${OWNER_TOKEN}`, origin: "null" });
+		expect(response.status).toBe(403);
+	});
 });
