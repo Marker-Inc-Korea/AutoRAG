@@ -34,10 +34,10 @@ import {
 } from "../../src/minsync/index.ts";
 import type { MinSyncEmbedderConfig } from "../../src/minsync/types.ts";
 import { MINSYNC_MIN_VERSION } from "../../src/minsync/version.ts";
+import type { ParsedMirrorEntry } from "../../src/mirror/index-store.ts";
 import { writePagesSidecar } from "../../src/mirror/pages-sidecar.ts";
 import { parsedOutputPath } from "../../src/mirror/paths.ts";
 import type { ParsedPages } from "../../src/parser/pages.ts";
-import type { ParsedMirrorEntry } from "../../src/mirror/index-store.ts";
 import { RetrievalEngine } from "../../src/retrieval/engine.ts";
 import type { RetrievalFallbackEvent } from "../../src/retrieval/types.ts";
 import { fakeMinSyncStageSimulatorPath } from "../helpers/fake-minsync.ts";
