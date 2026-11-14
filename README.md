@@ -1,6 +1,13 @@
+<p align="center">
+  <img src="assets/autorag-agent-banner.png" alt="AutoRAG Agent: find anything on your computer. Dazzi is its desktop app." width="100%" />
+</p>
+
 # AutoRAG Agent
 
 **Now your agent can find anything in your computer.**
+
+> [!TIP]
+> **Dazzi is the desktop app of AutoRAG Agent.** Prefer a window to a terminal? Get [**Dazzi**](https://dazziapp.com) for Mac and Windows; it runs this open-source engine. [Jump to the app ↓](#-the-desktop-app)
 
 <p align="left">
   <a href="https://www.npmjs.com/package/@autorag/librarian"><img src="https://img.shields.io/npm/v/@autorag/librarian.svg?style=flat-square&color=38bdf8" alt="npm version" /></a>
@@ -10,10 +17,6 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-green.svg?style=flat-square" alt="License: Apache-2.0" /></a>
   <img src="https://img.shields.io/badge/node-%3E%3D24.0.0-informational.svg?style=flat-square" alt="Node >= 24" />
   <img src="https://img.shields.io/badge/bun-%3E%3D1.2-black.svg?style=flat-square&logo=bun" alt="Bun >= 1.2" />
-</p>
-
-<p align="center">
-  <img src="assets/autorag-agent-social-preview.png" alt="AutoRAG Agent" width="100%" />
 </p>
 
 > [!IMPORTANT]
