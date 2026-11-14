@@ -103,3 +103,89 @@ describe("remote-agents portable manifest", () => {
 		expect(Object.keys(claude)).toEqual(expect.arrayContaining(["name", "version", "description"]));
 	});
 });
+
+describe("repo marketplaces resolve to the shipped plugin", () => {
+	const REPO = new URL("../../", import.meta.url);
+	const readRepoJson = (relative: string): Record<string, unknown> => {
+		const parsed: unknown = JSON.parse(readFileSync(new URL(relative, REPO), "utf8"));
+		if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed))
+			throw new Error(`${relative} is not an object`);
+		return Object.fromEntries(Object.entries(parsed));
+	};
+	const entries = (marketplace: Record<string, unknown>): Record<string, unknown>[] =>
+		Array.isArray(marketplace.plugins)
+			? marketplace.plugins.filter((p): p is Record<string, unknown> => typeof p === "object" && p !== null)
+			: [];
+
+	it("Claude Code reads the marketplace from the repository root's .claude-plugin, which is where it looks after `marketplace add owner/repo`", () => {
+		const marketplace = readRepoJson(".claude-plugin/marketplace.json");
+		expect(marketplace.name).toBe("autorag");
+		const [entry] = entries(marketplace);
+		expect(entry?.name).toBe("autorag-remote");
+		expect(entry?.source).toBe("./plugins/remote-agents");
+	});
+
+	it("Codex and Claude point at the same plugin directory and the same name", () => {
+		const claude = entries(readRepoJson(".claude-plugin/marketplace.json"))[0];
+		const codex = entries(readRepoJson(".agents/plugins/marketplace.json"))[0];
+		expect(codex?.name).toBe(claude?.name);
+		const source: unknown = codex?.source;
+		expect(typeof source === "object" && source !== null && "path" in source ? source.path : source).toBe(
+			claude?.source,
+		);
+	});
+
+	it("the plugin name in each marketplace is the name inside the plugin's own manifest", () => {
+		const manifest = readJson("plugin.json");
+		for (const file of [".claude-plugin/marketplace.json", ".agents/plugins/marketplace.json"]) {
+			expect(entries(readRepoJson(file))[0]?.name, file).toBe(manifest.name);
+		}
+	});
+
+	it("Cursor reads a root .cursor-plugin/marketplace.json with the same plugin, a kebab-case name, an owner and no `..` path", () => {
+		const marketplace = readRepoJson(".cursor-plugin/marketplace.json");
+		expect(marketplace.name).toBe("autorag");
+		expect(marketplace.owner).toMatchObject({ name: expect.any(String) });
+		const [entry] = entries(marketplace);
+		expect(entry?.name).toBe(readJson("plugin.json").name);
+		expect(String(entry?.source)).not.toMatch(/\.\.|^\//);
+		expect(String(entry?.source).replace(/^\.\//, "")).toBe("plugins/remote-agents");
+		expect(String(entry?.description).length).toBeGreaterThan(20);
+	});
+
+	it("does not leave a second, unreachable Claude marketplace under plugins/", () => {
+		expect(() => readFileSync(new URL("plugins/.claude-plugin/marketplace.json", REPO))).toThrow();
+	});
+});
+
+describe("plugins/remote-agents README (the directory listing's description)", () => {
+	const README = readFileSync(new URL("README.md", ROOT), "utf8");
+	const prose = README.replace(/```[\s\S]*?```/g, "");
+
+	it("has at least 40 words outside code blocks, which Claude's directory requires", () => {
+		expect(prose.split(/\s+/).filter(Boolean).length).toBeGreaterThanOrEqual(40);
+	});
+
+	it("says plainly that the package runs nothing, ships no MCP server and sends nothing, and what the skill does do", () => {
+		expect(README).toMatch(/skill only/i);
+		expect(README).toMatch(/no (?:mcp )?server|does not (?:run|include|start)/i);
+		expect(README).toMatch(/nothing (?:is )?(?:sent|uploaded|fetched)|does not (?:send|fetch|upload)/i);
+	});
+
+	it("tells the user how to connect their own server, linking the doc that exists", () => {
+		expect(README).toContain("docs/remote-agents.md");
+		expect(README).toMatch(/autorag-mcp --http/);
+	});
+
+	it("names the owner token as a secret the plugin never asks for", () => {
+		expect(README).toMatch(/owner token/i);
+		expect(README).toMatch(/never (?:ask|request|store)/i);
+	});
+
+	it("only names tools and flags that exist", async () => {
+		const registered = await registeredMcpTools({ readOnly: false });
+		const names = new Set(registered.map((tool) => tool.name));
+		for (const name of new Set(README.match(/\bautorag\.[a-z]+(?:\.[a-z]+)?\b/g) ?? []))
+			expect(names.has(name), name).toBe(true);
+	});
+});
