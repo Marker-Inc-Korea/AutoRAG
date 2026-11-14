@@ -4,10 +4,7 @@
 
 # AutoRAG Agent
 
-**Now your agent can find anything in your computer.**
-
-> [!TIP]
-> **Dazzi is the desktop app of AutoRAG Agent.** Prefer a window to a terminal? Get [**Dazzi**](https://dazziapp.com) for Mac and Windows; it runs this open-source engine. [Jump to the app ↓](#-the-desktop-app)
+**Your personal librarian agent: it finds, reads, and cites anything on your computer.**
 
 <p align="left">
   <a href="https://www.npmjs.com/package/@autorag/librarian"><img src="https://img.shields.io/npm/v/@autorag/librarian.svg?style=flat-square&color=38bdf8" alt="npm version" /></a>
@@ -19,6 +16,22 @@
   <img src="https://img.shields.io/badge/bun-%3E%3D1.2-black.svg?style=flat-square&logo=bun" alt="Bun >= 1.2" />
 </p>
 
+## Dazzi: the AutoRAG desktop app
+
+**Dazzi is the app version of AutoRAG Agent.** Download it for Mac and Windows at [**dazziapp.com**](https://dazziapp.com), or build from [NomaDamas/AutoRAG-app](https://github.com/NomaDamas/AutoRAG-app). It is a real file manager with the AutoRAG engine in this repository behind it.
+
+<p align="center">
+  <img src="assets/app/hero.webp" alt="Dazzi: a folder on the left, an AI Search conversation with cited answers on the right" width="100%" />
+</p>
+
+- **Fast file search.** Hybrid keyword + meaning search with a reranker finds files by what is inside them, and every answer links the passage it came from.
+- **Messengers, mail, and more.** Slack, KakaoTalk, Discord, Telegram, WhatsApp, every inbox you sign in to, GitHub, and Obsidian are searched alongside your files.
+- **Preview anything.** Press Space for Quick Look: Markdown, code, PDF, video, audio, Office, and HWP/HWPX, without opening another app.
+- **File-based automations.** Watch a folder, pick a trigger, and let the agent triage or organize new files for you.
+- **Duplicate detection.** `final`, `final-v3`, and `(1)` copies collapse into one row tagged Latest, Similar, or Identical.
+- **Remote access.** Open your running Dazzi from a phone or another computer over your Wi-Fi or an internet tunnel, paired with a 6-digit code or QR.
+- **A real Finder.** Tabs, split panes, light and dark mode, and Korean, English, Japanese, and Simplified Chinese.
+
 > [!IMPORTANT]
 > **Looking for the original AutoRAG (RAG AutoML / pipeline optimization tool)?**
 > This repository now hosts **AutoRAG 2.0**, a complete reimagining of AutoRAG as a personal librarian agent for your office work. The original Python-based AutoRAG — the RAG AutoML tool for automatically finding an optimal RAG pipeline for your data — now lives in the [`legacy/`](legacy/) directory of this repository.
@@ -27,16 +40,10 @@
 
 ---
 
-## 🖥️ The desktop app
-
-**A Finder for your computer that understands what's inside your files.** The
-AutoRAG desktop app puts this librarian behind a real file manager: browse your
-folders as usual, then ask a question and get an answer that cites the files,
-chats, and mail it came from. Everything it searches with is the engine in this
-repository.
+### A closer look
 
 <p align="center">
-  <img src="assets/app/finder.webp" alt="AutoRAG desktop app: a folder in list view with a version stack expanded and the index column" width="100%" />
+  <img src="assets/app/finder.webp" alt="Dazzi: a folder in list view with a version stack expanded and the index column" width="100%" />
 </p>
 
 <table>
