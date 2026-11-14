@@ -1,4 +1,3 @@
-import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { z } from "zod";
 
 export type PreflightStatus = "pass" | "warn" | "fail" | "skip";
@@ -33,6 +32,53 @@ const serverMetadata = z.object({
 	code_challenge_methods_supported: z.array(z.string()).optional(),
 });
 const registration = z.object({ client_id: z.string() });
+
+const toolsResult = z.object({ tools: z.array(z.object({ name: z.string() })) });
+
+/** The JSON-RPC reply in a response body: a plain JSON document, or the first `data:` event of an SSE stream. */
+function replyPayload(contentType: string, body: string): unknown {
+	if (!contentType.includes("text/event-stream")) return JSON.parse(body);
+	for (const line of body.split("\n")) {
+		if (line.startsWith("data:")) return JSON.parse(line.slice(5).trim());
+	}
+	throw new Error("the event stream carried no message");
+}
+
+/**
+ * `initialize` then `tools/list` over streamable HTTP with plain `fetch`. The preflight must run from a published
+ * install, and the MCP client package is a development dependency there, so it speaks the three messages itself.
+ */
+async function listToolNames(endpoint: URL, token: string, doFetch: typeof fetch): Promise<string[]> {
+	const headers: Record<string, string> = {
+		"content-type": "application/json",
+		accept: "application/json, text/event-stream",
+		authorization: `Bearer ${token}`,
+	};
+	const send = async (message: object): Promise<Response> =>
+		doFetch(endpoint, { method: "POST", headers, body: JSON.stringify(message) });
+	const initialized = await send({
+		jsonrpc: "2.0",
+		id: 1,
+		method: "initialize",
+		params: {
+			protocolVersion: "2025-03-26",
+			capabilities: {},
+			clientInfo: { name: "autorag-preflight", version: "1.0.0" },
+		},
+	});
+	if (initialized.status === 401 || initialized.status === 403) throw new Error(`HTTP ${initialized.status}`);
+	if (!initialized.ok) throw new Error(`initialize answered HTTP ${initialized.status}`);
+	const session = initialized.headers.get("mcp-session-id");
+	if (session !== null) headers["mcp-session-id"] = session;
+	await initialized.text();
+	await send({ jsonrpc: "2.0", method: "notifications/initialized" }).then((response) => response.text());
+	const listed = await send({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} });
+	if (!listed.ok) throw new Error(`tools/list answered HTTP ${listed.status}`);
+	const reply = z
+		.object({ result: toolsResult })
+		.parse(replyPayload(listed.headers.get("content-type") ?? "", await listed.text()));
+	return reply.result.tools.map((tool) => tool.name);
+}
 
 function normalize(value: string): string {
 	return value.replace(/\/+$/, "");
@@ -191,15 +237,8 @@ export async function runPreflight(mcpUrl: string, options: PreflightOptions = {
 	if (options.token === undefined || options.token === "") {
 		add("tools", "skip", "No owner token given (set AUTORAG_MCP_TOKEN to check the authenticated path).");
 	} else {
-		const client = new Client({ name: "autorag-preflight", version: "1.0.0" });
 		try {
-			await client.connect(
-				new StreamableHTTPClientTransport(endpoint, {
-					requestInit: { headers: { authorization: `Bearer ${options.token}` } },
-					fetch: doFetch,
-				}),
-			);
-			const names = (await client.listTools()).tools.map((tool) => tool.name);
+			const names = await listToolNames(endpoint, options.token, doFetch);
 			const writers = names.filter((name) => WRITE_TOOLS.includes(name));
 			if (names.length === 0) add("tools", "fail", "Connected, but the server offers no tools.");
 			else if (writers.length > 0)
@@ -210,14 +249,11 @@ export async function runPreflight(mcpUrl: string, options: PreflightOptions = {
 				);
 			else add("tools", "pass", `${names.length} read-only tools: ${names.join(", ")}`);
 		} catch (error) {
-			// The SDK error can quote the request; never echo the credential.
 			add(
 				"tools",
 				"fail",
 				`The owner token did not open ${endpoint.pathname}: ${describeError(error).split(options.token).join("<token>")}`,
 			);
-		} finally {
-			await client.close().catch(() => {});
 		}
 	}
 
