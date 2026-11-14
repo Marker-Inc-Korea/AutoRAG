@@ -8,7 +8,7 @@ instructions.
 ## What this package is, and is not
 
 - **Skill only.** It contains one skill, `search`, and its manifests. There is no MCP server in it, no script, no hook,
-  and nothing that runs when you install it. It does not send, upload or fetch anything.
+  and nothing that runs when you install it. The package itself does not send, upload or fetch anything.
 - **You bring the server.** AutoRAG runs on your computer, so its address is yours alone and cannot be written into a
   shared package. Start it with `autorag-mcp --http`, or switch on **Cloud agents** in the Dazzi app, then add that
   address in your agent's connector or plugin screen. Steps for each agent are in
@@ -17,6 +17,13 @@ instructions.
 - **Read-only by default.** The server offers search and evidence tools (`autorag.search`, `autorag.search.files`,
   `autorag.datasources.list`, `autorag.evidence` and a few more). It does not offer re-indexing, saving reports or file
   conversion unless you start it with `--allow-write`.
+
+## Where your data goes
+
+Your index stays on your computer, and only the results of a search leave it: the chunks a search returns are read by
+the model of the agent you connected, so they go wherever that agent runs (for a cloud agent, the vendor's cloud). The
+server returns nothing to an agent that is not signed in. Do not connect an agent you would not show those results to,
+and leave archives you would not show it out of the configuration you serve.
 
 ## Safety
 

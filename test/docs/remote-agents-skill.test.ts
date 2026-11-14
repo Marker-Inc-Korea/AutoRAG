@@ -182,6 +182,13 @@ describe("plugins/remote-agents README (the directory listing's description)", (
 		expect(README).toMatch(/never (?:ask|request|store)/i);
 	});
 
+	it("discloses that what a search returns is read by the connected agent's model, wherever that agent runs", () => {
+		// "Sends nothing" is true of the package and false of the setup it enables; a reader must not stop at the first.
+		expect(prose).toMatch(/(?:chunks|results|passages|excerpts)[^.]*\b(?:read|seen|processed) by/i);
+		expect(prose).toMatch(/vendor|cloud|wherever that agent runs|the agent's (?:model|provider)/i);
+		expect(prose).toMatch(/only (?:the )?(?:results|chunks|passages) (?:of )?(?:a |the )?search/i);
+	});
+
 	it("only names tools and flags that exist", async () => {
 		const registered = await registeredMcpTools({ readOnly: false });
 		const names = new Set(registered.map((tool) => tool.name));
