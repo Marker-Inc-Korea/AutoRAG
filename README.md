@@ -32,6 +32,8 @@
 - **Remote access.** Open your running Dazzi from a phone or another computer over your Wi-Fi or an internet tunnel, paired with a 6-digit code or QR.
 - **A real Finder.** Tabs, split panes, light and dark mode, and Korean, English, Japanese, and Simplified Chinese.
 
+Agent-facing retrieval rows also keep a bounded source context when the backend provides one: chat/channel, sender, ISO-normalized timestamp, and mail subject. This lets the model answer "who said what, when" without loading the full datasource metadata object for every hit.
+
 > [!IMPORTANT]
 > **Looking for the original AutoRAG (RAG AutoML / pipeline optimization tool)?**
 > This repository now hosts **AutoRAG 2.0**, a complete reimagining of AutoRAG as a personal librarian agent for your office work. The original Python-based AutoRAG — the RAG AutoML tool for automatically finding an optimal RAG pipeline for your data — now lives in the [`legacy/`](legacy/) directory of this repository.

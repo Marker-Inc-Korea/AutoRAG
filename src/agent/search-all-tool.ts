@@ -1,6 +1,6 @@
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
-import { locationSuffix } from "../retrieval/chunk-location.ts";
+import { resultContextSuffix } from "../retrieval/chunk-location.ts";
 import type { RetrievalDiagnostic, RetrievalResult, RetrievalWindowReport } from "../retrieval/types.ts";
 import { EvidenceLedger } from "./evidence-ledger.ts";
 import { type RecordCutToolOptions, registerAndRender } from "./result-render.ts";
@@ -97,7 +97,7 @@ export function createSearchAllDocumentsTool(
 				ledger,
 				SEARCH_ALL_DOCUMENTS_TOOL_NAME,
 				results,
-				(result) => `${result.source} score=${result.score.toFixed(4)}${locationSuffix(result.metadata)}`,
+				(result) => `${result.source} score=${result.score.toFixed(4)}${resultContextSuffix(result.metadata)}`,
 				options.recordCut,
 			);
 			return {

@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { ParsedPages } from "../../src/parser/pages.ts";
-import { describeLocation, locateChunk, locationSuffix } from "../../src/retrieval/chunk-location.ts";
+import {
+	describeLocation,
+	locateChunk,
+	locationSuffix,
+	resultContextSuffix,
+} from "../../src/retrieval/chunk-location.ts";
 
 const STATUTE = [
 	"# 이용약관",
@@ -83,6 +88,60 @@ describe("locationSuffix", () => {
 		);
 		expect(locationSuffix({ method: "bm25" })).toBe("");
 		expect(locationSuffix({ lineNumber: "7", section: "" })).toBe("");
+	});
+});
+
+describe("resultContextSuffix", () => {
+	it("adds a bounded, normalized source context without dropping the measured location", () => {
+		expect(
+			resultContextSuffix({
+				lineNumber: 3,
+				lineEnd: 3,
+				chatName: "Project Falcon",
+				senderNickname: "Ada",
+				startedAt: "2026-08-30T19:12:00+09:00",
+				subject: "Quote review",
+			}),
+		).toBe(' (line 3; chat: "Project Falcon", from: "Ada", at: 2026-08-30T10:12:00.000Z, subject: "Quote review")');
+	});
+
+	it("normalizes Slack epoch seconds and recognizes its sender/channel keys", () => {
+		const timestamp = 1_722_345_678.123;
+		expect(
+			resultContextSuffix({
+				channelName: "releases",
+				userName: "Ada Lovelace",
+				timestamp: String(timestamp),
+			}),
+		).toBe(` (chat: "releases", from: "Ada Lovelace", at: ${new Date(timestamp * 1_000).toISOString()})`);
+	});
+
+	it("surfaces mail sender, date, and subject while ignoring unrelated metadata", () => {
+		const suffix = resultContextSuffix({
+			from: "legal@example.com",
+			date: "2026-08-30T10:00:00Z",
+			subject: "Contract renewal",
+			internalScoreFeature: 0.42,
+		});
+
+		expect(suffix).toContain('from: "legal@example.com"');
+		expect(suffix).toContain("at: 2026-08-30T10:00:00.000Z");
+		expect(suffix).toContain('subject: "Contract renewal"');
+		expect(suffix).not.toContain("internalScoreFeature");
+	});
+
+	it("caps source context and ignores unknown or non-string values", () => {
+		const suffix = resultContextSuffix({
+			chatName: "x".repeat(200),
+			senderName: "y".repeat(200),
+			subject: "z".repeat(200),
+			secret: "not allowed",
+			publishedAt: { nested: true },
+		});
+
+		expect(suffix.length).toBeLessThanOrEqual(123);
+		expect(suffix).not.toContain("not allowed");
+		expect(resultContextSuffix({ method: "bm25", score: 0.9 })).toBe("");
 	});
 });
 

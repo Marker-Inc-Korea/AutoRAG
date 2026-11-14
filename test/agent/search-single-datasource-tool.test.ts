@@ -332,4 +332,28 @@ describe("formatDatasourceResults", () => {
 
 		expect(text).toContain(longContent);
 	});
+
+	it("surfaces sender, channel, and time on datasource result rows", () => {
+		const text = formatDatasourceResults(
+			[
+				{
+					id: "slack-1",
+					source: "/slack/default/chunks/1",
+					content: "The release moved to Friday.",
+					score: 0.9,
+					metadata: {
+						channelName: "releases",
+						userName: "Ada",
+						timestamp: "1722345678.123",
+					},
+				},
+			],
+			[],
+			["E1"],
+		);
+
+		expect(text).toContain('chat: "releases"');
+		expect(text).toContain('from: "Ada"');
+		expect(text).toContain(`at: ${new Date(1_722_345_678_123).toISOString()}`);
+	});
 });

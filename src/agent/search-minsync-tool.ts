@@ -1,7 +1,7 @@
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
 import type { MinSyncVectorMethod } from "../minsync/method.ts";
-import { locationSuffix } from "../retrieval/chunk-location.ts";
+import { resultContextSuffix } from "../retrieval/chunk-location.ts";
 import { EvidenceLedger } from "./evidence-ledger.ts";
 import { type RecordCutToolOptions, registerAndRender } from "./result-render.ts";
 import { type SearchDocumentRetrievalTraceResult, toRetrievalTraceResults } from "./search-documents.ts";
@@ -62,7 +62,7 @@ export function createSearchMinSyncDocumentsTool(
 				ledger,
 				SEARCH_MINSYNC_DOCUMENTS_TOOL_NAME,
 				results,
-				(result) => `${result.source} score=${result.score.toFixed(4)}${locationSuffix(result.metadata)}`,
+				(result) => `${result.source} score=${result.score.toFixed(4)}${resultContextSuffix(result.metadata)}`,
 				options.recordCut,
 			);
 			return {

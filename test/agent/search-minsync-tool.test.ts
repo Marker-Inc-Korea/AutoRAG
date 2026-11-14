@@ -100,6 +100,30 @@ describe("semantic_search_local_docs tool", () => {
 		expect(textOf(out)).toContain(longContent);
 	});
 
+	it("surfaces bounded source context on MinSync result rows", async () => {
+		const tool = createSearchMinSyncDocumentsTool(() =>
+			stubMethod([
+				{
+					id: "mail-1",
+					source: "/mailcrawl/default/chunks/1",
+					content: "The renewal is approved.",
+					score: 0.88,
+					metadata: {
+						from: "legal@example.com",
+						date: "2026-08-30T10:00:00Z",
+						subject: "Contract renewal",
+					},
+				},
+			]),
+		);
+
+		const text = textOf(await tool.execute("call-context", { query: "renewal" }));
+
+		expect(text).toContain('from: "legal@example.com"');
+		expect(text).toContain("at: 2026-08-30T10:00:00.000Z");
+		expect(text).toContain('subject: "Contract renewal"');
+	});
+
 	it("normalizes model-supplied physical scopes before MinSync retrieval", async () => {
 		const seenScopes: Array<string | undefined> = [];
 		const method: StubMethod = {
