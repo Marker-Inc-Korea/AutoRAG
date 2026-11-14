@@ -60,6 +60,22 @@ describe("single-model CLI config", () => {
 		expect(config.languages).toEqual(["ko", "en"]);
 	});
 
+	it("keeps a glob excludePaths entry as written instead of resolving it against the workspace", () => {
+		const path = join(root, "config.json");
+		writeFileSync(
+			path,
+			JSON.stringify({
+				workspacePath: join(root, "ws"),
+				excludePaths: ["**/node_modules/**", "**/*.log", "private"],
+			}),
+			"utf8",
+		);
+
+		const config = resolveConfig({ flags: { config: path }, env: { HOME: root }, cwd: root });
+
+		expect(config.excludePaths).toEqual(["**/node_modules/**", "**/*.log", join(root, "ws", "private")]);
+	});
+
 	it("rejects model.apiKeyEnv for the dazzi provider: it uses the /login credential", () => {
 		const path = join(root, "config.json");
 		writeFileSync(

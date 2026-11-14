@@ -389,6 +389,59 @@ describe("syncParsedMirrors", () => {
 		expect(index.entries["/docs/keep.txt"]).toBeDefined();
 	});
 
+	it("excludes by glob: `**/scratch/**` skips that directory at any depth, and other files stay", async () => {
+		const deep = join(source, "app", "scratch", "tmp");
+		mkdirSync(deep, { recursive: true });
+		writeFileSync(join(deep, "a.txt"), "A\n");
+		writeFileSync(join(source, "app", "keep.txt"), "Keep\n");
+		writeFileSync(join(source, "root.txt"), "Root\n");
+
+		const result = await syncParsedMirrors({
+			root,
+			searchPaths: [source],
+			registry: createDefaultParserRegistry(),
+			userExcludedSourcePaths: new Set(["**/scratch/**"]),
+		});
+		const index = loadMirrorIndex(root);
+
+		expect(index.entries["/docs/app/scratch/tmp/a.txt"]).toBeUndefined();
+		expect(index.skipped?.["/docs/app/scratch/tmp/a.txt"]?.reason).toBe("user-excluded");
+		expect(index.entries["/docs/app/keep.txt"]).toBeDefined();
+		expect(index.entries["/docs/root.txt"]).toBeDefined();
+		expect(result.written).toBe(2);
+	});
+
+	it("excludes by file glob: `**/*.draft.txt` skips matching files only", async () => {
+		writeFileSync(join(source, "a.draft.txt"), "draft\n");
+		writeFileSync(join(source, "a.txt"), "text\n");
+
+		await syncParsedMirrors({
+			root,
+			searchPaths: [source],
+			registry: createDefaultParserRegistry(),
+			userExcludedSourcePaths: new Set(["**/*.draft.txt"]),
+		});
+		const index = loadMirrorIndex(root);
+
+		expect(index.entries["/docs/a.draft.txt"]).toBeUndefined();
+		expect(index.entries["/docs/a.txt"]).toBeDefined();
+	});
+
+	it("a glob does not match a directory whose name merely contains the glob's directory name", async () => {
+		mkdirSync(join(source, "my_scratch_notes"));
+		writeFileSync(join(source, "my_scratch_notes", "n.txt"), "N\n");
+
+		await syncParsedMirrors({
+			root,
+			searchPaths: [source],
+			registry: createDefaultParserRegistry(),
+			userExcludedSourcePaths: new Set(["**/scratch/**"]),
+		});
+		const index = loadMirrorIndex(root);
+
+		expect(index.entries["/docs/my_scratch_notes/n.txt"]).toBeDefined();
+	});
+
 	it("continues when a scanned source disappears while an earlier file is parsed", async () => {
 		writeFileSync(join(source, "a.txt"), "Alpha\n");
 		writeFileSync(join(source, "b.txt"), "Beta\n");
@@ -454,6 +507,35 @@ describe("mirror staleness decisions", () => {
 		});
 
 		expect(diagnostics).toEqual([]);
+	});
+
+	it("reuses the last refresh's duplicate exclusions instead of needing a fresh duplicate scan", async () => {
+		await refreshWithDeliberateSkips();
+
+		const diagnostics = await detectMirrorStaleness({
+			root,
+			searchPaths: [source],
+			registry: createDefaultParserRegistry(),
+			maxSourceBytes: 100,
+			reuseRecordedDuplicateExclusions: true,
+		});
+
+		expect(diagnostics).toEqual([]);
+	});
+
+	it("still reports a recorded duplicate copy as stale once it changes", async () => {
+		await refreshWithDeliberateSkips();
+		writeFileSync(join(source, "dup-copy.txt"), "edited since the last refresh\n");
+
+		const diagnostics = await detectMirrorStaleness({
+			root,
+			searchPaths: [source],
+			registry: createDefaultParserRegistry(),
+			maxSourceBytes: 100,
+			reuseRecordedDuplicateExclusions: true,
+		});
+
+		expect(diagnostics.map((diagnostic) => diagnostic.source)).toEqual(["/docs/dup-copy.txt"]);
 	});
 
 	it("never treats Jikji's product artifact as a corpus source", async () => {

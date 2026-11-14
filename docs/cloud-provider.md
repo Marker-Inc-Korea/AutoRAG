@@ -40,6 +40,14 @@ There is no API-key environment variable. `AUTORAG_API_KEY` is not read, and
 flow (no browser on any reachable machine) is not available yet; it is tracked in
 [#1913](https://github.com/Marker-Inc-Korea/AutoRAG/issues/1913).
 
+### Environment-only integrations
+
+`AUTORAG_AUTH_MODE=environment` disables stored model credentials, Pi model/settings discovery and
+the Codex config fallback for CLI model resolution and decision backends. It does not change normal
+standalone authentication when unset. Hermes's AutoRAG plugin forces this mode; it cannot reuse a
+Pi/Dazzi subscription login. Its Finder strips inherited provider keys and returns unfiltered search
+hits when no decision model is available. The model-free Lite MCP retrieval tools still work.
+
 ## Environment variables
 
 | Variable | Default | Meaning |

@@ -6,6 +6,7 @@ import { MINSYNC_SUBDIR } from "../../minsync/paths.ts";
 import { PARSED_MIRROR_SUBDIR, refreshReadinessPath } from "../../mirror/paths.ts";
 import { buildAgentOptions, type CliConfig, resolveConfig } from "../config.ts";
 import { renderError, renderIndex } from "../output.ts";
+import { abortOnSignal, SIGNAL_EXIT_CODES } from "../signal-abort.ts";
 import { parseMethodFlag } from "./refresh.ts";
 import type { CommandContext } from "./types.ts";
 
@@ -17,7 +18,7 @@ const ALL_RESET_TARGET_NAMES = ["parsed", "minsync"] as const;
  * and MinSync indexes
  * (preserving `bin`, `datasources`, and the memory file). `rebuild` resets then re-runs a forced
  * refresh. Returns 0 on success, 2 for usage/decline errors, 1 for runtime
- * errors including path-escape guard violations.
+ * errors including path-escape guard violations, and 130/143 when a rebuild is stopped by SIGINT/SIGTERM.
  */
 export async function runIndex(ctx: CommandContext): Promise<number> {
 	const sub = ctx.positionals[0];
@@ -96,14 +97,21 @@ export async function runIndex(ctx: CommandContext): Promise<number> {
 		return 0;
 	}
 
-	// rebuild: re-run a forced refresh with a model-free agent, scoped to methods.
+	// rebuild: re-run a forced refresh with a model-free agent, scoped to methods. The reset above already
+	// removed the old index, so a stop signal leaves a partial one: the next `refresh` completes it.
+	const stop = abortOnSignal();
 	let rebuilt: AutoRAGRefreshResult;
 	try {
 		const agent = new AutoRAGAgent(buildAgentOptions(config));
-		rebuilt = await agent.refresh(true, refreshMethods ? { methods: refreshMethods } : undefined);
+		rebuilt = await agent.refresh(true, {
+			...(refreshMethods ? { methods: refreshMethods } : {}),
+			signal: stop.signal,
+		});
 	} catch (error) {
 		ctx.stderr(renderError(error, { json: ctx.json }));
-		return 1;
+		return stop.received === undefined ? 1 : SIGNAL_EXIT_CODES[stop.received];
+	} finally {
+		stop.dispose();
 	}
 
 	ctx.stdout(renderIndex({ action: "rebuild", removed: [...targetNames], rebuilt }, { json: ctx.json }));

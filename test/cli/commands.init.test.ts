@@ -101,6 +101,22 @@ describe("runInit", () => {
 		expect(JSON.parse(readFileSync(homeConfigPath(), "utf8")).excludePaths).toEqual([join(root, "private notes")]);
 	});
 
+	it("writes a glob exclusion as given instead of resolving it against the cwd, and keeps it through a reload", async () => {
+		const code = await runInit(
+			makeCtx({ repeatedFlags: { exclude: ["**/node_modules/**", "/Users/me/Downloads/**", "private notes"] } }),
+		);
+		expect(code).toBe(0);
+		const expected = ["**/node_modules/**", "/Users/me/Downloads/**", join(root, "private notes")];
+		expect(JSON.parse(readFileSync(homeConfigPath(), "utf8")).excludePaths).toEqual(expected);
+		const resolved = resolveConfig({
+			flags: { config: homeConfigPath() },
+			env: { HOME: process.env.HOME },
+			cwd: join(root, "other"),
+		});
+		expect(resolved.excludePaths).toEqual(expected);
+		expect(buildAgentOptions(resolved).excludePaths).toEqual(expected);
+	});
+
 	it.each(["", "   ", true])("rejects an empty exclusion without writing config: %j", async (exclude) => {
 		const stderr: string[] = [];
 		expect(await runInit(makeCtx({ flags: { exclude }, stderr: (line) => stderr.push(line) }))).toBe(2);

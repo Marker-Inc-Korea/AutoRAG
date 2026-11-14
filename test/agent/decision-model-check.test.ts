@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { type FauxProviderRegistration, fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
 import { registerFauxProvider } from "@earendil-works/pi-ai/compat";
 import { BackendError, type JevBackend } from "jev-use";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AutoRAGAgent, type AutoRAGAgentOptions } from "../../src/agent/agent.ts";
 import {
 	checkDecisionModel,
@@ -32,6 +32,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+	vi.unstubAllEnvs();
 	for (const registration of registrations) registration.unregister();
 	rmSync(root, { recursive: true, force: true });
 });
@@ -80,7 +81,12 @@ describe("checkDecisionModel", () => {
 	});
 
 	it("fails with the missing-credential reason when no backend credential resolves", async () => {
-		const error = await unavailable(checkDecisionModel(createJevJudge({ backend: "openrouter", env: {} })));
+		// `env` is a layer ahead of process.env, not a replacement, and an unset agentDir reads the user's pi
+		// auth.json: without isolating both, a machine with a real key makes a real provider call here.
+		vi.stubEnv("OPENROUTER_API_KEY", undefined);
+		const agentDir = join(root, "agent");
+		mkdirSync(agentDir, { recursive: true });
+		const error = await unavailable(checkDecisionModel(createJevJudge({ backend: "openrouter", env: {}, agentDir })));
 		expect(error.code).toBe(DECISION_MODEL_UNAVAILABLE_CODE);
 		expect(error.code).toBe("decision-model-unavailable");
 		expect(error.reason).toBe("missing-credential");

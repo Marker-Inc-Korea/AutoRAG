@@ -24,6 +24,10 @@ Core Lite tools include `autorag.status`, `autorag.search`,
 integrated datasources expose additional scoped search tools. Read-only MCP
 mode omits mutating tools such as refresh and report.
 
+Always-on cloud agents (Grok Bot, OpenAI dots, Claude Duet, Meta Muse) connect by URL
+instead: `autorag-mcp --http` serves the same tools over streamable HTTP with bearer
+and OAuth auth, read-only by default. See [`remote-agents.md`](remote-agents.md).
+
 ## ⚡ AutoRAG Lite: Model-Free Retrieval Engine
 
 Need blazing fast local search without configuring an LLM or paying for API tokens? Use **AutoRAG Lite**.

@@ -1,13 +1,14 @@
 import { join } from "node:path";
-import type {
-	ClassifierAnswer,
-	ClassifierApi,
-	ClassifierContext,
-	ClassifierModel,
-	ClassifierQuestion,
-	ClassifierResult,
-	JsonObject,
-	ModelsClassifierOptions,
+import {
+	type ClassifierAnswer,
+	type ClassifierApi,
+	type ClassifierContext,
+	type ClassifierModel,
+	type ClassifierQuestion,
+	type ClassifierResult,
+	InMemoryCredentialStore,
+	type JsonObject,
+	type ModelsClassifierOptions,
 } from "@earendil-works/pi-ai";
 import { getAgentDir, ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { BackendError, type BackendRequest, type BackendResponse, type JevBackend, type RawAnswer } from "jev-use";
@@ -76,14 +77,17 @@ const runtimes = new Map<string, Promise<DecisionModelRuntime>>();
 
 /** pi's runtime for one agent home, offline: the bundled catalog plus `models.json`, with `auth.json` credentials. */
 function runtimeFor(agentDir: string): Promise<DecisionModelRuntime> {
-	let runtime = runtimes.get(agentDir);
+	const environmentOnly = process.env.AUTORAG_AUTH_MODE === "environment";
+	const cacheKey = `${environmentOnly ? "environment" : "stored"}:${agentDir}`;
+	let runtime = runtimes.get(cacheKey);
 	if (runtime === undefined) {
 		runtime = ModelRuntime.create({
-			authPath: join(agentDir, "auth.json"),
-			modelsPath: join(agentDir, "models.json"),
+			...(environmentOnly
+				? { credentials: new InMemoryCredentialStore(), modelsPath: null, refreshOnCreate: false }
+				: { authPath: join(agentDir, "auth.json"), modelsPath: join(agentDir, "models.json") }),
 			allowModelNetwork: false,
 		});
-		runtimes.set(agentDir, runtime);
+		runtimes.set(cacheKey, runtime);
 	}
 	return runtime;
 }

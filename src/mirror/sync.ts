@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { BigIntStats, Dir } from "node:fs";
 import { opendir, readFile, stat } from "node:fs/promises";
-import { basename, dirname, extname, join, resolve, sep } from "node:path";
+import { basename, dirname, extname, join, resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { type DupeyCliOptions, fingerprintWithDupey } from "../dupey/cli.ts";
 import {
@@ -10,6 +10,7 @@ import {
 	canonicalPathMapper,
 	isPathInside,
 } from "../filesystem/cloud-placeholder.ts";
+import { createPathExclusionMatcher } from "../filesystem/path-exclusions.ts";
 import { planSourceRoots, type SourceRoot, sourceIdentifier } from "../filesystem/source-paths.ts";
 import { resolveMinSyncBinary } from "../minsync/binary.ts";
 import { MinSyncStageSession } from "../minsync/stage.ts";
@@ -103,6 +104,15 @@ export interface ParsedMirrorSyncOptions {
 	readonly maxSourceBytes?: number;
 	/** Absolute source paths omitted from parsed mirrors (for example exact duplicate copies). */
 	readonly excludeSourcePaths?: ReadonlySet<string>;
+	/**
+	 * Read-only freshness checks only: omit the sources the last refresh already recorded as
+	 * `duplicate-excluded` instead of requiring a fresh duplicate scan. Duplicate selection needs
+	 * a content scan of every root, which is the dominant cost of a status or retrieve call.
+	 * A recorded copy is only omitted while its mtime and size still match the record, so an
+	 * edited copy is still reported stale. Copies that became duplicates after the last refresh
+	 * are not known here; see `AutoRAGAgent.scanMirrorStaleness`.
+	 */
+	readonly reuseRecordedDuplicateExclusions?: boolean;
 	/** Absolute source paths or directories omitted by the user. */
 	readonly userExcludedSourcePaths?: ReadonlySet<string>;
 	/**
@@ -425,6 +435,7 @@ function sourcePlan(
 	current: readonly CurrentEntry[],
 	registry: ParserRegistry,
 	options: ParsedMirrorSyncOptions,
+	recordedDuplicateSources?: ReadonlySet<string>,
 ): {
 	versions: Map<string, string>;
 	omitted: Map<string, SourceOmission>;
@@ -435,7 +446,7 @@ function sourcePlan(
 		const parser = registry.getForVirtualPath(entry.virtualPath);
 		if (isPathExcluded(entry.sourcePath, options.userExcludedSourcePaths))
 			omitted.set(entry.virtualPath, { reason: "user-excluded" });
-		else if (options.excludeSourcePaths?.has(entry.sourcePath))
+		else if (options.excludeSourcePaths?.has(entry.sourcePath) || recordedDuplicateSources?.has(entry.virtualPath))
 			omitted.set(entry.virtualPath, {
 				reason: "duplicate-excluded",
 				diagnostic: {
@@ -915,6 +926,24 @@ async function syncWithRegistry(
 	}
 }
 
+/**
+ * Virtual paths the last refresh recorded as `duplicate-excluded` whose file is unchanged since
+ * (same mtime and size). A changed copy is left out so the normal freshness check reports it.
+ */
+function recordedDuplicateSources(previous: ParsedMirrorIndex, current: readonly CurrentEntry[]): ReadonlySet<string> {
+	const recorded = new Set<string>();
+	for (const entry of current) {
+		const skip = previous.skipped?.[entry.virtualPath];
+		if (
+			skip?.reason === "duplicate-excluded" &&
+			skip.sourceMtimeNs === entry.mtimeNs &&
+			skip.sourceSizeBytes === entry.sizeBytes
+		)
+			recorded.add(entry.virtualPath);
+	}
+	return recorded;
+}
+
 /** Ask MinSync's read-only plan which current source revisions still need work. */
 export async function detectMirrorStaleness(options: ParsedMirrorSyncOptions): Promise<ParsedMirrorDiagnostic[]> {
 	const registry = options.registry ?? createDefaultParserRegistry(options.parserOptions);
@@ -941,7 +970,10 @@ export async function detectMirrorStaleness(options: ParsedMirrorSyncOptions): P
 				output_root: join(parsedMirrorRoot(options.root), "files"),
 			}),
 		);
-		const { versions, omitted } = sourcePlan(current, registry, options);
+		const recordedDuplicates = options.reuseRecordedDuplicateExclusions
+			? recordedDuplicateSources(previous, current)
+			: undefined;
+		const { versions, omitted } = sourcePlan(current, registry, options, recordedDuplicates);
 		const fingerprint = parseFingerprint(options);
 		const plan = await session.plan({
 			stage: "parse",
@@ -1033,12 +1065,17 @@ function normalizeExtension(extension: string): string {
 	return lower.startsWith(".") ? lower : `.${lower}`;
 }
 
+const matcherBySet = new WeakMap<ReadonlySet<string>, (path: string) => boolean>();
+
+/** A path is excluded when it equals an excluded path, sits under one, or matches an excluded glob. */
 export function isPathExcluded(sourcePath: string, excluded: ReadonlySet<string> | undefined): boolean {
-	if (excluded === undefined) return false;
-	for (const excludedPath of excluded) {
-		if (sourcePath === excludedPath || sourcePath.startsWith(`${excludedPath}${sep}`)) return true;
+	if (excluded === undefined || excluded.size === 0) return false;
+	let matcher = matcherBySet.get(excluded);
+	if (matcher === undefined) {
+		matcher = createPathExclusionMatcher([...excluded]);
+		matcherBySet.set(excluded, matcher);
 	}
-	return false;
+	return matcher(sourcePath);
 }
 
 type SearchRootUnavailableReason = "gone" | "not-a-directory" | "unreadable" | "empty";

@@ -6,6 +6,7 @@ import { z } from "zod";
 import type { RefreshMethod } from "../agent/agent.ts";
 import { evidenceFor } from "../cli/commands/evidence.ts";
 import { validateReport } from "../cli/commands/report.ts";
+import type { ConvertAndRelateResult } from "../convert/index.ts";
 import type { AutoRAGLite } from "../core.ts";
 import { datasourceSearchToolName } from "../datasource/tool-naming.ts";
 import { type DupeyScanResult, scanWithDupey } from "../dupey/index.ts";
@@ -71,6 +72,22 @@ const evidenceInput = z.strictObject({
 	sessionId: z.string().trim().min(1),
 	resultNumber: z.number().int().positive().optional(),
 });
+
+// `overwrite`/`skipExisting` are deliberately not offered: through MCP a conversion never replaces a file.
+// Filee numbers a colliding output name instead, so nothing is lost.
+const convertInput = z.strictObject({
+	inputs: z.array(z.string().trim().min(1)).min(1).max(500),
+	to: z.string().trim().min(1),
+	outputDir: z.string().trim().min(1).optional(),
+	recursive: z.boolean().optional(),
+	quality: z.number().int().min(1).max(100).optional(),
+	keepDates: z.boolean().optional(),
+});
+const convertFormatsInput = z.strictObject({ from: z.string().trim().min(1).optional() });
+
+/** Per-file rows past this are summarised, so a huge batch cannot flood the model's context. */
+const MAX_CONVERT_FILES = 200;
+
 interface ExactDuplicateGroup {
 	readonly hash: string;
 	readonly files: readonly string[];
@@ -106,6 +123,84 @@ function jsonResult<T extends object>(value: T, isError = false) {
 
 function toolError(code: string, message: string, extra: Record<string, unknown> = {}) {
 	return jsonResult({ ok: false, errorCode: code, message, ...extra }, true);
+}
+
+/** Entries of one code kept verbatim; the rest of that code are summarized in one entry. */
+const DIAGNOSTIC_EXAMPLES_PER_CODE = 3;
+
+interface DiagnosticLike {
+	readonly code: string;
+	readonly severity: string;
+	readonly message: string;
+	readonly source?: string;
+	readonly reason?: string;
+}
+
+/**
+ * Keep an MCP response small when one code repeats once per file. A corpus whose parser changed reports one
+ * `stale-index` entry per source (1,100 of them, about 750 KB, on a real 160k-file index), which the model then has to
+ * read through on every search and status call. Each code keeps its first few entries verbatim and one summary entry
+ * says how many more there were and how they split by `reason`, so "why is it stale" survives and a different code is
+ * never hidden behind a flood of this one. Short lists pass through unchanged.
+ */
+export function capDiagnostics<T extends DiagnosticLike>(diagnostics: readonly T[]): (T | DiagnosticLike)[] {
+	const byCode = new Map<string, T[]>();
+	for (const entry of diagnostics) {
+		const list = byCode.get(entry.code);
+		if (list === undefined) byCode.set(entry.code, [entry]);
+		else list.push(entry);
+	}
+	const out: (T | DiagnosticLike)[] = [];
+	for (const [code, entries] of byCode) {
+		out.push(...entries.slice(0, DIAGNOSTIC_EXAMPLES_PER_CODE));
+		const rest = entries.slice(DIAGNOSTIC_EXAMPLES_PER_CODE);
+		if (rest.length === 0) continue;
+		const reasons = new Map<string, number>();
+		for (const entry of rest) {
+			const key = entry.reason ?? "unspecified";
+			reasons.set(key, (reasons.get(key) ?? 0) + 1);
+		}
+		const split = [...reasons].map(([reason, count]) => `${reason}: ${count}`).join(", ");
+		const severity = entries.some((entry) => entry.severity === "error")
+			? "error"
+			: entries.some((entry) => entry.severity === "warning")
+				? "warning"
+				: "info";
+		out.push({
+			code,
+			severity,
+			message: `${rest.length} more ${code} entries omitted (${split}); the first ${DIAGNOSTIC_EXAMPLES_PER_CODE} are shown above.`,
+		});
+	}
+	return out;
+}
+
+/**
+ * Shape a conversion for the model: one row per source with its outputs and error, plus the Dupey verdict per
+ * output. Nothing converted is an error that still carries the per-file reasons, since "why" is what the model
+ * needs next.
+ */
+function convertResult(details: ConvertAndRelateResult) {
+	const { result, links } = details;
+	const files = result.files.slice(0, MAX_CONVERT_FILES).map((file) => ({
+		source: file.source,
+		state: file.state,
+		outputs: file.outputs,
+		...(file.error !== undefined ? { error: file.error } : {}),
+		...(file.notice !== undefined ? { notice: file.notice } : {}),
+	}));
+	const body = {
+		target: result.target,
+		converted: result.converted,
+		skipped: result.skipped,
+		failed: result.failed,
+		files,
+		...(result.files.length > files.length ? { omittedFiles: result.files.length - files.length } : {}),
+		links,
+	};
+	return result.converted === 0 && result.failed > 0
+		? toolError("convert-failed", "No file was converted.", body)
+		: jsonResult({ ok: true, ...body });
 }
 
 function isToolEnabled(name: string, options: AutoRAGMcpServerOptions): boolean {
@@ -269,7 +364,10 @@ export function createAutoRAGMcpServer(lite: AutoRAGLite, options: AutoRAGMcpSer
 				outputSchema: objectOutput,
 				annotations: { readOnlyHint: true, openWorldHint: false },
 			},
-			async () => jsonResult(await lite.getRefreshStatus()),
+			async () => {
+				const status = await lite.getRefreshStatus();
+				return jsonResult({ ...status, diagnostics: capDiagnostics(status.diagnostics) });
+			},
 		);
 	}
 
@@ -322,7 +420,7 @@ export function createAutoRAGMcpServer(lite: AutoRAGLite, options: AutoRAGMcpSer
 							content: result.content,
 						})),
 						unsearched: retrieved.unsearched,
-						diagnostics: [...status.diagnostics, ...retrieved.diagnostics],
+						diagnostics: capDiagnostics([...status.diagnostics, ...retrieved.diagnostics]),
 					});
 				} catch (error) {
 					return toolError(
@@ -392,7 +490,7 @@ export function createAutoRAGMcpServer(lite: AutoRAGLite, options: AutoRAGMcpSer
 							content: result.content,
 						})),
 						unsearched: retrieved.unsearched,
-						diagnostics: [...status.diagnostics, ...retrieved.diagnostics],
+						diagnostics: capDiagnostics([...status.diagnostics, ...retrieved.diagnostics]),
 					});
 				} catch (error) {
 					return toolError(
@@ -507,6 +605,63 @@ export function createAutoRAGMcpServer(lite: AutoRAGLite, options: AutoRAGMcpSer
 				return datasource === undefined
 					? toolError("datasource-not-found", `No configured datasource named ${datasourceId}.`, { datasourceId })
 					: jsonResult({ ok: true, datasource });
+			},
+		);
+	}
+
+	// Conversion is on unless the config turns Filee off (the same switch that removes the agent's convert_files).
+	const convertEnabled = lite.config.filee?.enabled !== false;
+
+	if (convertEnabled && !readOnly && isToolEnabled("autorag.convert", options)) {
+		server.registerTool(
+			"autorag.convert",
+			{
+				title: "Convert Files",
+				description:
+					"Convert local files to another format offline with Filee: documents, spreadsheets, slides, HWP/HWPX, images, e-books, archives, audio, video, data. Writes new files next to each source (or into outputDir) and never replaces an existing file: a colliding name gets a number added. Each output is compared with its source by Dupey, so the result says whether the copy would count as a duplicate. Use autorag.convert.formats when unsure what a source can become.",
+				inputSchema: convertInput,
+				outputSchema: objectOutput,
+				annotations: { readOnlyHint: false, idempotentHint: false, destructiveHint: false, openWorldHint: false },
+			},
+			async ({ inputs, to, outputDir, recursive, quality, keepDates }, ctx) => {
+				try {
+					const details = await lite.convertFiles(
+						{
+							inputs,
+							to,
+							...(outputDir !== undefined ? { outputDir } : {}),
+							...(recursive !== undefined ? { recursive } : {}),
+							...(quality !== undefined ? { quality } : {}),
+							...(keepDates !== undefined ? { keepDates } : {}),
+						},
+						ctx.mcpReq.signal,
+					);
+					return convertResult(details);
+				} catch (error) {
+					return toolError("convert-failed", error instanceof Error ? error.message : String(error));
+				}
+			},
+		);
+	}
+
+	if (convertEnabled && isToolEnabled("autorag.convert.formats", options)) {
+		server.registerTool(
+			"autorag.convert.formats",
+			{
+				title: "List Convertible Formats",
+				description:
+					"List the file formats Filee knows, or what one source format (heic, docx, hwp, mkv) can be converted to, including targets that need an optional engine. Read-only.",
+				inputSchema: convertFormatsInput,
+				outputSchema: objectOutput,
+				annotations: { readOnlyHint: true, openWorldHint: false },
+			},
+			async ({ from }, ctx) => {
+				try {
+					const formats = await lite.listFileConversions(from, ctx.mcpReq.signal);
+					return jsonResult({ ok: true, ...(from !== undefined ? { from } : {}), formats });
+				} catch (error) {
+					return toolError("convert-failed", error instanceof Error ? error.message : String(error));
+				}
 			},
 		);
 	}

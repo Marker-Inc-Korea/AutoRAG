@@ -2,6 +2,7 @@ import { AutoRAGAgent } from "../../agent/agent.ts";
 import { type IndexSchedule, validateIndexSchedule } from "../../agent/index-schedule.ts";
 import { buildAgentOptions, ConfigError, resolveConfig } from "../config.ts";
 import { renderError, renderRefresh } from "../output.ts";
+import { abortOnSignal, SIGNAL_EXIT_CODES, type SignalAbort } from "../signal-abort.ts";
 import type { CommandContext } from "./types.ts";
 
 function parsePositiveInt(value: string | boolean | undefined, fallback: number): number {
@@ -33,9 +34,12 @@ function scheduleFromFlags(ctx: CommandContext): IndexSchedule | undefined {
  * - default: long-running recursive fs watch with debounced refresh
  * - `--once`: single refresh tick (for cron / launchd / Task Scheduler)
  *
- * Exit codes: 0 on success, 2 on config error, 1 on runtime error.
+ * Exit codes: 0 on success, 2 on config error, 1 on runtime error, 130/143 when a one-shot tick is stopped by
+ * SIGINT/SIGTERM. The long-running watch handles those signals itself and exits 0.
  */
 export async function runWatch(ctx: CommandContext): Promise<number> {
+	// Only a tick that ends on its own needs the abort: the watch loop waits on the signals it handles below.
+	const stop: SignalAbort | undefined = ctx.flags.once === true ? abortOnSignal() : undefined;
 	try {
 		const config = resolveConfig({ flags: ctx.flags, cwd: ctx.cwd });
 		const agent = new AutoRAGAgent(buildAgentOptions(config));
@@ -53,7 +57,7 @@ export async function runWatch(ctx: CommandContext): Promise<number> {
 				);
 				return 0;
 			}
-			const result = await agent.refresh(force);
+			const result = await agent.refresh(force, stop === undefined ? undefined : { signal: stop.signal });
 			ctx.stdout(renderRefresh(result, { json: ctx.json, debug: ctx.debug }));
 			return 0;
 		}
@@ -119,6 +123,9 @@ export async function runWatch(ctx: CommandContext): Promise<number> {
 		return 0;
 	} catch (error) {
 		ctx.stderr(renderError(error, { json: ctx.json, debug: ctx.debug }));
+		if (stop?.received !== undefined) return SIGNAL_EXIT_CODES[stop.received];
 		return error instanceof ConfigError ? 2 : 1;
+	} finally {
+		stop?.dispose();
 	}
 }
