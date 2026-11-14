@@ -118,10 +118,10 @@ Japanese, and Simplified Chinese.
 ### Every place, one search
 
 <p align="center">
-  <img src="assets/autorag-agent-datasources.png" alt="Supported sources: KakaoTalk, Slack, Discord, Telegram, WhatsApp, Mail, Notion, GitHub, Obsidian, browser history, RSS" width="100%" />
+  <img src="assets/autorag-agent-datasources.png" alt="Supported sources: KakaoTalk, Slack, Discord, Telegram, WhatsApp, Mail, Notion, GitHub, Obsidian, browser history, RSS, Google Drive, iCloud Drive, Dropbox, Box" width="100%" />
 </p>
 
-Plus local documents, GitHub Gists, coding-agent sessions, and photos. Data stays in each tool's own store. [Full list and setup](docs/datasource-skills.md).
+Cloud drives (Google Drive, iCloud Drive, OneDrive, Dropbox, Box, and others) are searched through their synced folders. Plus local documents, GitHub Gists, coding-agent sessions, and photos. Data stays in each tool's own store. [Full list and setup](docs/datasource-skills.md).
 
 ### Private by design
 
