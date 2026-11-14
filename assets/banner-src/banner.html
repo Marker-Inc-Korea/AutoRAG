@@ -1,12 +1,12 @@
 <!doctype html>
-<!-- README banner, 1568x392 (same canvas as n8n's). Dazzi "Quiet Glass" tokens from Dazzi-landing-page/public/styles.css.
+<!-- README banner, 1568x392. Dazzi "Quiet Glass" look; tokens from Dazzi-landing-page/public/styles.css.
      Render: bun assets/banner-src/render.mjs  ->  assets/autorag-agent-banner.png -->
 <html lang="en">
 <meta charset="utf-8">
 <style>
   :root{
-    --ink:#1d1d1f; --mute:#6e6e73; --bg:#fbfbfb; --dot:#dedede;
-    --sun:#ffb81f; --grad:linear-gradient(90deg,#f5a300,#ff6a3d 50%,#bf5af2);
+    --ink:#1d1d1f; --ink2:#3a3a3f; --mute:#6e6e73; --bg:#fbfbfd;
+    --grad:linear-gradient(90deg,#f5a300,#ff6a3d 50%,#bf5af2);
   }
   *{box-sizing:border-box;margin:0}
   html,body{width:1568px;height:392px;overflow:hidden}
@@ -15,53 +15,52 @@
     font-family:"SF Pro Display",-apple-system,BlinkMacSystemFont,Pretendard,"Helvetica Neue",Arial,sans-serif;
     -webkit-font-smoothing:antialiased;
   }
+  .glow{position:absolute;border-radius:50%;filter:blur(80px)}
+  .g1{width:760px;height:620px;left:-240px;top:-260px;background:rgba(255,204,26,.42)}
+  .g2{width:560px;height:420px;left:420px;top:260px;background:rgba(255,106,61,.16)}
+  .g3{width:620px;height:520px;right:-120px;top:-300px;background:rgba(191,90,242,.20)}
 
-  /* dot fields */
-  .dots{position:absolute;background-image:radial-gradient(circle,var(--dot) 0 1.6px,transparent 2px)}
-  .dots.fine{left:32px;top:32px;width:1016px;height:256px;background-size:12px 12px}
-  .dots.coarse{left:1078px;top:160px;width:460px;height:200px;background-size:29.5px 29.5px;
-    background-image:radial-gradient(circle,var(--dot) 0 3.6px,transparent 4px)}
-
-  /* headline card */
-  .card{
-    position:absolute;left:150px;top:84px;height:104px;padding:0 42px;
-    display:flex;align-items:center;border-radius:26px;background:#fcfcfc;
-    box-shadow:inset 0 2px 5px rgba(255,255,255,.95),inset 0 -3px 8px rgba(0,0,0,.05),
-               0 0 0 1px rgba(0,0,0,.03),0 10px 28px rgba(0,0,0,.07);
-  }
-  .card h1{font-size:52px;font-weight:600;letter-spacing:-.035em;white-space:nowrap}
-  .card h1 em{font-style:normal;background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
-
-  /* brand, top right */
-  .brand{position:absolute;right:32px;top:34px;display:flex;align-items:center;gap:12px}
-  .brand img{width:44px;height:auto}
-  .brand span{font-size:30px;font-weight:650;letter-spacing:-.025em}
+  /* left: words */
+  .copy{position:absolute;left:68px;top:0;bottom:0;width:760px}
+  .brand{position:absolute;top:34px;left:0;display:flex;align-items:center;gap:12px}
+  .brand img{width:46px;height:auto}
+  .brand span{font-size:27px;font-weight:650;letter-spacing:-.025em}
   .brand span b{font-weight:650;background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
-
-  /* node chips, bottom right: engine -> app */
-  .chips{position:absolute;left:1112px;top:237px;display:flex;align-items:center}
-  .chip{
-    height:48px;display:flex;align-items:center;padding:0 24px;border-radius:999px;
-    font-family:"SF Mono",ui-monospace,Menlo,monospace;font-size:20px;letter-spacing:.01em;color:var(--ink);
+  h1{position:absolute;top:104px;left:-2px;font-size:74px;line-height:1.03;font-weight:760;letter-spacing:-.045em;white-space:nowrap}
+  h1 em{font-style:normal;background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent;padding-right:.04em}
+  .app{
+    position:absolute;left:0;bottom:36px;display:inline-flex;align-items:center;gap:10px;
+    padding:9px 18px 9px 13px;border-radius:999px;font-size:21px;color:var(--ink2);letter-spacing:-.01em;
+    background:rgba(255,255,255,.78);border:1px solid rgba(0,0,0,.07);box-shadow:0 8px 24px rgba(60,40,80,.08);
   }
-  .chip.a{background:var(--sun);margin-right:-2px;z-index:1}
-  .chip.b{background:#e4e4e4}
-  .node{position:absolute;top:50%;width:13px;height:13px;margin-top:-6.5px;border-radius:50%;background:#1b1b1b;z-index:2}
-  .node.l{left:-7px}.node.m{left:var(--m);margin-left:-6.5px}.node.r{right:-7px}
-  .chips{--m:210px}
+  .app i{width:10px;height:10px;border-radius:50%;background:#f7a600;box-shadow:0 0 0 5px rgba(247,166,0,.2)}
+  .app b{font-weight:650;color:var(--ink)}
+
+  /* right: the real Dazzi window, bleeding off the edges */
+  .win{
+    position:absolute;left:900px;top:40px;width:720px;height:420px;overflow:hidden;
+    border-radius:14px;background:#fff;border:1px solid rgba(0,0,0,.1);
+    box-shadow:0 34px 70px rgba(60,40,80,.22),0 6px 18px rgba(0,0,0,.07);
+  }
+  .win img{display:block;width:960px;height:auto}
+  .ans{
+    position:absolute;left:1060px;top:128px;width:560px;border-radius:16px;overflow:hidden;
+    background:#fff;border:1px solid rgba(0,0,0,.09);
+    box-shadow:0 26px 60px rgba(60,40,80,.28),0 6px 16px rgba(0,0,0,.08);
+  }
+  .ans img{display:block;width:100%;height:auto;margin-top:-4px}
+  .ans::after{content:"";position:absolute;left:0;right:0;bottom:0;height:46px;background:linear-gradient(rgba(255,255,255,0),#fff)}
 </style>
 <body>
-  <div class="dots fine"></div>
-  <div class="dots coarse"></div>
+  <div class="glow g1"></div><div class="glow g2"></div><div class="glow g3"></div>
 
-  <div class="card"><h1>Find <em>anything</em> on your computer.</h1></div>
+  <div class="win"><img src="../app/finder.webp" alt=""></div>
+  <div class="ans"><img src="ask-crop.webp" alt=""></div>
 
-  <div class="brand"><img src="dazzi-logo.png" alt=""><span>AutoRAG <b>Agent</b></span></div>
-
-  <div class="chips">
-    <div class="chip a">AUTORAG AGENT</div>
-    <div class="chip b">DAZZI APP</div>
-    <i class="node l"></i><i class="node m"></i><i class="node r"></i>
+  <div class="copy">
+    <div class="brand"><img src="dazzi-logo.png" alt=""><span>AutoRAG <b>Agent</b></span></div>
+    <h1>Your <em>personal</em><br>librarian agent.</h1>
+    <div class="app"><i></i><span><b>Dazzi</b> is the desktop app · Mac &amp; Windows</span></div>
   </div>
 </body>
 </html>

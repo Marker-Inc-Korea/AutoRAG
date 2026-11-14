@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/autorag-agent-banner.png" alt="AutoRAG Agent: find anything on your computer. Dazzi is its desktop app." width="100%" />
+  <img src="assets/autorag-agent-banner.png" alt="AutoRAG Agent: your personal librarian agent. Dazzi is the desktop app." width="100%" />
 </p>
 
 # AutoRAG Agent
