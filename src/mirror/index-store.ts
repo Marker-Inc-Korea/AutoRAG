@@ -16,6 +16,7 @@ const mirrorSourceSchema = z.object({
 	sourceSizeBytes: z.number(),
 	parserVersion: z.string().optional(),
 	sourceVersion: z.string().optional(),
+	contentSha256: z.string().optional(),
 });
 
 /** A read-only application view of MinSync-owned committed source metadata. */
@@ -30,6 +31,8 @@ export interface ParsedMirrorEntry {
 	readonly parserVersion?: string;
 	readonly sourceVersion?: string;
 	readonly parserFingerprint?: string;
+	/** Digest measured by MinSync when the parsed output was committed. */
+	readonly contentSha256?: string;
 }
 
 export type ParsedMirrorSkipReason =
@@ -112,6 +115,7 @@ export function mirrorIndexFromStage(root: string, report: MinSyncStageInspectRe
 			outputPath: join(parsedMirrorRoot(root), "files", item.output.path),
 			updatedAt: item.updated_at,
 			parserFingerprint: item.fingerprint,
+			contentSha256: item.output.digest,
 		};
 	}
 	for (const item of report.skipped) {

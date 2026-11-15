@@ -1,5 +1,7 @@
-import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { basename, join, normalize } from "node:path";
+import { loadMirrorIndex } from "../mirror/index-store.ts";
 import { readPagesSidecar } from "../mirror/pages-sidecar.ts";
 import type { ParsedPages } from "../parser/pages.ts";
 import { abortReason } from "../process/abort-reason.ts";
@@ -20,7 +22,12 @@ import { isSparseOnlyEmbedder } from "./embedder-config.ts";
 import type { EnsureMinSyncBinaryOptions } from "./installer.ts";
 import { minSyncWorkspaceRoot } from "./paths.ts";
 import type { MinSyncEmbedderConfig, MinSyncQueryHit, MinSyncSyncProgress, MinSyncSyncResult } from "./types.ts";
-import { buildMinSyncPathMap, syncMinSyncWorkspace } from "./workspace.ts";
+import {
+	buildMinSyncPathMapFromIndex,
+	type MinSyncWorkspaceEntry,
+	minSyncMirrorFingerprint,
+	syncMinSyncWorkspace,
+} from "./workspace.ts";
 import { runWorkspaceQuery, runWorkspaceSync } from "./workspace-lock.ts";
 
 export interface MinSyncVectorMethodOptions {
@@ -58,6 +65,15 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 	private readonly defaultTopK: number;
 	private readonly scopedTopK: number;
 	private readonly recordCut: RecordCut | undefined;
+	private readonly queryCache = new Map<string, readonly MinSyncQueryHit[]>();
+	private readonly queryCacheLimit = 128;
+	private queryCacheState:
+		| {
+				readonly committedFingerprint: string;
+				readonly cursorMtimeNs: string;
+				readonly byPath: ReadonlyMap<string, MinSyncWorkspaceEntry>;
+		  }
+		| undefined;
 
 	constructor(options: MinSyncVectorMethodOptions) {
 		this.root = options.root;
@@ -112,16 +128,32 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 		const staging = syncMinSyncWorkspace(this.root, {
 			workspacePath: this.workspacePath,
 			minSyncBinaryPath: binaryPath,
+			configurationFingerprint: this.configurationFingerprint(),
 		});
 		const withExcluded = (result: MinSyncSyncResult): MinSyncSyncResult =>
 			staging.excluded.length === 0 ? result : { ...result, stagingExcluded: staging.excluded };
+		if (
+			!force &&
+			!staging.changed &&
+			readCommittedFingerprint(this.workspacePath) === staging.fingerprint &&
+			this.isReady()
+		) {
+			return withExcluded({ ok: true, synced: 0, workspacePath: this.workspacePath, skipped: true });
+		}
 		const client = new MinSyncClient({
 			binaryPath,
 			workspacePath: this.workspacePath,
 			embedder: this.embedder,
 			maxChunkSize: this.maxChunkSize,
 		});
-		return withExcluded(await client.sync(force, signal, onProgress));
+		const result = await client.sync(force, signal, onProgress);
+		// A partial sync is deliberately left uncommitted so the next refresh retries failed files.
+		if (result.ok && (result.filesFailed?.length ?? 0) === 0) {
+			commitFingerprint(this.workspacePath, staging.fingerprint);
+			this.queryCache.clear();
+			this.queryCacheState = undefined;
+		}
+		return withExcluded(result);
 	}
 
 	/** Report unavailable binaries without treating auto-install as already failed. */
@@ -150,7 +182,42 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 		const queryK =
 			this.recordCut === undefined ? scopedK : this.recordCut.fusedLimit(scopedK, OVERFETCH_ABSOLUTE_CAP);
 		const binaryPath = await this.resolveBinary({ install: false });
-		const byPath = buildMinSyncPathMap(this.root, this.workspacePath, binaryPath);
+		const committedFingerprint = readCommittedFingerprint(this.workspacePath);
+		const cursorMtimeNs = readCursorMtimeNs(this.workspacePath);
+		let byPath: ReadonlyMap<string, MinSyncWorkspaceEntry>;
+		let mirrorFingerprint: string | undefined;
+		const cachedState = this.queryCacheState;
+		if (
+			cachedState !== undefined &&
+			committedFingerprint === cachedState.committedFingerprint &&
+			cursorMtimeNs === cachedState.cursorMtimeNs
+		) {
+			byPath = cachedState.byPath;
+			mirrorFingerprint = committedFingerprint;
+		} else {
+			const mirrorIndex = loadMirrorIndex(this.root, { minSyncBinaryPath: binaryPath });
+			byPath = buildMinSyncPathMapFromIndex(this.root, this.workspacePath, mirrorIndex);
+			mirrorFingerprint = minSyncMirrorFingerprint(mirrorIndex, this.configurationFingerprint());
+			if (
+				committedFingerprint !== undefined &&
+				cursorMtimeNs !== undefined &&
+				committedFingerprint === mirrorFingerprint
+			) {
+				this.queryCacheState = { committedFingerprint, cursorMtimeNs, byPath };
+			} else {
+				this.queryCacheState = undefined;
+			}
+		}
+		const cacheKey = `${committedFingerprint ?? "-"}\u0000${this.mode}\u0000${query}\u0000${queryK}`;
+		if (committedFingerprint !== undefined && committedFingerprint === mirrorFingerprint) {
+			const cached = this.queryCache.get(cacheKey);
+			if (cached !== undefined) {
+				// Touch the entry so the bounded map behaves as an LRU under repeated queries.
+				this.queryCache.delete(cacheKey);
+				this.queryCache.set(cacheKey, cached);
+				return this.mapHits(cached, options, byPath);
+			}
+		}
 		// Queries never install: they use an existing binary or fail loudly.
 		const client = new MinSyncClient({
 			binaryPath,
@@ -172,6 +239,22 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 				reason: describeRetrievalError(error),
 			});
 		}
+		if (committedFingerprint !== undefined && committedFingerprint === mirrorFingerprint) {
+			if (this.queryCache.size >= this.queryCacheLimit) {
+				const oldest = this.queryCache.keys().next().value;
+				if (typeof oldest === "string") this.queryCache.delete(oldest);
+			}
+			this.queryCache.set(cacheKey, hits);
+		}
+		return this.mapHits(hits, options, byPath);
+	}
+
+	private mapHits(
+		hits: readonly MinSyncQueryHit[],
+		options: RetrievalOptions,
+		byPath: ReadonlyMap<string, MinSyncWorkspaceEntry>,
+	): RetrievalResult[] {
+		const topK = options.topK ?? this.defaultTopK;
 		const results: RetrievalResult[] = [];
 		const mirrorTexts = new Map<string, MirrorDocument | undefined>();
 		for (const hit of hits) {
@@ -218,6 +301,13 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 		return this.recordCut === undefined ? results : this.recordCut.cut(results, topK, (result) => result.source);
 	}
 
+	private configurationFingerprint(): string {
+		return JSON.stringify({
+			embedder: this.embedder ?? null,
+			maxChunkSize: this.maxChunkSize ?? null,
+		});
+	}
+
 	/**
 	 * Queries pass `install: false` so a user's turn never waits on `cargo install`; only `sync` (refresh)
 	 * may install. See {@link resolveMinSyncBinary}.
@@ -231,6 +321,37 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 			...(options.install === undefined ? {} : { install: options.install }),
 		});
 	}
+}
+
+function readCursorMtimeNs(workspacePath: string): string | undefined {
+	try {
+		return statSync(join(workspacePath, ".minsync", "cursor.json"), { bigint: true }).mtimeNs.toString();
+	} catch {
+		return undefined;
+	}
+}
+
+function fingerprintPath(workspacePath: string): string {
+	return join(workspacePath, ".minsync", "autorag-fingerprint.json");
+}
+
+function readCommittedFingerprint(workspacePath: string): string | undefined {
+	try {
+		const parsed: unknown = JSON.parse(readFileSync(fingerprintPath(workspacePath), "utf8"));
+		if (typeof parsed !== "object" || parsed === null) return undefined;
+		const fingerprint = (parsed as Record<string, unknown>).fingerprint;
+		return typeof fingerprint === "string" ? fingerprint : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+function commitFingerprint(workspacePath: string, fingerprint: string): void {
+	const path = fingerprintPath(workspacePath);
+	mkdirSync(join(workspacePath, ".minsync"), { recursive: true });
+	const temporaryPath = `${path}.${randomUUID()}.tmp`;
+	writeFileSync(temporaryPath, `${JSON.stringify({ version: 1, fingerprint })}\n`);
+	renameSync(temporaryPath, path);
 }
 
 export class MinSyncHybridMethod extends MinSyncVectorMethod {

@@ -322,6 +322,35 @@ describe("MinSyncVectorMethod", () => {
 		);
 	});
 
+	it("skips the external sync when the committed mirror and configuration are unchanged", async () => {
+		writeFakeMinSync(JSON.stringify({ results: [] }));
+		const method = new MinSyncVectorMethod({ binaryPath: minsyncBinary, root, workspacePath: minsyncWorkspace });
+
+		const first = await method.sync();
+		const second = await method.sync();
+
+		expect(first).toMatchObject({ ok: true, synced: 1 });
+		expect(second).toMatchObject({ ok: true, synced: 0, skipped: true });
+		expect(loggedCalls().filter((line) => JSON.parse(line).args[0] === "sync")).toHaveLength(1);
+	});
+
+	it("reuses a stable query result without invoking MinSync again", async () => {
+		writeFakeMinSync(
+			JSON.stringify({
+				results: [{ path: parsedOutput, score: 0.9, text: "Parsed renewal policy with cancellation terms." }],
+			}),
+		);
+		const method = new MinSyncVectorMethod({ binaryPath: minsyncBinary, root, workspacePath: minsyncWorkspace });
+		await method.sync();
+
+		const first = await method.retrieve("renewal cancellation", { topK: 1 });
+		const second = await method.retrieve("renewal cancellation", { topK: 1 });
+
+		expect(first).toHaveLength(1);
+		expect(second).toEqual(first);
+		expect(loggedCalls().filter((line) => JSON.parse(line).args[0] === "query")).toHaveLength(1);
+	});
+
 	it("updates only the changed parsed mirror file", async () => {
 		// Given
 		const guideOutput = join(root, ".autorag", "parsed", "files", "docs", "guide.txt.md");

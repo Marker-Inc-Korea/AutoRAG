@@ -81,6 +81,9 @@ function refreshEnvelope(result: AutoRAGRefreshResult) {
 		if (result.minsync.filesSkippedCount !== undefined) {
 			minsyncObj.filesSkippedCount = result.minsync.filesSkippedCount;
 		}
+		if (result.minsync.skipped !== undefined) {
+			minsyncObj.skipped = result.minsync.skipped;
+		}
 		envelope.minsync = minsyncObj;
 	}
 	if (result.datasources && result.datasources.length > 0) {
@@ -107,6 +110,7 @@ function renderRefreshHuman(result: AutoRAGRefreshResult, debug: boolean): strin
 	);
 	if (result.minsync !== undefined) {
 		const parts = [`ok=${result.minsync.ok}`, `synced=${result.minsync.synced}`];
+		if (result.minsync.skipped === true) parts.push("skipped=true");
 		if (result.minsync.filesSkippedCount !== undefined) parts.push(`skipped=${result.minsync.filesSkippedCount}`);
 		if (result.minsync.reason !== undefined) {
 			parts.push(`reason=${result.minsync.reason}`);

@@ -55,7 +55,9 @@ export type {
 } from "./types.ts";
 export {
 	buildMinSyncPathMap,
+	buildMinSyncPathMapFromIndex,
 	type MinSyncWorkspaceEntry,
 	type MinSyncWorkspaceSyncResult,
+	minSyncMirrorFingerprint,
 	syncMinSyncWorkspace,
 } from "./workspace.ts";
