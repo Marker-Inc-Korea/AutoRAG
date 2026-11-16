@@ -66,7 +66,7 @@ function autoragInvocations(markdown: string): { command: string; flags: string[
 
 /** Extract one `## <heading>` section body from a markdown document. */
 function section(markdown: string, heading: string): string {
-	const pattern = new RegExp(`^## ${heading}\\s*$([\\s\\S]*?)(?=^## |\\Z)`, "m");
+	const pattern = new RegExp(`^## ${heading}\\s*$([\\s\\S]*?)(?=^## |(?![\\s\\S]))`, "m");
 	return pattern.exec(markdown)?.[1] ?? "";
 }
 
