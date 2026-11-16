@@ -53,6 +53,51 @@ describe("portableSpawnCommand", () => {
 		});
 	});
 
+	it.each([
+		["/bin/sh with LF", "#!/bin/sh\n"],
+		["/bin/sh with CRLF", "#!/bin/sh\r\n"],
+		["env sh with LF", "#!/usr/bin/env sh\n"],
+		["env sh with CRLF", "#!/usr/bin/env sh\r\n"],
+	])("uses the %s shebang even when the body mentions node", (_name, shebang) => {
+		const root = mkdtempSync(join(tmpdir(), "autorag-portable-spawn-"));
+		tempDirs.push(root);
+		const script = join(root, "shell-wrapper");
+		writeFileSync(script, `${shebang}printf '%s\\n' 'node'\n`, "utf8");
+		const args = ["argument with spaces", "--flag"];
+
+		expect(portableSpawnCommand(script, args, "win32")).toEqual({
+			command: "bash",
+			args: [script, ...args],
+		});
+	});
+
+	it.each(["node", "/bin/sh", "/usr/bin/env sh"])(
+		"does not infer an interpreter from %s in the body of an unsupported script",
+		(interpreter) => {
+			const root = mkdtempSync(join(tmpdir(), "autorag-portable-spawn-"));
+			tempDirs.push(root);
+			const script = join(root, "python-wrapper");
+			writeFileSync(script, `#!/usr/bin/env python3\nprint("${interpreter}")\n`, "utf8");
+
+			expect(portableSpawnCommand(script, ["arg"], "win32")).toEqual({
+				command: script,
+				args: ["arg"],
+			});
+		},
+	);
+
+	it.each(["linux", "darwin"] as const)("leaves existing shebang scripts unchanged on %s", (platform) => {
+		const root = mkdtempSync(join(tmpdir(), "autorag-portable-spawn-"));
+		tempDirs.push(root);
+		const script = join(root, "shell-wrapper");
+		writeFileSync(script, "#!/bin/sh\nprintf '%s\\n' 'node'\n", "utf8");
+
+		expect(portableSpawnCommand(script, ["arg"], platform)).toEqual({
+			command: script,
+			args: ["arg"],
+		});
+	});
+
 	it("runs extensionless Node shebang fixtures with Node module semantics", async () => {
 		if (process.platform !== "win32") return;
 		const root = mkdtempSync(join(tmpdir(), "autorag-portable-spawn-"));

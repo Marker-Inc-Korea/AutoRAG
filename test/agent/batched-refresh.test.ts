@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import {
 	chmodSync,
 	existsSync,
@@ -176,11 +176,11 @@ function stagedFiles(workspacePath: string): string[] {
 }
 
 function queryHits(binary: string, workspacePath: string): number {
-	const result = spawnSync(binary, ["query", "--format", "json", "-k", "1000", "anything"], {
+	const stdout = execFileSync(process.execPath, [binary, "query", "--format", "json", "-k", "1000", "anything"], {
 		cwd: workspacePath,
 		encoding: "utf8",
 	});
-	const parsed: unknown = JSON.parse(result.stdout);
+	const parsed: unknown = JSON.parse(stdout);
 	if (typeof parsed === "object" && parsed !== null && "results" in parsed && Array.isArray(parsed.results)) {
 		return parsed.results.length;
 	}
