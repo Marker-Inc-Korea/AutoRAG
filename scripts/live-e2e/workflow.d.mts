@@ -17,6 +17,23 @@ export interface LiteRetrieveEnvelopeLike {
 	readonly unsearched: readonly LiteRetrieveUnsearchedEntry[];
 }
 export function assertLiteRetrieveHealthy(envelope: LiteRetrieveEnvelopeLike, expectedSource: string): boolean;
+export interface LiteRetrieveWindowEnvelopeLike extends LiteRetrieveEnvelopeLike {
+	readonly window?: {
+		readonly since?: string;
+		readonly until?: string;
+		readonly examined: number;
+		readonly matched: number;
+		readonly untimed: number;
+		readonly ceilingHit: boolean;
+		readonly fetchDepth: number;
+	};
+}
+export function assertLiteRetrieveWindowExcludes(
+	unwindowed: LiteRetrieveWindowEnvelopeLike,
+	windowed: LiteRetrieveWindowEnvelopeLike,
+	excludedSource: string,
+	keptSource: string,
+): boolean;
 export function assertLiteRetrieveReportsSkippedSurface(
 	envelope: LiteRetrieveEnvelopeLike,
 	surface: string,

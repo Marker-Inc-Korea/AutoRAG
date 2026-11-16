@@ -468,9 +468,14 @@ function parseQueryHits(stdout: string): readonly MinSyncQueryHit[] {
 	if (!Array.isArray(candidates)) return [];
 	return candidates.filter(isMinSyncQueryHit).map((hit) => {
 		const docId = isRecord(hit) ? hit.doc_id : undefined;
-		return typeof docId === "string" && docId.length > 0
-			? { path: hit.path, score: hit.score, text: hit.text, docId }
-			: { path: hit.path, score: hit.score, text: hit.text };
+		const headingPath = isRecord(hit) ? hit.heading_path : undefined;
+		return {
+			path: hit.path,
+			score: hit.score,
+			text: hit.text,
+			...(typeof headingPath === "string" && headingPath.length > 0 ? { headingPath } : {}),
+			...(typeof docId === "string" && docId.length > 0 ? { docId } : {}),
+		};
 	});
 }
 

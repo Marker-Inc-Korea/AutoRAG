@@ -389,6 +389,7 @@ describe("DiscrawlSkill retrieval methods", () => {
 			channelName: "general",
 			authorName: "리누스형",
 			mode: "hybrid",
+			publishedAt: Date.UTC(2026, 7, 11, 10, 50, 30),
 		});
 	});
 

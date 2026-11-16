@@ -38,8 +38,8 @@ export function environmentAddendum(info: EnvironmentInfo): string {
 
 /**
  * Everything the host appends after AutoRAG's own prompt. Ordered most stable first:
- * the environment never changes in a session, the date changes every minute, so the
- * longest possible prefix of the prompt stays identical between turns for prompt caching.
+ * the environment never changes in a session and the date changes at most once a day,
+ * so the longest possible prefix of the prompt stays identical between prompts for prompt caching.
  */
 export function runtimeContextAddendum(cwd: string, now: Date = new Date()): string {
 	return (
