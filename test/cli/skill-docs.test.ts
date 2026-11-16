@@ -161,15 +161,15 @@ describe("parent-agent skill docs", () => {
 		}
 	});
 
-	it("keeps the README skill-install snippet pointing at skills that exist", () => {
-		const readme = readFileSync(join(repoRoot, "README.md"), "utf8").replace(/\r\n?/g, "\n");
-		const install = subsection(readme, "Install the skills into your coding agent");
-		expect(install.length, "README needs a skill-install subsection").toBeGreaterThan(0);
+	it("keeps the agent-setup skill-install snippet pointing at skills that exist", () => {
+		const doc = readFileSync(join(repoRoot, "docs", "agent-setup.md"), "utf8").replace(/\r\n?/g, "\n");
+		const install = subsection(doc, "Install the skills into your coding agent");
+		expect(install.length, "docs/agent-setup.md needs a skill-install subsection").toBeGreaterThan(0);
 		expect(install, "the install subsection must name Claude Code's skill directory").toContain(".claude/skills");
 		const copied = [...install.matchAll(/skills\/(autorag[a-z0-9-]*)/g)].map((match) => match[1]);
 		expect(copied.length, "the install snippet must name the skill folders it copies").toBeGreaterThan(0);
 		for (const name of new Set(copied)) {
-			expect(skillFolders(), `README install snippet copies unknown skill "${name}"`).toContain(name);
+			expect(skillFolders(), `agent-setup install snippet copies unknown skill "${name}"`).toContain(name);
 			expect(existsSync(join(repoRoot, "skills", name, "SKILL.md")), `${name}: missing SKILL.md`).toBe(true);
 		}
 	});
@@ -231,16 +231,16 @@ describe("parent-agent skill docs", () => {
 		}
 	});
 
-	it("keeps doctor-skill and README troubleshooting commands inside the real CLI surface", () => {
+	it("keeps doctor-skill and troubleshooting-doc commands inside the real CLI surface", () => {
 		const { commands, flags } = cliSurface();
-		const readme = readFileSync(join(repoRoot, "README.md"), "utf8").replace(/\r\n?/g, "\n");
-		const troubleshooting = section(readme, "Troubleshooting");
-		expect(troubleshooting.length, "README needs a ## Troubleshooting section").toBeGreaterThan(0);
+		const doc = readFileSync(join(repoRoot, "docs", "troubleshooting.md"), "utf8").replace(/\r\n?/g, "\n");
+		const troubleshooting = section(doc, "Troubleshooting");
+		expect(troubleshooting.length, "docs/troubleshooting.md needs a ## Troubleshooting section").toBeGreaterThan(0);
 		expect(troubleshooting).toContain("autorag-doctor");
 
 		for (const [label, markdown] of [
 			["skills/autorag-doctor/SKILL.md", readSkill("autorag-doctor")],
-			["README ## Troubleshooting", troubleshooting],
+			["docs/troubleshooting.md ## Troubleshooting", troubleshooting],
 		] as const) {
 			const calls = autoragInvocations(markdown);
 			expect(calls.length, `${label}: no autorag invocations found`).toBeGreaterThan(0);
