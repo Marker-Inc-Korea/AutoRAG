@@ -39,7 +39,9 @@ import { writePagesSidecar } from "../../src/mirror/pages-sidecar.ts";
 import { parsedOutputPath } from "../../src/mirror/paths.ts";
 import type { ParsedPages } from "../../src/parser/pages.ts";
 import { RetrievalEngine } from "../../src/retrieval/engine.ts";
-import type { RetrievalFallbackEvent } from "../../src/retrieval/types.ts";
+import { ParallelRetriever } from "../../src/retrieval/merger.ts";
+import { RecordCut } from "../../src/retrieval/record-cut.ts";
+import type { RetrievalFallbackEvent, RetrievalSourceMissingEvent } from "../../src/retrieval/types.ts";
 import { fakeMinSyncStageSimulatorPath } from "../helpers/fake-minsync.ts";
 import { seedMinSyncStage } from "../helpers/seed-minsync-stage.ts";
 
@@ -952,6 +954,128 @@ describe("MinSyncVectorMethod", () => {
 				args: ["query", "--format", "json", "--mode", "vector", "-k", "2", "renewal cancellation"],
 				cwd: minSyncCwd(),
 			}),
+		);
+	});
+
+	describe("hits whose source file is gone", () => {
+		let goneOutput: string;
+
+		beforeEach(async () => {
+			// A stale index entry: the stage still lists the document, but its source file was moved or deleted.
+			goneOutput = parsedOutputPath(root, "/docs/gone.txt");
+			mkdirSync(dirname(goneOutput), { recursive: true });
+			writeFileSync(goneOutput, "Parsed text of a document whose source vanished.\n");
+			const entry = (virtualPath: string, sourcePath: string, outputPath: string): ParsedMirrorEntry => ({
+				virtualPath,
+				sourcePath,
+				outputPath,
+				parserName: "plain-text",
+				sourceMtimeNs: 1,
+				sourceSizeBytes: 18,
+				updatedAt: "2026-01-01T00:00:00.000Z",
+			});
+			await seedMinSyncStage(root, {
+				version: 1,
+				entries: {
+					"/docs/policy.txt": entry("/docs/policy.txt", join(source, "policy.txt"), parsedOutput),
+					"/docs/gone.txt": entry("/docs/gone.txt", join(source, "gone.txt"), goneOutput),
+				},
+			});
+			// The stale entry ranks first, so it must not hide the live hit behind it.
+			writeFakeMinSync(
+				JSON.stringify({
+					results: [
+						{ path: goneOutput, score: 0.99, text: "Gone chunk." },
+						{ path: parsedOutput, score: 0.5, text: "Live chunk." },
+					],
+				}),
+			);
+		});
+
+		it("skips the hit, keeps the rest and reports the skipped path once", async () => {
+			const method = new MinSyncHybridMethod({ binaryPath: minsyncBinary, root, workspacePath: minsyncWorkspace });
+			const events: RetrievalSourceMissingEvent[] = [];
+
+			const results = await method.retrieve("renewal", { topK: 2, onSourceMissing: (event) => events.push(event) });
+
+			expect(results.map((result) => result.content)).toEqual(["Live chunk."]);
+			expect(events).toHaveLength(1);
+			expect(events[0]?.method).toBe("hybrid");
+			expect(events[0]?.missing).toEqual([
+				{ virtualPath: "/docs/gone.txt", sourcePath: join(source, "gone.txt"), code: "ENOENT" },
+			]);
+		});
+
+		it("skips the hit with the record cut on", async () => {
+			const method = new MinSyncHybridMethod({
+				binaryPath: minsyncBinary,
+				root,
+				workspacePath: minsyncWorkspace,
+				recordCut: new RecordCut(),
+			});
+			const events: RetrievalSourceMissingEvent[] = [];
+
+			const results = await method.retrieve("renewal", { topK: 2, onSourceMissing: (event) => events.push(event) });
+
+			expect(results.map((result) => result.content)).toEqual(["Live chunk."]);
+			expect(events).toHaveLength(1);
+			expect(events[0]?.missing.map((entry) => entry.virtualPath)).toEqual(["/docs/gone.txt"]);
+		});
+
+		it("does not mark the surface unsearched and reports a retrieval-source-missing diagnostic", async () => {
+			const method = new MinSyncHybridMethod({ binaryPath: minsyncBinary, root, workspacePath: minsyncWorkspace });
+
+			const { results, diagnostics, unsearched } = await new ParallelRetriever().retrieveWithDiagnostics(
+				[method],
+				"renewal",
+				{ topK: 2 },
+			);
+
+			expect(results.get("hybrid")).toHaveLength(1);
+			expect(unsearched).toEqual([]);
+			expect(diagnostics.map((diagnostic) => diagnostic.code)).toEqual(["retrieval-source-missing"]);
+			expect(diagnostics[0]?.severity).toBe("warning");
+			expect(diagnostics[0]?.reason).toContain(join(source, "gone.txt"));
+		});
+
+		it.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
+			"still propagates an error that is not a missing file",
+			async () => {
+				// A source under a directory the process cannot traverse fails with EACCES, not ENOENT.
+				const locked = join(root, "locked");
+				mkdirSync(locked);
+				writeFileSync(join(locked, "secret.txt"), "x\n");
+				await seedMinSyncStage(root, {
+					version: 1,
+					entries: {
+						"/docs/policy.txt": {
+							virtualPath: "/docs/policy.txt",
+							sourcePath: join(locked, "secret.txt"),
+							outputPath: parsedOutput,
+							parserName: "plain-text",
+							sourceMtimeNs: 1,
+							sourceSizeBytes: 2,
+							updatedAt: "2026-01-01T00:00:00.000Z",
+						},
+					},
+				});
+				chmodSync(locked, 0o000);
+				try {
+					const method = new MinSyncHybridMethod({
+						binaryPath: minsyncBinary,
+						root,
+						workspacePath: minsyncWorkspace,
+					});
+					const onSourceMissing = vi.fn();
+
+					await expect(method.retrieve("renewal", { topK: 2, onSourceMissing })).rejects.toMatchObject({
+						code: "EACCES",
+					});
+					expect(onSourceMissing).not.toHaveBeenCalled();
+				} finally {
+					chmodSync(locked, 0o755);
+				}
+			},
 		);
 	});
 
