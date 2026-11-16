@@ -18,6 +18,7 @@ import { dirname } from "node:path";
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import { pathToFileURL } from "node:url";
 import type { Embedder, EmbeddingIdentity } from "../../embedding/embedder.ts";
+import type { TimeWindow } from "../../retrieval/time-window.ts";
 import type { CrawlerDescriptor } from "./descriptors.ts";
 import {
 	decodeVector,
@@ -88,6 +89,8 @@ const MAX_EMBED_INPUT_CHARS = 8192;
 const BUSY_TIMEOUT_MS = 5000;
 /** Candidate pool multiplier: over-fetch so scope/deleted filtering and fusion still fill `topK`. */
 const POOL_FACTOR = 3;
+/** Extra depth a semantic pool gets under a time window, since out-of-window vectors are dropped after ranking. */
+const WINDOW_POOL_FACTOR = 5;
 /** How long one query's embedding and ranking are reused (the methods of one search run within it). */
 const SEMANTIC_REUSE_MS = 10_000;
 const IDENTITY_KEY = "identity";
@@ -252,23 +255,45 @@ export class CrawlerSidecar {
 		];
 	}
 
-	/** BM25-ranked lexical search. Natural-language queries are OR-ed term by term. */
-	searchLexical(query: string, topK: number): SidecarHit[] {
+	/**
+	 * SQL predicate and bound parameters restricting rows to `[since, until)`, comparing in the crawler's own epoch
+	 * seconds. Empty when there is no window, or when the descriptor has no timestamp: those results carry no
+	 * `publishedAt`, so the retrieval pipeline excludes them and reports the surface instead of trusting this filter.
+	 */
+	private windowPredicate(window: TimeWindow | undefined): { readonly sql: string; readonly params: SQLInputValue[] } {
+		const expression = this.options.descriptor.epochSecondsExpression;
+		if (window === undefined || expression === undefined) return { sql: "", params: [] };
+		const clauses: string[] = [];
+		const params: SQLInputValue[] = [];
+		if (window.since !== undefined) {
+			clauses.push(`(${expression}) >= ?`);
+			params.push(window.since / 1000);
+		}
+		if (window.until !== undefined) {
+			clauses.push(`(${expression}) < ?`);
+			params.push(window.until / 1000);
+		}
+		return { sql: clauses.length === 0 ? "" : ` and ${clauses.join(" and ")}`, params };
+	}
+
+	/** BM25-ranked lexical search. Natural-language queries are OR-ed term by term. An optional window narrows in SQL. */
+	searchLexical(query: string, topK: number, window?: TimeWindow): SidecarHit[] {
 		const match = toMatchQuery(query);
 		if (match === undefined || topK <= 0 || !this.attachCrawler()) return [];
 		const { descriptor } = this.options;
 		const tables = this.ftsTables;
 		const byKey = new Map<string, { readonly row: Row; readonly bm25: number }>();
 		const rankings: string[][] = [];
+		const windowed = this.windowPredicate(window);
 		for (const { table, joinOn } of tables) {
 			const rows = this.db
 				.prepare(
 					`select ${this.select}, bm25(${table}) as rank
 					from ${descriptor.fromClause} join ${table} on ${joinOn}
-					where ${table} match ? and ${this.where}
+					where ${table} match ? and ${this.where}${windowed.sql}
 					order by rank limit ?`,
 				)
-				.all(match, ...this.whereParams(), topK) as Row[];
+				.all(match, ...this.whereParams(), ...windowed.params, topK) as Row[];
 			const keys: string[] = [];
 			for (const row of rows) {
 				const key = String(row.k);
@@ -308,12 +333,19 @@ export class CrawlerSidecar {
 	}
 
 	/** Cosine search over embedded messages. Empty when there is no embedder or the query embedding fails. */
-	async searchSemantic(query: string, topK: number): Promise<SidecarHit[]> {
+	async searchSemantic(query: string, topK: number, window?: TimeWindow): Promise<SidecarHit[]> {
 		const trimmed = query.trim();
 		if (this.options.embedder === undefined || trimmed.length === 0 || topK <= 0 || !this.attachCrawler()) return [];
-		const ranked = await this.rankSemantic(trimmed, topK * POOL_FACTOR);
+		// Out-of-window vectors rank too and are dropped on hydration, so a window needs a deeper pool to leave topK.
+		const ranked = await this.rankSemantic(
+			trimmed,
+			topK * POOL_FACTOR * (window === undefined ? 1 : WINDOW_POOL_FACTOR),
+		);
 		if (ranked.length === 0) return [];
-		const live = this.hydrate(ranked.map((entry) => entry.key));
+		const live = this.hydrate(
+			ranked.map((entry) => entry.key),
+			window,
+		);
 		const hits: SidecarHit[] = [];
 		for (const entry of ranked) {
 			const row = live.get(entry.key);
@@ -357,11 +389,11 @@ export class CrawlerSidecar {
 	}
 
 	/** Reciprocal-rank fusion of lexical and semantic rankings; lexical-only when semantic is unavailable. */
-	async searchHybrid(query: string, topK: number): Promise<SidecarHit[]> {
+	async searchHybrid(query: string, topK: number, window?: TimeWindow): Promise<SidecarHit[]> {
 		if (topK <= 0) return [];
 		const pool = topK * POOL_FACTOR;
-		const lexical = this.searchLexical(query, pool);
-		const semantic = await this.searchSemantic(query, pool);
+		const lexical = this.searchLexical(query, pool, window);
+		const semantic = await this.searchSemantic(query, pool, window);
 		if (semantic.length === 0) return lexical.slice(0, topK);
 		const byKey = new Map<string, SidecarHit>();
 		for (const hit of [...semantic, ...lexical]) byKey.set(hit.key, hit);
@@ -487,16 +519,17 @@ export class CrawlerSidecar {
 	}
 
 	/** Live rows for the given keys, in the order given. */
-	private hydrate(keys: readonly string[]): Map<string, SidecarRow> {
+	private hydrate(keys: readonly string[], window?: TimeWindow): Map<string, SidecarRow> {
 		const { descriptor } = this.options;
 		const out = new Map<string, SidecarRow>();
 		if (keys.length === 0) return out;
+		const windowed = this.windowPredicate(window);
 		const rows = this.db
 			.prepare(
 				`select ${this.select} from ${descriptor.fromClause}
-				where ${descriptor.keyExpression} in (${keys.map(() => "?").join(", ")}) and ${this.where}`,
+				where ${descriptor.keyExpression} in (${keys.map(() => "?").join(", ")}) and ${this.where}${windowed.sql}`,
 			)
-			.all(...keys, ...this.whereParams()) as Row[];
+			.all(...keys, ...this.whereParams(), ...windowed.params) as Row[];
 		const byKey = new Map(rows.map((row) => [String(row.k), this.toRow(row)]));
 		for (const key of keys) {
 			const row = byKey.get(key);

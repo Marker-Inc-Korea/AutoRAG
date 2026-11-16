@@ -15,6 +15,7 @@ import {
 	type SearchDocumentsResponse,
 } from "./agent/search-documents.ts";
 import { buildAgentOptions, type CliConfig, type ResolveConfigInput, resolveConfig } from "./cli/config.ts";
+import type { ConvertAndRelateResult, FileeConvertRequest } from "./convert/index.ts";
 import type { EverythingSearchRequest, EverythingSearchResult } from "./everything/index.ts";
 import type { FSearchSearchRequest, FSearchSearchResult } from "./fsearch/index.ts";
 import type { JikjiPrepareOptions } from "./jikji/index.ts";
@@ -29,6 +30,7 @@ import type {
 	RetrievalOptions,
 	RetrievalResult,
 	RetrievalUnsearchedSurface,
+	RetrievalWindowReport,
 } from "./retrieval/types.ts";
 
 /** Input accepted by {@link createAutoRAGLite}. Flags keep CLI precedence intact. */
@@ -122,6 +124,7 @@ export class AutoRAGLite {
 		results: RetrievalResult[];
 		diagnostics: RetrievalDiagnostic[];
 		unsearched: RetrievalUnsearchedSurface[];
+		window?: RetrievalWindowReport;
 	}> {
 		return this.retrievalEngine.retrieveSelected(query, selection, options);
 	}
@@ -147,6 +150,7 @@ export class AutoRAGLite {
 		results: RetrievalResult[];
 		diagnostics: RetrievalDiagnostic[];
 		unsearched: RetrievalUnsearchedSurface[];
+		window?: RetrievalWindowReport;
 	}> {
 		return this.retrievalEngine.retrieve(query, options);
 	}
@@ -159,6 +163,7 @@ export class AutoRAGLite {
 		byMethod: Map<string, RetrievalResult[]>;
 		diagnostics: RetrievalDiagnostic[];
 		unsearched: RetrievalUnsearchedSurface[];
+		window?: RetrievalWindowReport;
 	}> {
 		return this.retrievalEngine.retrieveByMethod(query, options);
 	}
@@ -180,6 +185,16 @@ export class AutoRAGLite {
 	/** Return a detached snapshot of persisted evidence state. */
 	getMemorySchema(): MemorySchema {
 		return structuredClone(this.memory.getSchema());
+	}
+
+	/** Convert files with Filee, then ask Dupey whether each output joins its source's family. */
+	convertFiles(request: FileeConvertRequest, signal?: AbortSignal): Promise<ConvertAndRelateResult> {
+		return this.agent.convertFiles(request, signal);
+	}
+
+	/** The formats Filee knows, or what one source format can become. */
+	listFileConversions(from?: string, signal?: AbortSignal): Promise<string> {
+		return this.agent.listFileConversions(from, signal);
 	}
 }
 

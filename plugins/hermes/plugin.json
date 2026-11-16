@@ -1,0 +1,36 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "autorag",
+  "version": "1.0.0",
+  "description": "Search your local files and chat/mail archives (Slack, Discord, Telegram, WhatsApp, KakaoTalk, email, Notion, Obsidian) from Hermes with AutoRAG Lite: local hybrid retrieval, cited evidence, duplicate detection. Indexing and search run on your machine; only the results Hermes reads go to your Hermes model.",
+  "author": {
+    "name": "Marker Inc. Korea",
+    "url": "https://github.com/Marker-Inc-Korea"
+  },
+  "homepage": "https://github.com/Marker-Inc-Korea/AutoRAG/tree/main/plugins/hermes",
+  "repository": "https://github.com/Marker-Inc-Korea/AutoRAG/tree/main/plugins/hermes",
+  "license": "Apache-2.0",
+  "keywords": [
+    "rag",
+    "search",
+    "retrieval",
+    "local-first",
+    "documents",
+    "pdf",
+    "hwp",
+    "slack",
+    "discord",
+    "telegram",
+    "whatsapp",
+    "kakaotalk",
+    "email",
+    "mcp"
+  ],
+  "extensions": {
+    "com.nousresearch.hermes": {
+      "servers": {
+        "autorag": { "timeout": 1800 }
+      }
+    }
+  }
+}

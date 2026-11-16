@@ -1,0 +1,9 @@
+{
+  "name": "autorag",
+  "label": "AutoRAG",
+  "description": "Backend for the AutoRAG finder: runs the pinned model-free `autorag lite find` search and streams its results to the desktop search pane.",
+  "icon": "Search",
+  "version": "1.1.0",
+  "tab": { "path": "/autorag", "hidden": true },
+  "api": "plugin_api.py"
+}

@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { BigIntStats, Dir } from "node:fs";
 import { opendir, readFile, stat } from "node:fs/promises";
-import { basename, dirname, extname, join, resolve, sep } from "node:path";
+import { basename, dirname, extname, join, resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { type DupeyCliOptions, fingerprintWithDupey } from "../dupey/cli.ts";
 import {
@@ -10,6 +10,7 @@ import {
 	canonicalPathMapper,
 	isPathInside,
 } from "../filesystem/cloud-placeholder.ts";
+import { createPathExclusionMatcher } from "../filesystem/path-exclusions.ts";
 import { planSourceRoots, type SourceRoot, sourceIdentifier } from "../filesystem/source-paths.ts";
 import { resolveMinSyncBinary } from "../minsync/binary.ts";
 import { MinSyncStageSession } from "../minsync/stage.ts";
@@ -37,6 +38,7 @@ import {
 	type ParsedMirrorIndex,
 	type ParsedMirrorSkipReason,
 } from "./index-store.ts";
+import { writePagesSidecar } from "./pages-sidecar.ts";
 import { parsedMirrorRoot, parsedOutputPath } from "./paths.ts";
 
 /** Refuse to fully load/parse sources larger than this. Keeps Node heap stable on home folders. */
@@ -629,6 +631,7 @@ async function syncWithRegistry(
 				const path = pathsByKey.get(decision.key);
 				await session.delete(decision.key);
 				if (path === undefined) continue;
+				writePagesSidecar(parsedOutputPath(options.root, path), "", undefined);
 				if (previous.entries[path]) deleted += 1;
 				if (!currentPaths.has(path))
 					diagnostics.push({
@@ -825,6 +828,18 @@ async function syncWithRegistry(
 							...(code !== undefined ? { reason: code } : {}),
 						});
 						continue;
+					}
+					try {
+						writePagesSidecar(outputPath, markdown, parsed.pages);
+					} catch (error) {
+						// Pages are an addition to the text: losing them leaves line locations intact, so the file
+						// stays indexed, but the loss is reported rather than hidden.
+						diagnostics.push({
+							code: "mirror-write-failed",
+							severity: "warning",
+							message: `The page index could not be saved, so evidence from this document names no page: ${error instanceof Error ? error.message : String(error)}`,
+							source: entry.virtualPath,
+						});
 					}
 					await session.commit(mirrorStageKey(entry.virtualPath), versions.get(entry.virtualPath)!, {
 						path: basename(outputPath),
@@ -1064,12 +1079,17 @@ function normalizeExtension(extension: string): string {
 	return lower.startsWith(".") ? lower : `.${lower}`;
 }
 
+const matcherBySet = new WeakMap<ReadonlySet<string>, (path: string) => boolean>();
+
+/** A path is excluded when it equals an excluded path, sits under one, or matches an excluded glob. */
 export function isPathExcluded(sourcePath: string, excluded: ReadonlySet<string> | undefined): boolean {
-	if (excluded === undefined) return false;
-	for (const excludedPath of excluded) {
-		if (sourcePath === excludedPath || sourcePath.startsWith(`${excludedPath}${sep}`)) return true;
+	if (excluded === undefined || excluded.size === 0) return false;
+	let matcher = matcherBySet.get(excluded);
+	if (matcher === undefined) {
+		matcher = createPathExclusionMatcher([...excluded]);
+		matcherBySet.set(excluded, matcher);
 	}
-	return false;
+	return matcher(sourcePath);
 }
 
 type SearchRootUnavailableReason = "gone" | "not-a-directory" | "unreadable" | "empty";

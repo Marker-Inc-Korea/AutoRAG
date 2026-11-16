@@ -25,6 +25,11 @@ export interface LoadLocalAutoRAGModelOptions {
 }
 
 export function loadLocalAutoRAGModel(options: LoadLocalAutoRAGModelOptions = {}): LocalAutoRAGModel {
+	if (process.env.AUTORAG_AUTH_MODE === "environment") {
+		throw new Error(
+			"External model config discovery is disabled; configure the model endpoint and its environment key explicitly.",
+		);
+	}
 	const configPath = options.configPath ?? join(homedir(), ".codex", "config.toml");
 	const config = parse(readFileSync(configPath, "utf8")) as Record<string, unknown>;
 	const provider = config.model_provider;

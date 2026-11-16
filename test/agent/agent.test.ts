@@ -35,6 +35,8 @@ function makeTool(name: string): AgentTool {
 
 interface AgentInternals {
 	lastQuery: string | undefined;
+	/** Set when a run starts; the run's first model request builds its memory message. */
+	memoryRunStart: boolean;
 	conversationId: string;
 	memory: RetrievalMemory;
 	minSyncMethod:
@@ -466,6 +468,7 @@ describe("AutoRAGAgent", () => {
 			memoryEmbedder: false,
 		});
 		internals(agent).lastQuery = "deploy the service";
+		internals(agent).memoryRunStart = true;
 
 		const transformed = await internals(agent).innerAgent.transformContext?.([
 			{ role: "user", content: [{ type: "text", text: "hello" }], timestamp: Date.now() },
@@ -490,6 +493,7 @@ describe("AutoRAGAgent", () => {
 			}),
 		]);
 		internals(agent).lastQuery = "alpha topic";
+		internals(agent).memoryRunStart = true;
 
 		const transformed = await internals(agent).innerAgent.transformContext?.([
 			{ role: "user", content: [{ type: "text", text: "hello" }], timestamp: Date.now() },
@@ -514,6 +518,7 @@ describe("AutoRAGAgent", () => {
 			}),
 		]);
 		internals(agent).lastQuery = "photosynthesis cellular respiration";
+		internals(agent).memoryRunStart = true;
 
 		const messages = [{ role: "user" as const, content: [{ type: "text" as const, text: "hello" }], timestamp: 1 }];
 		const transformed = await internals(agent).innerAgent.transformContext?.(messages);

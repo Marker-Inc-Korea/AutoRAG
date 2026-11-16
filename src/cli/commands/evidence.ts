@@ -14,6 +14,8 @@ interface EvidenceView {
 	readonly chunkIndex?: number;
 	readonly lineNumber?: number;
 	readonly lineEnd?: number;
+	readonly pageStart?: number;
+	readonly pageEnd?: number;
 	readonly section?: string;
 	readonly metadata?: Record<string, unknown>;
 }
@@ -43,6 +45,8 @@ export function evidenceFor(schema: MemorySchema, sessionId: string, resultNumbe
 					...(chunk.chunkIndex !== undefined ? { chunkIndex: chunk.chunkIndex } : {}),
 					...(chunk.lineNumber !== undefined ? { lineNumber: chunk.lineNumber } : {}),
 					...(chunk.lineEnd !== undefined ? { lineEnd: chunk.lineEnd } : {}),
+					...(chunk.pageStart !== undefined ? { pageStart: chunk.pageStart } : {}),
+					...(chunk.pageEnd !== undefined ? { pageEnd: chunk.pageEnd } : {}),
 					...(chunk.section !== undefined ? { section: chunk.section } : {}),
 					...(chunk.metadata !== undefined ? { metadata: chunk.metadata } : {}),
 				}));
@@ -68,6 +72,8 @@ function renderEvidence(view: ReturnType<typeof evidenceFor>, json: boolean): st
 			if (chunk.chunkIndex !== undefined) lines.push(`  chunkIndex: ${chunk.chunkIndex}`);
 			if (chunk.lineNumber !== undefined) lines.push(`  lineNumber: ${chunk.lineNumber}`);
 			if (chunk.lineEnd !== undefined) lines.push(`  lineEnd: ${chunk.lineEnd}`);
+			if (chunk.pageStart !== undefined) lines.push(`  pageStart: ${chunk.pageStart}`);
+			if (chunk.pageEnd !== undefined) lines.push(`  pageEnd: ${chunk.pageEnd}`);
 			if (chunk.section !== undefined) lines.push(`  section: ${chunk.section}`);
 			if (chunk.excerpt !== undefined) lines.push(`  excerpt: ${chunk.excerpt}`);
 			if (chunk.content !== undefined) lines.push(`  content: ${chunk.content}`);
