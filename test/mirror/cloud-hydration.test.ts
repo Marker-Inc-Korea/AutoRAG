@@ -1,8 +1,11 @@
+import { execFile } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, unlinkSync, utimesSync, writeFileSync } from "node:fs";
 import type * as FsPromises from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
+import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { DarwinCloudProbe } from "../../src/filesystem/cloud-placeholder.ts";
 import {
 	type CloudEvictResult,
 	type CloudFileProbe,
@@ -610,5 +613,29 @@ describe("cloud fingerprints", () => {
 		expect(loadCloudFingerprints(root).entries).toEqual({
 			"/cloud/report.docx": { sourceVersion: "1:1", exact: "docx-hash", modified: null, revision: null },
 		});
+	});
+});
+
+describe.skipIf(process.platform !== "darwin")("a document that vanishes before the placeholder probe", () => {
+	it("does not fail the refresh, and the rest still indexes", async () => {
+		const run = promisify(execFile);
+		write("kept.txt");
+		const vanishing = write("vanishing.txt");
+		write("also-kept.txt");
+		// The real /usr/bin/stat answers the probe; the file is removed just before it runs, the way a document in a
+		// folder that is being synchronised disappears between the listing and the probe.
+		const probe = new DarwinCloudProbe({
+			exec: async (file, args) => {
+				if (file === "/usr/bin/stat") rmSync(vanishing, { force: true });
+				return run(file, [...args]);
+			},
+		});
+
+		const result = await sync(new FakeCloud(), { cloudProbe: probe });
+
+		expect(Object.keys(loadMirrorIndex(root).entries)).toContain("/docs/kept.txt");
+		expect(Object.keys(loadMirrorIndex(root).entries)).toContain("/docs/also-kept.txt");
+		expect(Object.keys(loadMirrorIndex(root).entries)).not.toContain("/docs/vanishing.txt");
+		expect(result.written).toBe(2);
 	});
 });
