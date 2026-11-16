@@ -306,6 +306,24 @@ and outputs, and file diffs are not indexed. AutoRAG never opens the agents' log
   `connector.sources` (`{"claude-code": ["/path"]}`) pins session roots with `--source` so wombat reads only those
   instead of every agent's default location under the home directory.
 
+### When wombat is searched
+
+wombat is opt-in, like every CLI-backed datasource: `autorag setup` reports it as `skipped: not configured` until a
+`datasources.wombat` entry exists (or `missing wombat binary` when the CLI is not installed), and it never writes that
+entry for you. Once configured it takes part in search exactly as the other datasources do:
+
+- **Fast phase.** Jev's datasource check lists every configured datasource that has retrieval methods and asks, per
+  datasource, whether the question needs it. wombat is a candidate with the description "the user's past conversations
+  with coding agents", so a question about an earlier session ("what did we decide about the release flow in the omp
+  session?") selects it, and a question about a PDF does not. Set `description` on the entry to sharpen this for your
+  own projects.
+- **Exhaustive search.** `search_all_documents` always spans every configured datasource, wombat included, with no
+  selection step.
+- **Single datasource.** The dedicated `search_datasource_wombat` tool (or `search_datasource_<alias>` for a
+  connection alias) searches only wombat, and MCP `datasourceIds` can select it by id.
+- **Results.** Hits carry the opaque source `/wombat/<instance>/chunks/<chunk-id>` and a first label line with the
+  session key, so the agent can run `wombat show` / `wombat trace` for more.
+
 ### One MinSync, one embedding, no duplicate index
 
 wombat is built on MinSync, so it shares AutoRAG's MinSync instead of bringing its own:

@@ -621,3 +621,34 @@ describe("wombat's dense search gets Qwen3's query instruction", () => {
 		expect(readFileSync(path, "utf8")).toContain("query_prefix");
 	});
 });
+
+describe("wombat as a datasource candidate", () => {
+	it("tells the datasource check what it holds, so a question about a past agent session can pick it", () => {
+		const { description, type } = new WombatSkill({ instanceId: "me" }).describe();
+		expect(type).toBe("coding-agent-sessions");
+		// Jev reads only this line to decide whether to search the datasource.
+		expect(description).toMatch(/conversations? with coding agents/i);
+		expect(description).toMatch(/Claude Code/);
+		expect(description).toMatch(/Codex/);
+		expect(description).toMatch(/what was asked, decided, or built/i);
+		expect(description).not.toMatch(/\bvia the external wombat CLI\b/);
+	});
+
+	it("is listed by the agent and searched by search_all_documents once configured, and not before", async () => {
+		writeFake(JSON.stringify([hit]));
+		const { AutoRAGAgent } = await import("../../../src/agent/agent.ts");
+		const configured = new AutoRAGAgent({
+			searchPaths: [root],
+			workspacePath: root,
+			everything: false,
+			fsearch: false,
+			datasourceSkills: [new WombatSkill({ binaryPath, instanceId: "me" })],
+		});
+		expect(configured.listDatasources().map((entry) => entry.datasourceId)).toEqual(["wombat"]);
+		const all = await configured.searchAllDocuments("dazzi automation", { topK: 5 });
+		expect(all.results.some((result) => result.source === "/wombat/me/chunks/doc-abc123")).toBe(true);
+
+		const bare = new AutoRAGAgent({ searchPaths: [root], workspacePath: root, everything: false, fsearch: false });
+		expect(bare.listDatasources()).toEqual([]);
+	});
+});

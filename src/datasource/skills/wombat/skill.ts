@@ -73,7 +73,8 @@ export class WombatSkill implements DatasourceSkill {
 			name: "wombat",
 			id: "wombat",
 			type: "coding-agent-sessions",
-			description: "Coding-agent session history datasource via the external wombat CLI",
+			description:
+				"The user's past conversations with coding agents (Claude Code, Codex, OpenCode, pi, omp, Gemini, Kiro and more): what was asked, decided, or built in earlier sessions, in any project. Only the user and assistant text is indexed, not tool output or code diffs.",
 			capabilities: ["coding-agent", "external-cli", "polling", "incremental", "bm25", "semantic", "hybrid"],
 			tags: this.tags,
 			status: "active",
