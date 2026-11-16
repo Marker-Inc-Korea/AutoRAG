@@ -268,11 +268,13 @@ static `.mbox`/`.eml` (`--source files`) email path; the former `mail-export` co
 
 ## wombat
 
-The `wombat` datasource searches past coding-agent conversations: Codex, Claude Code, OpenCode, pi, and omp.
-Install the CLI with `cargo install wombat-sessions` (it installs the `wombat` binary; `minsync` 0.6.0 or newer must
-be on `PATH` too). wombat reads each agent's own session log, keeps only the user and assistant conversation, and
-lets MinSync index it incrementally with SPLADE and dense vectors. Thinking, tool calls and outputs, and file diffs
-are not indexed. AutoRAG never opens the agents' logs or wombat's catalog directly.
+The `wombat` datasource searches past coding-agent conversations from 20 agents: Codex, Claude Code, OpenCode, pi, omp,
+Hermes, Aside, Kiro, Droid, Goose, Vibe, Aider, CodeBuddy, iFlow, Continue, Copilot, Crush, Qwen Code, Kilo and Gemini
+CLI (`connector.agents` takes those names; an unknown one is a config error, not a silently empty datasource).
+Install the CLI with `cargo install wombat-sessions` (it installs the `wombat` binary; setup also finds it in
+`~/.cargo/bin` when a desktop app's `PATH` omits it). wombat reads each agent's own session log, keeps only the user
+and assistant conversation, and lets MinSync index it incrementally with SPLADE and dense vectors. Thinking, tool calls
+and outputs, and file diffs are not indexed. AutoRAG never opens the agents' logs or wombat's catalog directly.
 
 ```json
 {
@@ -288,8 +290,9 @@ are not indexed. AutoRAG never opens the agents' logs or wombat's catalog direct
 ```
 
 - Refresh runs `wombat doctor --json`, then `wombat sync --index --json` (parse new and changed sessions, then
-  MinSync). It is incremental: only sessions that changed are parsed and only new chunks are embedded. `sync --index`
-  gets the one-hour connector budget (`connector.indexTimeoutMs`); search keeps its 60-second budget.
+  MinSync). It is incremental: only sessions that changed are parsed and only new chunks are embedded; an unchanged
+  store embeds nothing. A store with no sessions reports `datasource-empty` (info). `sync --index` gets the one-hour
+  connector budget (`connector.indexTimeoutMs`); search keeps its 60-second budget.
 - Retrieval is hybrid-first: one `wombat search --mode hybrid` per query, and SPLADE keyword search only when hybrid
   cannot run (for example, no embedder is available). Results map to opaque
   `/wombat/<instance>/chunks/<chunk-id>` sources and carry `agent`, `title`, `startTurn`, `endTurn` and
@@ -300,14 +303,40 @@ are not indexed. AutoRAG never opens the agents' logs or wombat's catalog direct
 - `connector.agents` limits indexing and search to those agents. `connector.includeSubagents` and
   `connector.includeEphemeral` index subagent transcripts and headless, benchmark, or temp-directory sessions, which
   wombat skips by default. `connector.dataDir` and `connector.configPath` move wombat's data directory or config.
-- Embeddings stay inside MinSync: wombat starts `minsync` itself, and a native MinSync embedder adopts a running
-  `minsync serve` automatically, so AutoRAG passes no embedding endpoint to it. AutoRAG forwards only an allow-list of
-  environment variables and refuses to spawn the CLI when `WOMBAT_EMBEDDER` selects a remote (`openai:` or `tei:`)
-  embedder, because that would send conversation text off the machine.
+  `connector.sources` (`{"claude-code": ["/path"]}`) pins session roots with `--source` so wombat reads only those
+  instead of every agent's default location under the home directory.
+
+### One MinSync, one embedding, no duplicate index
+
+wombat is built on MinSync, so it shares AutoRAG's MinSync instead of bringing its own:
+
+- **Binary.** Refresh resolves `minsync` exactly as the local-file index does (`minSync.binaryPath`, then `PATH`, then
+  the workspace cache, then the pinned auto-install) and hands it to wombat with `--minsync-bin`. wombat never runs a
+  second or older copy. A query only looks for the binary and never installs; if there is none, wombat falls back to its
+  own `PATH` lookup. A refresh that cannot resolve MinSync fails as `datasource-unavailable` with the resolver's message.
+- **Model and daemon.** The default is MinSync's local Qwen3-Embedding-0.6B plus KURE-Sparse-nano, the same cache
+  (`~/.cache/minsync/models`) as everything else. A native MinSync adopts a running `minsync serve` automatically, so
+  the model is loaded once. A sparse-only `minSync.embedder.id: "none"` or a `native:` id is passed to wombat as
+  `--embedder` when it first creates its workspace; a remote `minSync.embedder` is never handed over, because
+  conversations are private (wombat keeps its local default). AutoRAG also refuses to spawn the CLI when
+  `connector.embedder` or `WOMBAT_EMBEDDER` selects a remote (`openai:` or `tei:`) embedder. Only an allow-list of
+  environment variables is forwarded, including each agent's own home variable (`CODEX_HOME`, `KIRO_HOME`, ...).
+- **Query instruction.** After a sync, AutoRAG sets `query_prefix` in wombat's `.minsync/config.toml` to Qwen3's query
+  instruction, the one every other AutoRAG Qwen3 path uses, when that key is absent. MinSync prepends it to queries
+  only, so no passage is re-embedded. An existing value (including `""`), another model, a remote `base_url` or a
+  sparse-only workspace is left alone. On a 300-session synthetic corpus (8 paraphrased Korean queries, dense mode)
+  precision@10 went from 0.86 to 0.91.
+- **No second copy in the local index.** wombat's mirror (`<data dir>/mirror`, default `~/.wombat/mirror`) is added to
+  `excludePaths` whenever a wombat datasource is enabled, so a `searchPaths` entry that covers the home directory does
+  not parse and embed every conversation again as a file.
+- **Concurrency.** wombat waits for MinSync's workspace lock, so two refreshes of the same data dir queue instead of
+  failing.
 - To go from a result to the full conversation, the agent calls wombat through `bash` with the `sessionKey` from the
   label: `wombat show <sessionKey>` prints the cleaned conversation, and `wombat trace <sessionKey> --turn N` prints
   the original log around that turn, including the tool calls and outputs the index leaves out. The skill's
   always-visible description says this, because the skill body is read only when the agent loads it.
+
+Live QA: `bun scripts/manual-qa/run-qa-wombat-live.ts` (real `wombat` >= 0.1.3 and `minsync` >= 0.7.3, isolated HOME).
 
 ## Universal connection aliases
 

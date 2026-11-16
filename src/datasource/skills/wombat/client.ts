@@ -52,9 +52,20 @@ const SAFE_WOMBAT_ENV_KEYS: Readonly<Record<string, true>> = {
 	WOMBAT_MINSYNC_BIN: true,
 	WOMBAT_EMBEDDER: true,
 	WOMBAT_CHUNKER: true,
+	// Where each coding agent keeps its sessions when the user relocated it (wombat's `SourceRoots::default_from_env`).
 	CODEX_HOME: true,
 	CLAUDE_CONFIG_DIR: true,
 	XDG_DATA_HOME: true,
+	HERMES_HOME: true,
+	GEMINI_CLI_HOME: true,
+	QWEN_HOME: true,
+	COPILOT_HOME: true,
+	CONTINUE_GLOBAL_DIR: true,
+	CODEBUDDY_CONFIG_DIR: true,
+	VIBE_HOME: true,
+	GOOSE_PATH_ROOT: true,
+	FACTORY_HOME: true,
+	KIRO_HOME: true,
 	HF_HOME: true,
 	HF_ENDPOINT: true,
 	MINSYNC_SERVER: true,
@@ -79,7 +90,13 @@ export class WombatClient implements WombatSyncClient {
 	}
 
 	async doctor(signal?: AbortSignal): Promise<WombatDoctorResult> {
-		const result = await this.run(["doctor", "--json"], signal, this.options.timeoutMs ?? DEFAULT_SEARCH_TIMEOUT_MS);
+		// `doctor` only runs as the first step of an index, so it may install MinSync like the sync after it.
+		const result = await this.run(
+			["doctor", "--json"],
+			signal,
+			this.options.timeoutMs ?? DEFAULT_SEARCH_TIMEOUT_MS,
+			true,
+		);
 		if (!result.ok) return failure(result);
 		const parsed = parseObject(result.stdout);
 		if (parsed === undefined || typeof parsed.ready !== "boolean") {
@@ -107,6 +124,7 @@ export class WombatClient implements WombatSyncClient {
 			args,
 			signal,
 			this.options.indexTimeoutMs ?? this.options.timeoutMs ?? DEFAULT_INDEX_TIMEOUT_MS,
+			true,
 		);
 		if (!result.ok) return failure(result);
 		const parsed = parseObject(result.stdout);
@@ -165,6 +183,7 @@ export class WombatClient implements WombatSyncClient {
 		args: readonly string[],
 		signal: AbortSignal | undefined,
 		timeoutMs: number,
+		install = false,
 	): Promise<ProcessResult> {
 		const env: NodeJS.ProcessEnv = {};
 		for (const [key, value] of Object.entries(process.env)) {
@@ -175,12 +194,36 @@ export class WombatClient implements WombatSyncClient {
 			if (value === undefined) delete env[key];
 			else if (Object.hasOwn(SAFE_ENV_KEYS, key) || Object.hasOwn(SAFE_WOMBAT_ENV_KEYS, key)) env[key] = value;
 		}
-		const embedder = env.WOMBAT_EMBEDDER;
-		if (embedder !== undefined && REMOTE_EMBEDDER_PREFIXES.some((prefix) => embedder.startsWith(prefix))) {
-			return { ok: false, reason: "remote-embedding-rejected", stdout: "", stderr: "", code: null };
+		for (const embedder of [env.WOMBAT_EMBEDDER, this.options.embedder]) {
+			if (embedder !== undefined && REMOTE_EMBEDDER_PREFIXES.some((prefix) => embedder.startsWith(prefix))) {
+				return { ok: false, reason: "remote-embedding-rejected", stdout: "", stderr: "", code: null };
+			}
+		}
+		// The MinSync AutoRAG resolved, so wombat does not run a second or older copy. A sync may install it; a
+		// query only looks, and falls back to wombat's own PATH lookup when there is none.
+		let minSyncArgs: string[] = [];
+		if (this.options.minSyncBinary !== undefined) {
+			try {
+				minSyncArgs = ["--minsync-bin", await this.options.minSyncBinary(install)];
+			} catch (error) {
+				if (install) {
+					return {
+						ok: false,
+						reason: "minsync-unavailable",
+						stdout: "",
+						stderr: error instanceof Error ? error.message : String(error),
+						code: null,
+					};
+				}
+			}
 		}
 		// Global flags precede the subcommand: wombat declares them on the top-level command.
 		const globals = [
+			...minSyncArgs,
+			...(this.options.embedder === undefined ? [] : ["--embedder", this.options.embedder]),
+			...Object.entries(this.options.sources ?? {}).flatMap(([agent, roots]) =>
+				roots.flatMap((root) => ["--source", `${agent}=${root}`]),
+			),
 			...(this.options.dataDir === undefined ? [] : ["--data-dir", this.options.dataDir]),
 			...(this.options.configPath === undefined ? [] : ["--config", this.options.configPath]),
 			...(this.options.includeSubagents === true ? ["--include-subagents"] : []),

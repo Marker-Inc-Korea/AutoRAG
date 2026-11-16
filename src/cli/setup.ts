@@ -10,6 +10,7 @@ import {
 	setupHister,
 	systemHisterDeps,
 } from "../datasource/skills/hister/setup.ts";
+import { findWombatBinary } from "../datasource/skills/wombat/index.ts";
 import {
 	createEmbedderFromConfig,
 	type EmbedderHealth,
@@ -140,6 +141,8 @@ const DEFAULT_CREDENTIALS: Readonly<Record<string, readonly string[]>> = {
 };
 
 function executableInPath(name: string, env: NodeJS.ProcessEnv): string | undefined {
+	// `cargo install wombat-sessions` lands in ~/.cargo/bin, which a desktop app's PATH often omits.
+	if (name === "wombat") return findWombatBinary(env);
 	if (name.includes("/") || name.includes("\\")) {
 		try {
 			accessSync(name, constants.X_OK);

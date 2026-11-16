@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -47,6 +47,48 @@ function fakeEmbedder(options: {
 		close: async () => undefined,
 	};
 }
+
+describe("setup finds wombat where cargo installs it", () => {
+	it("falls back to ~/.cargo/bin when PATH does not carry it (GUI and launchd processes)", async () => {
+		const root = mkdtempSync(join(tmpdir(), "autorag-setup-wombat-"));
+		roots.push(root);
+		const bin = join(root, ".cargo", "bin");
+		mkdirSync(bin, { recursive: true });
+		writeFileSync(join(bin, "wombat"), "#!/bin/sh\n", { mode: 0o755 });
+		const configPath = join(root, "config.json");
+		writeFileSync(
+			configPath,
+			JSON.stringify({ searchPaths: [join(root, "docs")], workspacePath: root, datasources: { wombat: {} } }),
+		);
+		const report = await runSetup({
+			configPath,
+			workspacePath: root,
+			deps: {
+				env: { PATH: "/bin", HOME: root },
+				pathExists: () => true,
+				acquireLock: fakeLock,
+				embedder: fakeEmbedder({}),
+			},
+		});
+		expect(report.datasources.find((d) => d.name === "wombat")).toEqual({ name: "wombat", state: "configured" });
+
+		rmSync(join(bin, "wombat"));
+		const missing = await runSetup({
+			configPath,
+			workspacePath: root,
+			deps: {
+				env: { PATH: "/bin", HOME: root },
+				pathExists: () => true,
+				acquireLock: fakeLock,
+				embedder: fakeEmbedder({}),
+			},
+		});
+		expect(missing.datasources.find((d) => d.name === "wombat")).toMatchObject({
+			state: "skipped",
+			reason: "missing wombat binary",
+		});
+	});
+});
 
 describe("setup orchestration", () => {
 	it("keeps probes independent, preserves operator embedder config, and degrades to BM25", async () => {

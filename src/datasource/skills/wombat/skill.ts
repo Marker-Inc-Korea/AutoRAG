@@ -13,8 +13,10 @@ import type {
 	PollingMetadata,
 	SourceDescription,
 } from "../../types.ts";
+import { validateWombatAgents, wombatMirrorDir } from "./agents.ts";
 import { WombatClient, type WombatSyncClient } from "./client.ts";
 import { WombatMethod } from "./methods.ts";
+import { applyWombatQueryPrefix } from "./query-prefix.ts";
 import type { WombatFailureReason, WombatOptions } from "./types.ts";
 
 const TAGS = ["wombat", "coding-agent", "sessions", "pii"] as const;
@@ -38,7 +40,7 @@ export function validateWombatInstanceId(instanceId: string): void {
 }
 
 /**
- * Coding-agent session history (Codex, Claude Code, OpenCode, pi, omp) indexed by the external `wombat` CLI.
+ * Coding-agent session history (Codex, Claude Code, OpenCode, pi, omp, and the other agents in `WOMBAT_AGENTS`) indexed by the external `wombat` CLI.
  * wombat parses each agent's own log format, keeps only the user and assistant conversation, and lets MinSync
  * index it incrementally; AutoRAG never reads those logs or the MinSync store itself.
  */
@@ -49,6 +51,7 @@ export class WombatSkill implements DatasourceSkill {
 	private readonly interval: number;
 	private readonly tags: readonly string[];
 	private readonly agents: readonly string[] | undefined;
+	private readonly connectorOptions: WombatOptions;
 	private lastIndexedAt: number | undefined;
 
 	constructor(options: WombatSkillOptions = {}) {
@@ -57,6 +60,8 @@ export class WombatSkill implements DatasourceSkill {
 		this.instances = options.instances?.length ? options.instances : [this.instanceId];
 		validateWombatInstanceId(this.instanceId);
 		for (const instance of this.instances) validateWombatInstanceId(instance);
+		validateWombatAgents(connectorOptions);
+		this.connectorOptions = connectorOptions;
 		this.interval = options.pollingIntervalMs ?? DEFAULT_POLLING_MS;
 		this.tags = options.tags ?? TAGS;
 		this.agents = connectorOptions.agents?.length ? connectorOptions.agents : undefined;
@@ -103,12 +108,24 @@ export class WombatSkill implements DatasourceSkill {
 					source: "wombat",
 				});
 			}
+			// The workspace exists once a sync has run; the instruction only changes how queries are embedded.
+			applyWombatQueryPrefix(wombatMirrorDir(this.connectorOptions));
+			const chunkCount = result.data.chunkCount ?? result.data.totalMessages;
+			if (result.data.totalSessions === 0) {
+				diagnostics.push({
+					code: "datasource-empty",
+					severity: "info",
+					message: "wombat found no coding-agent sessions to index",
+					instanceId: this.instanceId,
+					source: "wombat",
+				});
+			}
 			this.lastIndexedAt = Date.now();
 			return {
 				ok: true,
 				instanceId: this.instanceId,
 				skill: "wombat",
-				chunkCount: result.data.chunkCount ?? result.data.totalMessages,
+				chunkCount,
 				indexedAt: this.lastIndexedAt,
 				diagnostics,
 			};
@@ -140,7 +157,7 @@ export class WombatSkill implements DatasourceSkill {
 		return {
 			name: "datasource-wombat",
 			description:
-				"Search past coding-agent conversations (Codex, Claude Code, OpenCode, pi, omp): what was asked, decided, or built. Each hit names its session. Load this skill to open that session's full conversation or its original log with the tool calls that the search does not index.",
+				"Search past coding-agent conversations (Codex, Claude Code, OpenCode, pi, omp, Gemini, Kiro, and more): what was asked, decided, or built. Each hit names its session. Load this skill to open that session's full conversation or its original log with the tool calls that the search does not index.",
 			content: [
 				"# wombat coding-agent session datasource",
 				"",
@@ -190,7 +207,13 @@ export class WombatSkill implements DatasourceSkill {
 }
 
 function failureCode(reason: WombatFailureReason): DatasourceDiagnosticCode {
-	if (reason === "binary-missing" || reason === "spawn-error" || reason === "timeout") return "datasource-unavailable";
+	if (
+		reason === "binary-missing" ||
+		reason === "spawn-error" ||
+		reason === "timeout" ||
+		reason === "minsync-unavailable"
+	)
+		return "datasource-unavailable";
 	if (reason === "remote-embedding-rejected") return "datasource-embedding-egress-rejected";
 	return "datasource-index-failed";
 }
