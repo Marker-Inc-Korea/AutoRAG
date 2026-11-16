@@ -47,8 +47,10 @@ export type {
 	RetrievalDiagnosticCode,
 	RetrievalMethod,
 	RetrievalMethodDescriptor,
+	RetrievalMissingSource,
 	RetrievalOptions,
 	RetrievalResult,
+	RetrievalSourceMissingEvent,
 	RetrievalUnsearchedSurface,
 	RetrievalWithDiagnostics,
 } from "./types.ts";

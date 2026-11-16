@@ -46,6 +46,7 @@ export type SearchDocumentDiagnosticCode =
 	| "cloud-fingerprint-failed"
 	| "pdf-extract-thin"
 	| "retrieval-method-failed"
+	| "retrieval-source-missing"
 	| "time-window-untimed"
 	| "time-window-ceiling"
 	| "rerank-failed"

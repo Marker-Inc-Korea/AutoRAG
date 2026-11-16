@@ -10,6 +10,7 @@ import { describeRetrievalError } from "../retrieval/skip.ts";
 import type {
 	RetrievalMethod,
 	RetrievalMethodDescriptor,
+	RetrievalMissingSource,
 	RetrievalOptions,
 	RetrievalResult,
 } from "../retrieval/types.ts";
@@ -45,6 +46,11 @@ export interface MinSyncVectorMethodOptions {
 }
 
 export type MinSyncHybridMethodOptions = Omit<MinSyncVectorMethodOptions, "mode">;
+
+function fileSystemErrorCode(error: unknown): string | undefined {
+	const code = error instanceof Error ? (error as NodeJS.ErrnoException).code : undefined;
+	return typeof code === "string" ? code : undefined;
+}
 
 export class MinSyncVectorMethod implements RetrievalMethod {
 	private readonly root: string;
@@ -173,6 +179,7 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 			});
 		}
 		const results: RetrievalResult[] = [];
+		const missingSources: RetrievalMissingSource[] = [];
 		const mirrorTexts = new Map<string, MirrorDocument | undefined>();
 		for (const hit of hits) {
 			const entry = byPath.get(hit.path);
@@ -181,6 +188,17 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 			// MinSync's per-chunk `docId` is what keeps distinct passages distinct.
 			// Falling back to the mirror basename would give them one identity and the
 			// merger would treat them as the same evidence.
+			// A stale index entry (the file moved or was deleted since the last refresh) must not fail the
+			// whole method; skip the hit so later hits can fill topK, and report it below.
+			let resolvedSource: string;
+			try {
+				resolvedSource = realpathSync(normalize(entry.sourcePath));
+			} catch (error) {
+				const code = fileSystemErrorCode(error);
+				if (code !== "ENOENT" && code !== "ENOTDIR") throw error;
+				missingSources.push({ virtualPath: entry.virtualPath, sourcePath: entry.sourcePath, code });
+				continue;
+			}
 			const chunkDiscriminator = hit.docId ?? basename(hit.path);
 			const chunkId = `minsync:${entry.virtualPath}:${chunkDiscriminator}`;
 			const location = locateChunkInMirror(
@@ -191,7 +209,7 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 			results.push({
 				id: chunkId,
 				content: hit.text,
-				source: realpathSync(normalize(entry.sourcePath)),
+				source: resolvedSource,
 				score: hit.score,
 				metadata: {
 					method: this.mode === "vector" ? "minsync" : `minsync-${this.mode}`,
@@ -215,6 +233,8 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 			// With a record cut the whole in-scope pool is collected, then cut by document below.
 			if (this.recordCut === undefined && results.length >= topK) break;
 		}
+		if (missingSources.length > 0)
+			options.onSourceMissing?.({ method: this.describe().name, missing: missingSources });
 		return this.recordCut === undefined ? results : this.recordCut.cut(results, topK, (result) => result.source);
 	}
 
