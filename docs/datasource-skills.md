@@ -321,6 +321,14 @@ entry for you. Once configured it takes part in search exactly as the other data
   selection step.
 - **Single datasource.** The dedicated `search_datasource_wombat` tool (or `search_datasource_<alias>` for a
   connection alias) searches only wombat, and MCP `datasourceIds` can select it by id.
+- **Choosing an agent.** `search_datasource_wombat` takes an optional `agents` list (for example `["codex"]` for "what
+  did I ask Codex"). Its description names the agents the index holds, with their session counts, read from the
+  catalog through `wombat sessions --json` when the session is built. A value that is not one of them is refused with
+  the real ids rather than answered with an empty list, matching is case-insensitive, and the list is not checked when
+  the catalog cannot be read. One agent goes to `wombat search --agent`; several are over-fetched and filtered here,
+  because the CLI takes one. wombat applies the filter after retrieval (NomaDamas/wombat#56), so a rare agent's hit
+  can still fall outside the over-fetched window on a very common query. `connector.agents` stays the ceiling: a
+  per-search choice can only narrow it, and the tool lists only agents inside it.
 - **Results.** Hits carry the opaque source `/wombat/<instance>/chunks/<chunk-id>` and a first label line with the
   session key, so the agent can run `wombat show` / `wombat trace` for more.
 

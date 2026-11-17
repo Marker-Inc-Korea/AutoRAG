@@ -11,6 +11,7 @@ import type {
 	DatasourceSkillDescriptor,
 	DatasourceSkillManifest,
 	PollingMetadata,
+	SearchFilterSpec,
 	SourceDescription,
 } from "../../types.ts";
 import { validateWombatAgents, wombatMirrorDir } from "./agents.ts";
@@ -140,6 +141,31 @@ export class WombatSkill implements DatasourceSkill {
 		const hybrid = new WombatMethod(this.client, "hybrid", this.instanceId, this.tags, this.agents);
 		const keyword = new WombatMethod(this.client, "keyword", this.instanceId, this.tags, this.agents);
 		return [new FallbackRetrievalMethod(hybrid, [keyword])];
+	}
+
+	/**
+	 * The one filter wombat offers: which coding agent's sessions to search. Ids are what the index holds now, narrowed to
+	 * the connector's own list, so the model names an agent that exists. Empty when the index has no sessions or cannot be
+	 * read (a missing CLI shows up through indexing, not as an empty filter).
+	 */
+	async searchFilters(): Promise<readonly SearchFilterSpec[]> {
+		const listed = await this.client.indexedAgents?.();
+		if (listed === undefined || !listed.ok) return [];
+		const agents =
+			this.agents === undefined ? listed.agents : listed.agents.filter((agent) => this.agents?.includes(agent.id));
+		if (agents.length === 0) return [];
+		const ids = agents.map((agent) => agent.id);
+		return [
+			{
+				name: "agents",
+				description:
+					'Only search sessions of these coding agents (ids as listed). Use it when the question names one, for example "what did I ask Codex".',
+				values: ids.map((id, index) => ({
+					id,
+					detail: `${agents[index]?.sessions} ${agents[index]?.sessions === 1 ? "session" : "sessions"}`,
+				})),
+			},
+		];
 	}
 
 	describeSources(): readonly SourceDescription[] {

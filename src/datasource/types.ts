@@ -63,6 +63,19 @@ export interface DatasourceIndexOptions {
 }
 
 /**
+ * A per-search filter a datasource offers beyond `scope` and the time window, for example which coding agent's sessions a
+ * wombat search covers. `values` are the exact ids the datasource accepts right now (read from what it has indexed), so a
+ * caller never has to guess a spelling.
+ */
+export interface SearchFilterSpec {
+	/** The tool argument, e.g. `agents`. */
+	readonly name: string;
+	/** One sentence for the model: what the filter narrows. */
+	readonly description: string;
+	readonly values: readonly { readonly id: string; readonly detail?: string }[];
+}
+
+/**
  * A pluggable datasource skill. Skills are server-bound: they are constructed
  * with trusted configuration and never derive authority from model/tool args.
  * Methods never throw — failures surface as {@link DatasourceDiagnostic}
@@ -88,6 +101,11 @@ export interface DatasourceSkill {
 	 * demand via the `load_datasource_skill` tool.
 	 */
 	skillManifest(): DatasourceSkillManifest;
+	/**
+	 * Optional. The per-search filters this datasource offers and the ids each accepts now. Empty when it offers none, or
+	 * when they cannot be read at the moment; a caller then searches without validating a filter value itself.
+	 */
+	searchFilters?(): Promise<readonly SearchFilterSpec[]>;
 }
 
 /**
