@@ -11,14 +11,11 @@
   <a href="https://www.npmjs.com/package/@autorag/librarian"><img src="https://img.shields.io/npm/dm/@autorag/librarian.svg?style=flat-square&color=818cf8" alt="npm downloads" /></a>
   <a href="https://github.com/Marker-Inc-Korea/AutoRAG/stargazers"><img src="https://img.shields.io/github/stars/Marker-Inc-Korea/AutoRAG?style=flat-square&logo=github&color=f59e0b" alt="GitHub stars" /></a>
   <a href="https://github.com/Marker-Inc-Korea/AutoRAG/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/Marker-Inc-Korea/AutoRAG/ci.yml?branch=main&label=CI&style=flat-square" alt="CI Status" /></a>
+  <a href="https://autorag-docs.nomadamas.org"><img src="https://img.shields.io/badge/docs-autorag--docs.nomadamas.org-0ea5e9.svg?style=flat-square&logo=readthedocs&logoColor=white" alt="Documentation" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-green.svg?style=flat-square" alt="License: Apache-2.0" /></a>
   <img src="https://img.shields.io/badge/node-%3E%3D24.0.0-informational.svg?style=flat-square" alt="Node >= 24" />
   <img src="https://img.shields.io/badge/bun-%3E%3D1.2-black.svg?style=flat-square&logo=bun" alt="Bun >= 1.2" />
 </p>
-
-## Documentation
-
-**Developer docs: [autorag-docs.nomadamas.org](https://autorag-docs.nomadamas.org)** (installation, indexing, datasources, agent integrations, CLI and API reference). The site is generated from the Markdown in [`docs/`](docs/README.md), which is the single source of truth. Coding agents should read that Markdown on GitHub, starting from [`docs/README.md`](docs/README.md) or the [`llms.txt`](https://autorag-docs.nomadamas.org/llms.txt) index.
 
 ## Dazzi: the AutoRAG desktop app
 

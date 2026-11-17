@@ -292,11 +292,7 @@ describe("docs site: agents and publishing", () => {
 	});
 
 	it("is linked from the root README as the documentation home", () => {
-		const readme = readFileSync(join(REPO_ROOT, "README.md"), "utf8");
-		expect(readme).toContain(SITE);
-		expect(readme).toMatch(
-			/\]\(docs\/README\.md\)|\]\(https:\/\/github\.com\/Marker-Inc-Korea\/AutoRAG\/tree\/main\/docs\)/,
-		);
+		expect(readFileSync(join(REPO_ROOT, "README.md"), "utf8")).toContain(`href="${SITE}"`);
 	});
 
 	it("keeps every `docs/...md` reference in the repo pointing at a page that exists", () => {
