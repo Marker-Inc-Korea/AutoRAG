@@ -82,11 +82,13 @@ export function anchorsOf(markdown: string): Set<string> {
 			anchors.add(custom[1]);
 			continue;
 		}
-		text = text
-			.replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
-			.replace(/`([^`]*)`/g, "$1")
-			.replace(/<[^>]+>/g, "")
-			.replace(/[*_]{1,3}([^*_]+)[*_]{1,3}/g, "$1");
+		text = text.replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/`([^`]*)`/g, "$1");
+		// Strip tags until the text stops changing, so nested fragments like "<<b>b>" cannot survive one pass.
+		for (let previous = ""; previous !== text; ) {
+			previous = text;
+			text = text.replace(/<[^<>]+>/g, "");
+		}
+		text = text.replace(/[*_]{1,3}([^*_]+)[*_]{1,3}/g, "$1");
 		anchors.add(slugify(text));
 	}
 	return anchors;
