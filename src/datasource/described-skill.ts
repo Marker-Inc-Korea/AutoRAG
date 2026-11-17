@@ -6,6 +6,7 @@ import type {
 	DatasourceSkillDescriptor,
 	DatasourceSkillManifest,
 	PollingMetadata,
+	SearchFilterSpec,
 	SourceDescription,
 } from "./types.ts";
 
@@ -36,6 +37,10 @@ export class DescribedDatasourceSkill implements DatasourceSkill {
 
 	retrievalMethods(): readonly RetrievalMethod[] {
 		return this.skill.retrievalMethods();
+	}
+
+	searchFilters(): Promise<readonly SearchFilterSpec[]> {
+		return this.skill.searchFilters?.() ?? Promise.resolve([]);
 	}
 
 	describeSources(): readonly SourceDescription[] {

@@ -3,6 +3,11 @@ export type WombatSearchMode = "keyword" | "semantic" | "hybrid";
 
 export interface WombatSearchOptions {
 	readonly topK?: number;
+	/**
+	 * Only hits of these coding agents. One agent goes to the CLI as `--agent`; several are filtered here, because the CLI
+	 * takes one. Absent: the connector's own agent list applies.
+	 */
+	readonly agents?: readonly string[];
 	readonly signal?: AbortSignal;
 }
 
@@ -121,6 +126,18 @@ export interface WombatSearchOk {
 	readonly code: number;
 }
 
+/** One coding agent that has sessions in the index, with how many. */
+export interface WombatIndexedAgent {
+	readonly id: string;
+	readonly sessions: number;
+}
+
+export interface WombatAgentsOk {
+	readonly ok: true;
+	readonly agents: readonly WombatIndexedAgent[];
+}
+
+export type WombatAgentsResult = WombatAgentsOk | WombatFailure;
 export type WombatDoctorResult = WombatOk<WombatDoctorInfo> | WombatFailure;
 export type WombatSyncResult = WombatOk<WombatSyncInfo> | WombatFailure;
 export type WombatSearchResult = WombatSearchOk | WombatFailure;

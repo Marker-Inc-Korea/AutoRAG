@@ -162,6 +162,7 @@ Each harness uses its CLI's native launch surface; AutoRAG supplies only explici
 | `bun scripts/manual-qa/run-qa-clawgallery-live.ts /path/to/images "query"` | The real ClawGallery CLI plus a local image folder (incremental bootstrap + hybrid search) |
 | `bun scripts/manual-qa/run-qa-wombat-live.ts` | Real `wombat` + `minsync` in an isolated home: sparse, semantic, and hybrid search, session labels, incremental append, delete, and mirror isolation |
 | `WOMBAT_QA_DATA_DIR=<dir> bun scripts/manual-qa/run-qa-wombat-real-sessions.ts [--jev]` | The operator's real coding-agent sessions, indexed into an isolated data dir and searched through the agent |
+| `WOMBAT_QA_DATA_DIR=<dir copy> bun scripts/manual-qa/run-qa-wombat-agent-filter.ts` | The per-search `agents` filter against a copy of a real wombat data dir: the ids the tool offers match the index, one and several agents return only theirs, an unknown id is refused with the real ids, and a connector's agent list is never widened |
 | `bun scripts/manual-qa/run-qa-hister-live.ts` | The Hister browser-history datasource against a real Hister install |
 | `bun scripts/manual-qa/run-qa-datasource-aliases.ts` | Universal alias registration plus all-channel and channel-allowlisted chat retrieval |
 | `bun scripts/manual-qa/run-qa-cloud-mount-live.ts`, `run-qa-network-mount-live.ts` | Opt-in cloud-mount and network-mount lanes (macOS mounts a throwaway folder; Windows uses a synthetic provider) |
