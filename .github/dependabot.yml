@@ -1,10 +1,10 @@
 version: 2
 updates:
-    - package-ecosystem: "npm" # AutoRAG 2.0 (repo root)
+    - package-ecosystem: "bun" # AutoRAG 2.0 (repo root, bun.lock)
       directory: "/"
       schedule:
           interval: "weekly"
-    - package-ecosystem: "npm" # Docs site (docs/, VitePress)
+    - package-ecosystem: "bun" # Docs site (docs/, VitePress, bun.lock)
       directory: "/docs"
       schedule:
           interval: "weekly"
