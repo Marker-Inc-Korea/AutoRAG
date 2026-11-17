@@ -44,6 +44,7 @@ import {
 	cloudScope,
 	defaultCloudProbe,
 } from "../filesystem/cloud-placeholder.ts";
+import type { FileLockHandle } from "../filesystem/file-lock.ts";
 import { isGlobExclusion } from "../filesystem/path-exclusions.ts";
 import {
 	FSearchClient,
@@ -100,6 +101,7 @@ import {
 import { MinSyncStageError } from "../minsync/stage.ts";
 import { cloudFingerprintExclusions, loadCloudFingerprints } from "../mirror/cloud-fingerprints.ts";
 import { PARSED_MIRROR_SUBDIR, refreshReadinessPath } from "../mirror/paths.ts";
+import { acquireRefreshLock, RefreshBusyError } from "../mirror/refresh-lock.ts";
 import {
 	detectMirrorStaleness,
 	isPathExcluded,
@@ -618,11 +620,14 @@ export interface AutoRAGRefreshOptions {
 	 * back to the `jikji` client options. Cancel through the refresh `signal`.
 	 */
 	readonly jikjiPrepare?: Omit<JikjiPrepareOptions, "signal">;
+	/** External refresh lock held by a caller that also mutates index directories. */
+	readonly lock?: FileLockHandle;
 }
 
 export interface AutoRAGMinSyncRefreshResult {
 	readonly ok: boolean;
 	readonly synced: number;
+	readonly skipped?: boolean;
 	readonly reason?: string;
 	/** Count of parsed documents excluded from the MinSync index by file name. */
 	readonly stagingExcludedCount?: number;
@@ -1063,6 +1068,7 @@ export class AutoRAGAgent {
 	private readonly finalThinkingLevel: AutoRAGThinkingLevel;
 	private autoRefreshTimer: NodeJS.Timeout | undefined;
 	private refreshing = false;
+	private refreshInFlight: { readonly key: string; readonly promise: Promise<AutoRAGRefreshResult> } | undefined;
 	private refreshState: RefreshState = {
 		inFlight: false,
 		lastOutcome: "never",
@@ -3942,6 +3948,25 @@ export class AutoRAGAgent {
 	}
 
 	async refresh(force = false, opts?: AutoRAGRefreshOptions): Promise<AutoRAGRefreshResult> {
+		const key = JSON.stringify({ force, methods: opts?.methods ?? null });
+		const inFlight = this.refreshInFlight;
+		if (inFlight !== undefined) {
+			if (inFlight.key === key) return inFlight.promise;
+			throw new RefreshBusyError();
+		}
+		const externalLock = opts?.lock;
+		const lock = externalLock ?? acquireRefreshLock(this.workspaceProjectRoot);
+		if (lock === undefined) throw new RefreshBusyError();
+		if (externalLock !== undefined) externalLock.assertOwned();
+		const promise = this.runRefresh(force, opts).finally(() => {
+			if (externalLock === undefined) lock.release();
+			if (this.refreshInFlight?.key === key) this.refreshInFlight = undefined;
+		});
+		this.refreshInFlight = { key, promise };
+		return promise;
+	}
+
+	private async runRefresh(force = false, opts?: AutoRAGRefreshOptions): Promise<AutoRAGRefreshResult> {
 		const signal = opts?.signal;
 		signal?.throwIfAborted();
 		const emitProgress = (event: AutoRAGRefreshProgress): void => {
@@ -4231,6 +4256,7 @@ export class AutoRAGAgent {
 				? {
 						ok: minsync.ok,
 						synced: minsync.synced,
+						...(minsync.skipped === undefined ? {} : { skipped: minsync.skipped }),
 						...(minsync.reason !== undefined ? { reason: sanitizeDiagnosticMessage(minsync.reason) } : {}),
 						...(minsyncDiagnostics.length > 0 ? { diagnostics: minsyncDiagnostics } : {}),
 						...(minsync.stagingExcluded !== undefined && minsync.stagingExcluded.length > 0

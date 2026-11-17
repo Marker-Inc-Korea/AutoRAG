@@ -783,6 +783,10 @@ not proof of a hang. Use the owner pid through
 `isRefreshOwnerAlive`) for liveness, and use advancing progress to distinguish
 active work from a stalled batch.
 
+When the committed mirror and MinSync configuration are unchanged, AutoRAG
+skips the external sync and reports `minsync: { ok: true, synced: 0,
+skipped: true }` in the refresh result.
+
 ## Skipped files (partial sync)
 
 MinSync 0.4.11 and newer skip a file they cannot read, chunk, or embed instead of

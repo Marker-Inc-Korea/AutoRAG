@@ -544,7 +544,7 @@ describe("batched refresh", () => {
 		expect(stagedFiles(workspacePath).some((path) => path.endsWith("f00.txt.md"))).toBe(false);
 	});
 
-	it("starts no sync for batches whose mirrors did not change, and always syncs after the final one", async () => {
+	it("skips external syncs for batches whose committed mirror did not change", async () => {
 		const total = DEFAULT_MIRROR_BATCH_SIZE * 2 + 10;
 		writeSources(total);
 		const binary = join(root, "batched-minsync.mjs");
@@ -557,14 +557,14 @@ describe("batched refresh", () => {
 		await agent.refresh(true, { methods: ["minsync"], onProgress: releaseWhenParsingEnds(hold, total) });
 		expect(syncRuns(logPath)).toHaveLength(2);
 
-		// Nothing changed: only the final batch syncs.
+		// Nothing changed: the committed fingerprint makes every batch a no-op.
 		await agent.refresh(false, { methods: ["minsync"] });
-		expect(syncRuns(logPath)).toHaveLength(3);
+		expect(syncRuns(logPath)).toHaveLength(2);
 
-		// A change in the middle batch syncs it, and the final batch syncs once more.
+		// A changed batch syncs once; the final batch reuses that committed result.
 		writeFileSync(join(docs, "f30.txt"), "changed content\n");
 		await agent.refresh(false, { methods: ["minsync"] });
-		expect(syncRuns(logPath)).toHaveLength(5);
+		expect(syncRuns(logPath)).toHaveLength(3);
 	});
 
 	it("still suppresses a mass delete in the batched refresh", async () => {

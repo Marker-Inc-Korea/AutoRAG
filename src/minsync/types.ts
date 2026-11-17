@@ -37,6 +37,8 @@ export interface MinSyncSyncResult {
 	readonly ok: boolean;
 	readonly synced: number;
 	readonly workspacePath: string;
+	/** True when the committed corpus and configuration already match the index. */
+	readonly skipped?: boolean;
 	readonly reason?: string;
 	readonly diagnostic?: MinSyncDiagnostic;
 	/**
