@@ -135,6 +135,17 @@ bun run build    # static build (dead links fail the build)
 bun run preview  # serve the build
 ```
 
+### Publishing the site
+
+`.github/workflows/docs.yml` builds the VitePress site and the legacy Sphinx docs into one artifact (legacy under `/legacy/`, plus a redirect stub at every old `marker-inc-korea.github.io/AutoRAG/<page>.html` path). Pull requests only build. The deploy job runs on `main` only when the repository variable `DOCS_DEPLOY` is `true`. One-time cutover, in this order:
+
+1. Add a DNS `CNAME` record `autorag-docs.nomadamas.org` pointing to `marker-inc-korea.github.io` (DNS only, not proxied, until the certificate is issued).
+2. In **Settings, Pages**, set the source to **GitHub Actions** and the custom domain to `autorag-docs.nomadamas.org`; enable **Enforce HTTPS** once the certificate is ready.
+3. Set the repository variable: `gh variable set DOCS_DEPLOY --body true --repo Marker-Inc-Korea/AutoRAG`.
+4. Run the workflow: `gh workflow run docs.yml --ref main --repo Marker-Inc-Korea/AutoRAG`, then check `https://autorag-docs.nomadamas.org/guide/overview` and an old link such as `https://autorag-docs.nomadamas.org/tutorial.html`.
+
+The `github-pages` environment allows deployments from `main`. After the switch the `gh-pages` branch is no longer served and can be deleted.
+
 ### Page format
 
 Each page must satisfy the following; the contract tests enforce it.

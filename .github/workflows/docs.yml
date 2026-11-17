@@ -77,7 +77,10 @@ jobs:
           path: docs/.vitepress/dist
 
   deploy:
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    # Off until the cutover is done (see docs/contributing/development.md, "Publishing the site"): the site needs the
+    # autorag-docs.nomadamas.org DNS record and the Pages source set to GitHub Actions, and switching either earlier
+    # would break the legacy marker-inc-korea.github.io/AutoRAG/ links that are still served from the gh-pages branch.
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && vars.DOCS_DEPLOY == 'true'
     needs: build
     runs-on: ubuntu-latest
     permissions:
