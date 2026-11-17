@@ -31,7 +31,7 @@ export const SECTIONS: readonly Section[] = [
 			{
 				text: "Get started",
 				items: [
-					{ text: "What is AutoRAG Agent", link: "/guide/introduction" },
+					{ text: "Overview", link: "/guide/overview" },
 					{ text: "Installation", link: "/guide/installation" },
 					{ text: "Quickstart", link: "/guide/quickstart" },
 					{ text: "Models and providers", link: "/guide/models" },

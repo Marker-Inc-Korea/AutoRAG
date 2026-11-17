@@ -287,7 +287,8 @@ describe("docs site: agents and publishing", () => {
 		expect(readme).toContain(SITE);
 		expect(readme).toContain(".vitepress/sidebar.mts");
 		expect(readme).toMatch(/Markdown/);
-		expect(byFile.get("index.md")?.text ?? "").toContain("layout: home");
+		// The site has no marketing home: the root sends readers straight to the first page of the Guide.
+		expect(byFile.get("index.md")?.text ?? "").toContain("/guide/overview");
 	});
 
 	it("is linked from the root README as the documentation home", () => {
