@@ -16,6 +16,10 @@
   <img src="https://img.shields.io/badge/bun-%3E%3D1.2-black.svg?style=flat-square&logo=bun" alt="Bun >= 1.2" />
 </p>
 
+## Documentation
+
+**Developer docs: [autorag-docs.nomadamas.org](https://autorag-docs.nomadamas.org)** (installation, indexing, datasources, agent integrations, CLI and API reference). The site is generated from the Markdown in [`docs/`](docs/README.md), which is the single source of truth. Coding agents should read that Markdown on GitHub, starting from [`docs/README.md`](docs/README.md) or the [`llms.txt`](https://autorag-docs.nomadamas.org/llms.txt) index.
+
 ## Dazzi: the AutoRAG desktop app
 
 **Dazzi is the app version of AutoRAG Agent.** Download it for Mac and Windows at [**dazziapp.com**](https://dazziapp.com), or build from [NomaDamas/AutoRAG-app](https://github.com/NomaDamas/AutoRAG-app). It is a real file manager with the AutoRAG engine in this repository behind it.
@@ -121,7 +125,7 @@ Japanese, and Simplified Chinese.
   <img src="assets/autorag-agent-datasources.png" alt="Supported sources: KakaoTalk, Slack, Discord, Telegram, WhatsApp, Mail, Notion, GitHub, Obsidian, browser history, RSS, Google Drive, iCloud Drive, Dropbox" width="100%" />
 </p>
 
-Cloud drives (Google Drive, iCloud Drive, OneDrive, Dropbox, and others) are searched through their synced folders. Plus local documents, GitHub Gists, coding-agent sessions (via [wombat](docs/datasource-skills.md#wombat): `cargo install wombat-sessions`, then add a `wombat` datasource), and photos. Data stays in each tool's own store. [Full list and setup](docs/datasource-skills.md).
+Cloud drives (Google Drive, iCloud Drive, OneDrive, Dropbox, and others) are searched through their synced folders. Plus local documents, GitHub Gists, coding-agent sessions (via [wombat](docs/datasources/wombat.md): `cargo install wombat-sessions`, then add a `wombat` datasource), and photos. Data stays in each tool's own store. [Full list and setup](docs/datasources/overview.md).
 
 ### Private by design
 
@@ -131,7 +135,7 @@ Cloud drives (Google Drive, iCloud Drive, OneDrive, Dropbox, and others) are sea
   remote embedder unless you explicitly configure a remote `minSync.embedder`.
 - **Keys stay encrypted.** Sign-in tokens and API keys live in the system's
   encrypted store, never in a config file.
-- **Bring your own model.** Use the [hosted Dazzi Models plan](docs/cloud-provider.md),
+- **Bring your own model.** Use the [hosted Dazzi Models plan](docs/guide/models.md),
   or connect your own provider key and pay the provider directly.
 
 ## Install it with your agent
@@ -164,7 +168,7 @@ Check AutoRAG by following https://raw.githubusercontent.com/Marker-Inc-Korea/Au
 and finish with the per-datasource status table.
 ```
 
-Prefer to do it yourself? See [Installation](docs/installation.md) and [Agent setup](docs/agent-setup.md).
+Prefer to do it yourself? See [Installation](docs/guide/installation.md) and [Agent setup](docs/agents/overview.md).
 
 ## One engine, every surface
 
@@ -173,19 +177,19 @@ The app is one way in. The same librarian runs everywhere else:
 | Surface | Use it for | Start here |
 |---|---|---|
 | **Desktop app (Dazzi)** | Browsing and asking in one window | [NomaDamas/AutoRAG-app](https://github.com/NomaDamas/AutoRAG-app) (Fair Source, FSL-1.1-MIT) |
-| **Terminal UI** | Interactive, steerable search sessions | [`autorag tui`](docs/installation.md) |
-| **Messenger** | Asking the librarian from a chat app | [Telegram, Discord](docs/messengers.md) |
-| **CLI** | Scripts, indexing, health checks | [CLI Command Reference](docs/cli.md) |
-| **MCP server** | Feeding retrieval to Claude Code, Codex, and other agents | [AutoRAG Lite MCP Server](docs/mcp.md) |
-| **TypeScript API** | Embedding the librarian in your own app | [Programmatic usage](docs/api.md) |
-| **Agent skills** | Letting a coding agent install and drive AutoRAG | [For AI Agents](docs/agent-setup.md) |
+| **Terminal UI** | Interactive, steerable search sessions | [`autorag tui`](docs/guide/installation.md) |
+| **Messenger** | Asking the librarian from a chat app | [Telegram, Discord](docs/agents/messengers.md) |
+| **CLI** | Scripts, indexing, health checks | [CLI Command Reference](docs/reference/cli.md) |
+| **MCP server** | Feeding retrieval to Claude Code, Codex, and other agents | [AutoRAG Lite MCP Server](docs/agents/mcp-server.md) |
+| **TypeScript API** | Embedding the librarian in your own app | [Programmatic usage](docs/reference/typescript-api.md) |
+| **Agent skills** | Letting a coding agent install and drive AutoRAG | [For AI Agents](docs/agents/overview.md) |
 
 ## More
 
-- **Architecture:** [how it works](docs/architecture.md) · [indexing options](docs/indexing.md) · [Jev decisions](docs/jev-decisions.md) · [retrieval memory](docs/retrieval-memory.md) · [permissions](docs/permissions.md)
-- **Reference:** [CLI commands](docs/cli.md) · [TypeScript API](docs/api.md) · [MCP and Lite](docs/mcp.md) · [datasources](docs/datasource-skills.md) · [hosted Dazzi Models](docs/cloud-provider.md) · [troubleshooting](docs/troubleshooting.md)
-- **Connect:** [Telegram](docs/telegram.md) · [WhatsApp](docs/whatsapp.md) · [Discord](docs/discord.md) · [all messengers](docs/messengers.md)
-- **Why in-place federation:** [competitive landscape](docs/competitive-landscape-2026-09.md) · **Supply chain:** [SBOM and audits](docs/supply-chain.md) · **Legacy AutoML:** [legacy/](legacy/README.md)
+- **Architecture:** [how it works](docs/contributing/architecture.md) · [indexing options](docs/indexing/overview.md) · [Jev decisions](docs/retrieval/jev.md) · [retrieval memory](docs/retrieval/memory.md) · [permissions](docs/agents/permissions.md)
+- **Reference:** [CLI commands](docs/reference/cli.md) · [TypeScript API](docs/reference/typescript-api.md) · [MCP and Lite](docs/agents/mcp-server.md) · [datasources](docs/datasources/overview.md) · [hosted Dazzi Models](docs/guide/models.md) · [troubleshooting](docs/guide/troubleshooting.md)
+- **Connect:** [Telegram](docs/agents/telegram.md) · [WhatsApp](docs/agents/whatsapp.md) · [Discord](docs/agents/discord.md) · [all messengers](docs/agents/messengers.md)
+- **Why in-place federation:** [competitive landscape](docs/contributing/design-notes.md) · **Supply chain:** [SBOM and audits](docs/contributing/supply-chain.md) · **Legacy AutoML:** [legacy/](legacy/README.md)
 
 ## Community
 
@@ -193,8 +197,8 @@ The app is one way in. The same librarian runs everywhere else:
 - Questions and ideas: [GitHub Discussions](https://github.com/Marker-Inc-Korea/AutoRAG/discussions). Bugs: issues.
 - Security: [SECURITY.md](SECURITY.md). Enterprise: [jeffrey@markr.ai](mailto:jeffrey@markr.ai).
 
-Built on [Pi](https://github.com/earendil-works/pi-mono), [MinSync](https://github.com/Marker-Inc-Korea/minsync), [Jikji](https://github.com/NomaDamas/jikji), [dupey](https://github.com/NomaDamas/dupey), [kordoc](https://github.com/chrisryugj/kordoc), and more; see [licenses and acknowledgements](docs/licenses.md).
+Built on [Pi](https://github.com/earendil-works/pi-mono), [MinSync](https://github.com/Marker-Inc-Korea/minsync), [Jikji](https://github.com/NomaDamas/jikji), [dupey](https://github.com/NomaDamas/dupey), [kordoc](https://github.com/chrisryugj/kordoc), and more; see [licenses and acknowledgements](docs/contributing/supply-chain.md#licenses-and-notices).
 
 ## License
 
-AutoRAG Agent is [Apache-2.0](LICENSE); legacy `legacy/` is [Apache-2.0](legacy/LICENSE). Third-party notices: [`NOTICE`](NOTICE), [details](docs/licenses.md).
+AutoRAG Agent is [Apache-2.0](LICENSE); legacy `legacy/` is [Apache-2.0](legacy/LICENSE). Third-party notices: [`NOTICE`](NOTICE), [details](docs/contributing/supply-chain.md#licenses-and-notices).

@@ -1,6 +1,6 @@
 # Connect AutoRAG to Meta Muse
 
-Replace `<YOUR_PUBLIC_URL>` with the HTTPS address of your own AutoRAG server (see `docs/remote-agents.md`), check it
+Replace `<YOUR_PUBLIC_URL>` with the HTTPS address of your own AutoRAG server (see `docs/agents/remote-agents.md`), check it
 with `autorag-mcp --check <YOUR_PUBLIC_URL>/mcp`, then paste everything below the line into Muse.
 
 ---

@@ -1,0 +1,86 @@
+name: Docs site
+
+# Builds the VitePress developer docs (docs/) and the legacy Sphinx docs (legacy/docs/) into one GitHub Pages
+# artifact served at https://autorag-docs.nomadamas.org (site at /, legacy AutoML docs at /legacy/).
+# Pull requests build and check only; deployment runs on main.
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "docs/**"
+      - "legacy/docs/**"
+      - "src/cli/**"
+      - "src/mcp/**"
+      - "src/datasource/skills/factory.ts"
+      - ".github/workflows/docs.yml"
+  pull_request:
+    paths:
+      - "docs/**"
+      - "legacy/docs/**"
+      - ".github/workflows/docs.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docs-pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # VitePress `lastUpdated` reads git history
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install docs dependencies
+        working-directory: docs
+        run: bun install --frozen-lockfile
+
+      - name: Build the developer docs
+        working-directory: docs
+        run: bun run build
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Build the legacy Sphinx docs
+        working-directory: legacy
+        run: |
+          uv python install 3.10
+          uv venv
+          uv pip install -r docs/requirements.txt
+          uv run sphinx-build -b html docs/source docs/build/html
+
+      - name: Assemble the site
+        run: |
+          mkdir -p docs/.vitepress/dist/legacy
+          cp -R legacy/docs/build/html/. docs/.vitepress/dist/legacy/
+          rm -f docs/.vitepress/dist/legacy/CNAME
+          touch docs/.vitepress/dist/.nojekyll
+
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: docs/.vitepress/dist
+
+  deploy:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

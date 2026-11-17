@@ -162,9 +162,9 @@ describe("parent-agent skill docs", () => {
 	});
 
 	it("keeps the agent-setup skill-install snippet pointing at skills that exist", () => {
-		const doc = readFileSync(join(repoRoot, "docs", "agent-setup.md"), "utf8").replace(/\r\n?/g, "\n");
+		const doc = readFileSync(join(repoRoot, "docs", "agents", "skills.md"), "utf8").replace(/\r\n?/g, "\n");
 		const install = subsection(doc, "Install the skills into your coding agent");
-		expect(install.length, "docs/agent-setup.md needs a skill-install subsection").toBeGreaterThan(0);
+		expect(install.length, "docs/agents/skills.md needs a skill-install subsection").toBeGreaterThan(0);
 		expect(install, "the install subsection must name Claude Code's skill directory").toContain(".claude/skills");
 		const copied = [...install.matchAll(/skills\/(autorag[a-z0-9-]*)/g)].map((match) => match[1]);
 		expect(copied.length, "the install snippet must name the skill folders it copies").toBeGreaterThan(0);
@@ -233,14 +233,14 @@ describe("parent-agent skill docs", () => {
 
 	it("keeps doctor-skill and troubleshooting-doc commands inside the real CLI surface", () => {
 		const { commands, flags } = cliSurface();
-		const doc = readFileSync(join(repoRoot, "docs", "troubleshooting.md"), "utf8").replace(/\r\n?/g, "\n");
-		const troubleshooting = section(doc, "Troubleshooting");
-		expect(troubleshooting.length, "docs/troubleshooting.md needs a ## Troubleshooting section").toBeGreaterThan(0);
+		const doc = readFileSync(join(repoRoot, "docs", "guide", "troubleshooting.md"), "utf8").replace(/\r\n?/g, "\n");
+		const troubleshooting = doc;
+		expect(troubleshooting.length, "docs/guide/troubleshooting.md must not be empty").toBeGreaterThan(0);
 		expect(troubleshooting).toContain("autorag-doctor");
 
 		for (const [label, markdown] of [
 			["skills/autorag-doctor/SKILL.md", readSkill("autorag-doctor")],
-			["docs/troubleshooting.md ## Troubleshooting", troubleshooting],
+			["docs/guide/troubleshooting.md", troubleshooting],
 		] as const) {
 			const calls = autoragInvocations(markdown);
 			expect(calls.length, `${label}: no autorag invocations found`).toBeGreaterThan(0);

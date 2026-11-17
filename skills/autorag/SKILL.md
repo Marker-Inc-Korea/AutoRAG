@@ -291,4 +291,4 @@ Never target source documents. `memory inspect` is read-only and path-opaque.
   including the shipped `setup`, `models`, `tui`, and `lite`
   commands. `autorag <command> --help` prints that command's own flags, and
   `autorag --version` prints the installed version. See
-  `docs/minsync-setup.md#embedding-backends` for MinSync setup and embedding-backend selection.
+  `docs/indexing/embedding-backends.md#backend-resolution-order` for MinSync setup and embedding-backend selection.

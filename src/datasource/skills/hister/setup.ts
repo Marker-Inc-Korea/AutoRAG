@@ -74,7 +74,7 @@ export interface HisterServiceDeps {
 const INSTALL = "brew install hister   (other platforms: https://github.com/asciimoo/hister/releases)";
 const START = "brew services start hister";
 const SHARE_DAEMON =
-	"Hister can only share a local embedding server. Start `minsync serve --idle-timeout 0` (docs/minsync-setup.md), then run `autorag setup --sync-hister`.";
+	"Hister can only share a local embedding server. Start `minsync serve --idle-timeout 0` (docs/indexing/embedding-backends.md), then run `autorag setup --sync-hister`.";
 
 interface HisterEntry {
 	readonly name: string;
@@ -242,7 +242,7 @@ export async function setupHister(options: {
 			remediation.push(
 				SHARE_DAEMON.replace(
 					"Hister can only share a local embedding server. ",
-					"Start `minsync serve --idle-timeout 0` (docs/minsync-setup.md), then run `autorag setup --sync-hister`.",
+					"Start `minsync serve --idle-timeout 0` (docs/indexing/embedding-backends.md), then run `autorag setup --sync-hister`.",
 				),
 			);
 		if (embedding.restartRequired)

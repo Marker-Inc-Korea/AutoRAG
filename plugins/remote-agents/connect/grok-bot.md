@@ -1,6 +1,6 @@
 # Connect AutoRAG to a Grok Bot
 
-Replace `<YOUR_PUBLIC_URL>` with the HTTPS address of your own AutoRAG server (see `docs/remote-agents.md`), check it
+Replace `<YOUR_PUBLIC_URL>` with the HTTPS address of your own AutoRAG server (see `docs/agents/remote-agents.md`), check it
 with `autorag-mcp --check <YOUR_PUBLIC_URL>/mcp`, then paste everything below the line into the Bot that should have
 access. Every Bot on your Grok Bot account shares the connected apps and one computer, so a connected AutoRAG is
 visible to all of them.
