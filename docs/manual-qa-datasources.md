@@ -39,6 +39,7 @@ synthetic store inside the container or accept `SKIP`.
 |---|---|---|
 | `scripts/manual-qa/run-qa.ts` | Protocol-accurate local mocks of GitHub APIs + real filesystem fixture (Obsidian vault) + local RSS feed | `bun scripts/manual-qa/run-qa.ts` |
 | `scripts/manual-qa/run-qa-obsidian-live.ts` | Real local vault fixture through MinSync sparse + semantic + folder scope + incremental re-index | `bun scripts/manual-qa/run-qa-obsidian-live.ts` |
+| `scripts/manual-qa/run-qa-refresh-search-live.ts` | Real `minsync` and the shared embedder: an incremental `agent.refresh` (edit, add, delete) with searches issued the whole time it runs; no search refused, untouched documents always found, edits/additions/deletions correct afterwards; fails if no search overlapped the refresh | `bun scripts/manual-qa/run-qa-refresh-search-live.ts` |
 | `scripts/manual-qa/run-qa-discrawl-live.ts` | Real Discord archive through the external `discrawl` CLI (FTS + semantic + hybrid, incremental re-sync) | `bun scripts/manual-qa/run-qa-discrawl-live.ts` |
 | `scripts/manual-qa/run-qa-lazykatok-live.ts` | Real KakaoTalk archive through the external `lazykatok` CLI (source-native `/kakao/<instance>/chunks/<chunk>` identity, keyword/BM25 retrieval); Apple Silicon macOS with Full Disk Access | `bun scripts/manual-qa/run-qa-lazykatok-live.ts` |
 | `scripts/manual-qa/run-qa-clawgallery-live.ts` | Real ClawGallery CLI plus a local image folder (incremental bootstrap + hybrid search) | `bun scripts/manual-qa/run-qa-clawgallery-live.ts /path/to/images "query"` |

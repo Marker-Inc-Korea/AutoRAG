@@ -2,17 +2,20 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 
 /**
- * MinSync allows one operation per workspace: a second concurrent operation fails
- * with "another sync is in progress" while the first holds its lock. Everything
- * AutoRAG runs against one workspace (the local-file vector and hybrid methods,
- * or one Obsidian vault) goes through here, so operations for one workspace queue
- * instead of colliding, and a query never reads an index a sync is rewriting.
+ * One workspace, two kinds of operation.
  *
- * One exception: the first sync of a workspace. MinSync's `query` takes no lock and reads a
- * snapshot of the store, and every batch the first sync commits is final (its dense rows and
- * their sparse vectors), so the batches committed so far answer queries while the rest are still
- * being read. That is what lets a first index be searched, and a question be proven against it,
+ * A sync rewrites the index and the staged files, so syncs for one workspace queue behind each other
+ * instead of colliding on MinSync's lock ("another sync is in progress"). Everything AutoRAG runs against
+ * one workspace (the local-file vector and hybrid methods, or one Obsidian vault) goes through here.
+ *
+ * A query does not wait for a sync and is not refused by one. MinSync's `query` takes no lock: it reads the
+ * store at the table version that is current when it opens, and a sync prunes only versions older than ten
+ * minutes. So a query beside a refresh answers from what is committed, and a first sync's committed batches
+ * are final (its dense rows and their sparse vectors), so they answer too. That is what keeps search
+ * available while an index is built or refreshed, and lets a question be proven against a first index
  * before it ends.
+ *
+ * The one refusal is an index with nothing to read yet; see {@link runWorkspaceQuery}.
  */
 const workspaceOperationTails = new Map<string, Promise<unknown>>();
 const workspaceSyncInFlight = new Map<string, number>();
@@ -44,23 +47,23 @@ export function runWorkspaceSync<T>(workspacePath: string, run: () => Promise<T>
 }
 
 /**
- * Whether `workspacePath` holds an index only its first sync has written so far: no sync has
- * completed (no `cursor.json`) and the first one has opened its transaction (`txn.json`), after
- * which every committed batch is searchable. MinSync decides what is in it; this only decides
- * whether the query may run now.
+ * Whether a query has anything to read: a sync has completed (`cursor.json`), or a first sync has opened its
+ * transaction (`txn.json`), after which every committed batch is searchable. MinSync decides what the index
+ * holds; this only decides whether asking it is worthwhile. A forced rebuild (`init --force`) moves both
+ * files and the store aside, which is the moment a query has nothing to read.
  */
-function isFirstSyncReadable(workspacePath: string): boolean {
+function hasReadableIndex(workspacePath: string): boolean {
 	const state = join(workspacePath, ".minsync");
-	return !existsSync(join(state, "cursor.json")) && existsSync(join(state, "txn.json"));
+	return existsSync(join(state, "cursor.json")) || existsSync(join(state, "txn.json"));
 }
 
 /**
- * Run a query. A first sync does not hold it back: it runs beside the sync and sees the batches committed
- * so far. Any later sync rewrites an index that already answers, so a query is refused while one is pending.
+ * Run a query. It runs beside a sync that is pending and answers from what is committed. It is refused only
+ * while a sync is pending and the index has nothing to read yet, because there is nothing to answer from.
  */
 export async function runWorkspaceQuery<T>(workspacePath: string, run: () => Promise<T>): Promise<T> {
 	if ((workspaceSyncInFlight.get(workspacePath) ?? 0) > 0) {
-		if (!isFirstSyncReadable(workspacePath)) throw new Error(`another sync is in progress (${workspacePath})`);
+		if (!hasReadableIndex(workspacePath)) throw new Error(`another sync is in progress (${workspacePath})`);
 		return run();
 	}
 	return withWorkspaceLock(workspacePath, run);

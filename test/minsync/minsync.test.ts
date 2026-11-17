@@ -97,11 +97,15 @@ function loggedEnv(): { command: string; openaiKey: string | null }[] {
 		: [];
 }
 
-function writeFakeMinSync(queryJson: string, strictQuery = false, syncDelayMs = 0): void {
+/**
+ * `syncHoldPath`: while a file exists there, the fake `sync` does not finish. The wait lives in the child process,
+ * where no fake clock reaches; removing the file (or the whole temp root, if a test fails) frees it.
+ */
+function writeFakeMinSync(queryJson: string, strictQuery = false, syncDelayMs = 0, syncHoldPath?: string): void {
 	writeFileSync(
 		minsyncBinary,
 		`#!/usr/bin/env node
-import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { createRequire } from "node:module";
 
@@ -128,6 +132,7 @@ if (args[0] === "check") {
 
 if (args[0] === "sync") {
   ${syncDelayMs > 0 ? `await new Promise((resolve) => setTimeout(resolve, ${syncDelayMs}));` : ""}
+  ${syncHoldPath === undefined ? "" : `while (existsSync(${JSON.stringify(syncHoldPath)})) await new Promise((resolve) => setTimeout(resolve, 10));`}
   mkdirSync(dirname(cursor), { recursive: true });
   writeFileSync(cursor, JSON.stringify({ ready: true }));
   console.log(JSON.stringify({ files_processed: 1, files_processed_paths: ["files/docs/policy.txt.md"] }));
@@ -1189,7 +1194,7 @@ console.log(JSON.stringify({ results: [{ path: ${JSON.stringify(parsedOutput)}, 
 		expect(events[0]?.reason).toContain("embedder unreachable at http://127.0.0.1:9");
 	});
 
-	it("fails fast instead of waiting behind a refresh sync", async () => {
+	it("refuses a query, rather than queueing it, while a first sync has nothing readable yet", async () => {
 		writeFakeMinSync(JSON.stringify({ results: [] }), false, 200);
 		const method = new MinSyncVectorMethod({
 			binaryPath: minsyncBinary,
@@ -1219,22 +1224,31 @@ console.log(JSON.stringify({ results: [{ path: ${JSON.stringify(parsedOutput)}, 
 		await refresh;
 	});
 
-	it("still refuses a query behind a sync of an index that was already built", async () => {
-		writeFakeMinSync(JSON.stringify({ results: [] }), false, 200);
-		mkdirSync(join(minsyncWorkspace, ".minsync"), { recursive: true });
-		writeFileSync(
-			join(minsyncWorkspace, ".minsync", "txn.json"),
-			JSON.stringify({ source_id: "files", status: "started" }),
-		);
-		writeFileSync(join(minsyncWorkspace, ".minsync", "cursor.json"), JSON.stringify({ ready: true }));
-		const method = new MinSyncVectorMethod({ binaryPath: minsyncBinary, root, workspacePath: minsyncWorkspace });
-		const refresh = method.sync();
+	it.each([
+		["with its transaction open", ["cursor.json", "txn.json"]],
+		["before it has opened its transaction", ["cursor.json"]],
+	] as const)(
+		"answers from the index a refresh is updating, %s, without waiting for the refresh",
+		async (_phase, state) => {
+			const hit = { path: parsedOutput, score: 0.9, text: "Parsed renewal policy with cancellation terms." };
+			const hold = join(root, "hold-sync");
+			writeFileSync(hold, "");
+			writeFakeMinSync(JSON.stringify({ results: [hit] }), false, 0, hold);
+			mkdirSync(join(minsyncWorkspace, ".minsync"), { recursive: true });
+			for (const file of state) {
+				writeFileSync(join(minsyncWorkspace, ".minsync", file), JSON.stringify({ ready: true }));
+			}
+			const method = new MinSyncVectorMethod({ binaryPath: minsyncBinary, root, workspacePath: minsyncWorkspace });
+			const refresh = method.sync();
 
-		await expect(method.retrieve("renewal cancellation", { topK: 1 })).rejects.toThrow(
-			`another sync is in progress (${minsyncWorkspace})`,
-		);
-		await refresh;
-	});
+			// The refresh is held inside MinSync, so an answer can only have come from beside it.
+			const results = await method.retrieve("renewal cancellation", { topK: 1 });
+
+			expect(results.map((result) => result.content)).toEqual(["Parsed renewal policy with cancellation terms."]);
+			rmSync(hold);
+			await refresh;
+		},
+	);
 
 	it("routes lexical retrieval through MinSync sparse mode", async () => {
 		writeFakeMinSync(

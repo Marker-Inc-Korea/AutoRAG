@@ -769,6 +769,23 @@ host, which no handler can catch) keeps `.minsync/lock`. The next `check` or
 retryable `minsync-lock-held` diagnostic and a `lock-held` result reason instead
 of a generic `minsync-sync-failed`.
 
+## Searching while a refresh runs
+
+Search is not blocked by a refresh. `minsync query` takes no lock and reads the index as of the moment it opens,
+so a search issued while `AutoRAGAgent.refresh` is updating an index that already exists answers from what is
+committed, and AutoRAG runs it beside the refresh instead of refusing it. A first index works the same way: the
+batches it has committed so far answer while the rest are still being read.
+
+Two things are worth knowing:
+
+- A search is refused with `another sync is in progress` only while a sync is pending and the index has nothing to
+  read yet (no `cursor.json` and no `txn.json`), for example the first moments of a first sync or a forced rebuild.
+  The hit is skipped like any other unavailable method and reported in the search diagnostics.
+- MinSync replaces an edited batch's dense rows first and encodes their sparse vectors a moment later, so an edited
+  document can briefly miss the lexical half of a search while its batch is being swapped. It is found again as soon
+  as that batch finishes, and untouched documents are never affected. `scripts/manual-qa/run-qa-refresh-search-live.ts`
+  reports how often this happens on a real index.
+
 ## Indexing progress and liveness
 
 AutoRAG runs `minsync sync --progress jsonl`. Each MinSync `start`, `batch`,
