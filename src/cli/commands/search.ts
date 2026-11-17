@@ -14,7 +14,7 @@ import {
 	resolveQueryDecompositionModel,
 	resolveSllmDecisionModel,
 } from "../config.ts";
-import { renderError, renderPreliminary, renderSearch } from "../output.ts";
+import { renderError, renderPreliminary, renderRevision, renderSearch } from "../output.ts";
 import type { CommandContext } from "./types.ts";
 
 /** Exit status of a search whose session decision model cannot answer: AutoRAG is unusable until it can. */
@@ -247,6 +247,9 @@ export async function runSearch(ctx: CommandContext, deps: SearchDeps = {}): Pro
 					break;
 				case "preliminary":
 					ctx.stdout(renderPreliminary(event.response, { json: ctx.json, debug: ctx.debug }));
+					break;
+				case "revision":
+					ctx.stdout(renderRevision(event.revision, { json: ctx.json, debug: ctx.debug }));
 					break;
 				case "complete":
 					ctx.stdout(renderSearch(event.response, { json: ctx.json, debug: ctx.debug }));

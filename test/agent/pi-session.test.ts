@@ -635,6 +635,60 @@ describe("AutoRAG pi coding-agent host", () => {
 		}
 	});
 
+	it("shows a correction of the fast answer in the TUI transcript as the struck original and its replacement", async () => {
+		const seen: string[] = [];
+		const tui = await tuiAgent(
+			[
+				fauxAssistantMessage("Lyon is the capital of France.", { stopReason: "stop" }),
+				fauxAssistantMessage(
+					[
+						fauxToolCall("revise_answer", {
+							op: "replace",
+							claimId: "c1",
+							text: "Paris is the capital of France.",
+							reason: "Lyon is not the capital",
+						}),
+					],
+					{ stopReason: "toolUse" },
+				),
+				seeingStep("Corrected the capital.", seen),
+			],
+			jevRoute("local", 0.9),
+		);
+		try {
+			await tui.session.prompt("What is the capital of France?", { source: "interactive" });
+			await tui.agent.waitForIdle();
+
+			// The tool the terminal draws is the one registered with pi, renderers included.
+			const definition = tui.session.getToolDefinition("revise_answer");
+			expect(definition?.renderResult).toBeTypeOf("function");
+
+			const result = tui.session.messages.find(
+				(message) => message.role === "toolResult" && message.toolName === "revise_answer",
+			);
+			if (result?.role !== "toolResult") throw new Error("the correction left no tool result in the transcript");
+			expect(result.isError).toBe(false);
+			expect(result.details).toEqual({
+				revision: {
+					op: "replace",
+					claimId: "c1",
+					original: "Lyon is the capital of France.",
+					replacement: "Paris is the capital of France.",
+					reason: "Lyon is not the capital",
+				},
+			});
+			// The model that verified saw the claim it could name.
+			const prompt = tui.session.messages.flatMap((message) =>
+				message.role === "user"
+					? [typeof message.content === "string" ? message.content : textOf(message.content)]
+					: [],
+			);
+			expect(prompt.join("\n")).toContain("c1: Lyon is the capital of France.");
+		} finally {
+			await tui.dispose();
+		}
+	});
+
 	it("runs a follow-up typed during a search as the next query after it answers", async () => {
 		// Alt+Enter queues a follow-up: a new question, answered after this one.
 		const first = heldStep(fauxAssistantMessage("Paris.", { stopReason: "stop" }));

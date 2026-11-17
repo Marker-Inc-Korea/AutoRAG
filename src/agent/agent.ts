@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, watch as fsWatch, mkdirSync, realpathSync, statSync, writeFileSync } from "node:fs";
-import { basename, dirname, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { Agent, AgentEvent, AgentMessage, AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import type { Api, ImageContent, Model, TextContent } from "@earendil-works/pi-ai";
 import { clampThinkingLevel } from "@earendil-works/pi-ai/compat";
@@ -152,6 +152,7 @@ import {
 	ANSWER_UNCONFIRMED_FAST_RULE,
 	ANSWER_UNCONFIRMED_FINAL_RULE,
 } from "./answer-guidelines.ts";
+import { AnswerRevisionSession, type Revision, type RevisionCitations, splitClaims } from "./answer-revision.ts";
 import { ASK_USER_TOOL_NAME, resolveAskUserExtensionPath } from "./ask-user.ts";
 import { createManageAutomationsTool, MANAGE_AUTOMATIONS_TOOL_NAME } from "./automation-tool.ts";
 import {
@@ -163,6 +164,7 @@ import {
 import { createCitationLinks } from "./citation-links.ts";
 import { CitationNumbers } from "./citation-numbers.ts";
 import { CITATION_RELEVANCE_FLOOR, judgeCitationRelevance } from "./citation-relevance.ts";
+import { answerMarkers } from "./citations.ts";
 import { createCloudReleaseExtension } from "./cloud-release-extension.ts";
 import { ConversationQueries } from "./conversation-queries.ts";
 import {
@@ -193,7 +195,7 @@ import {
 import { createEmbeddingControls } from "./embedding-controls.ts";
 import { createEverythingSearchTool, EVERYTHING_SEARCH_TOOL_NAME } from "./everything-search-tool.ts";
 import { type EvidenceJudgmentUnit, judgeEvidence } from "./evidence-judgment.ts";
-import { EvidenceLedger } from "./evidence-ledger.ts";
+import { EvidenceLedger, isRegularFile } from "./evidence-ledger.ts";
 import { EvidenceOriginIndex } from "./evidence-origins.ts";
 import { createEvidencePersistence } from "./evidence-persistence.ts";
 import { createFSearchSearchTool, FSEARCH_SEARCH_TOOL_NAME } from "./fsearch-search-tool.ts";
@@ -250,6 +252,7 @@ import {
 	writeRefreshProgress,
 } from "./refresh-progress.ts";
 import type { AutoRAGResultsDetails } from "./results.ts";
+import { createReviseAnswerTool, REVISE_ANSWER_PROMPT_RULE, REVISE_ANSWER_TOOL_NAME } from "./revise-answer-tool.ts";
 import { createSearchAllDocumentsTool, SEARCH_ALL_DOCUMENTS_TOOL_NAME } from "./search-all-tool.ts";
 import {
 	createEmptySearchDocumentsResponse,
@@ -1058,6 +1061,10 @@ export class AutoRAGAgent {
 	/** Everything the user typed in this conversation; Jev reads it to judge whether a citation relates to what was asked. */
 	private readonly conversationQueries = new ConversationQueries();
 	private preliminaryCallback: ((response: SearchDocumentsResponse) => void) | undefined;
+	/** Receives each correction the verification phase makes to the preliminary answer the caller already holds. */
+	private revisionCallback: ((revision: Revision) => void) | undefined;
+	/** The claims of the preliminary answer a caller received, while the verification phase may still correct them. */
+	private revisionSession: AnswerRevisionSession | undefined;
 	/** Per-phase thinking levels of the two-phase search. */
 	private readonly fastThinkingLevel: AutoRAGThinkingLevel;
 	private readonly finalThinkingLevel: AutoRAGThinkingLevel;
@@ -1355,6 +1362,11 @@ export class AutoRAGAgent {
 		const listFileConversionsTool = this.fileeOptions === false ? undefined : createListFileConversionsTool(this);
 		const manageAutomationsTool = createManageAutomationsTool();
 		const calculatorTool = createCalculatorTool();
+		const reviseAnswerTool = createReviseAnswerTool({
+			session: () => this.revisionSession,
+			announce: (revision) => this.revisionCallback?.(revision),
+			unsupported: (text) => this.unsupportedCitations(text),
+		});
 		this.decisionModels = createDecisionModels({ ...options.jev, agentDir: options.piAgentDir });
 		this.jevJudge = this.decisionModels.judge;
 		this.jevExtension = createJevExtension(this.jevJudge);
@@ -1416,6 +1428,7 @@ export class AutoRAGAgent {
 			CONVERT_FILES_TOOL_NAME,
 			LIST_FILE_CONVERSIONS_TOOL_NAME,
 			CALCULATOR_TOOL_NAME,
+			REVISE_ANSWER_TOOL_NAME,
 			MANAGE_AUTOMATIONS_TOOL_NAME,
 			JEV_TOOL_NAME,
 			WEB_SEARCH_TOOL_NAME,
@@ -1445,6 +1458,7 @@ export class AutoRAGAgent {
 			...(convertFilesTool !== undefined ? [convertFilesTool] : []),
 			...(listFileConversionsTool !== undefined ? [listFileConversionsTool] : []),
 			calculatorTool,
+			reviseAnswerTool,
 			manageAutomationsTool,
 			...(jikjiFindTool !== undefined ? [jikjiFindTool] : []),
 			...(everythingSearchTool !== undefined ? [everythingSearchTool] : []),
@@ -2106,6 +2120,46 @@ export class AutoRAGAgent {
 		return derived.details;
 	}
 
+	/** How the revision tool reads citations: against this run's evidence, and as the numbers the caller is shown. */
+	private revisionCitations(): RevisionCitations {
+		const options = { allowLocalFiles: true };
+		return {
+			inspect: (text) => {
+				let resolved = 0;
+				const unresolved: string[] = [];
+				for (const marker of answerMarkers(text, isLocalFile)) {
+					if (marker.kind === "number") {
+						unresolved.push(`[${marker.number}]`);
+						continue;
+					}
+					const references = marker.kind === "evidence" ? marker.ids : [marker.path];
+					for (const reference of references) {
+						if (this.evidenceLedger.lookup(reference, options).length > 0) resolved += 1;
+						else unresolved.push(marker.kind === "evidence" ? `[${reference}]` : `[file:${reference}]`);
+					}
+				}
+				return { resolved, unresolved };
+			},
+			display: (text) =>
+				deriveResultsFromAnswer(text, this.evidenceLedger, { ...options, numbers: this.citationNumbers }).details
+					.answer,
+		};
+	}
+
+	/**
+	 * Sources among the text's citations that Jev finds unrelated to the sentences citing them. The same check
+	 * {@link deriveAnswer} applies to a final answer, run when the model proposes a correction so it can fix the
+	 * citation in the same turn instead of losing it silently afterwards.
+	 */
+	private async unsupportedCitations(text: string): Promise<readonly string[]> {
+		const chunks = citedChunks(text, this.evidenceLedger, { allowLocalFiles: true });
+		const relevance = await judgeCitationRelevance(this.jevJudge, {
+			userMessages: this.conversationQueries.all(),
+			chunks,
+		});
+		return [...new Set(chunks.filter((chunk) => relevance.rejected.has(chunk.key)).map((chunk) => chunk.source))];
+	}
+
 	/**
 	 * Routes one TUI input the way pi routes typed input for its own turns. With
 	 * no search running it starts one. During a search, Enter steers it (the
@@ -2399,6 +2453,7 @@ export class AutoRAGAgent {
 		// A run that owns no transcript is its own conversation, so earlier runs' memory messages have nothing to sit in.
 		if (this.boundPiRuntime === undefined) this.memoryMessages = [];
 		this.routingDiagnostics = [];
+		this.revisionSession = undefined;
 		if (decisionModel !== undefined) {
 			this.routingDiagnostics.push({
 				code: "decision-model-checked",
@@ -2664,6 +2719,10 @@ export class AutoRAGAgent {
 				setThinking(this.finalThinkingLevel);
 				// Only a preliminary consumer actually received may turn the final answer into a delta.
 				const fastAnswerDelivered = preliminary !== undefined && this.preliminaryCallback !== undefined;
+				// A caller that holds the first answer is shown the verification phase's corrections of it, claim by claim.
+				if (fastAnswerDelivered && fastText !== undefined) {
+					this.revisionSession = new AnswerRevisionSession(fastText, this.revisionCitations());
+				}
 				// The model gets its own first answer verbatim, with the [eN] ids it
 				// wrote: the caller's copy was renumbered to [n], and the prompt tells
 				// the model its [eN] ids are still valid.
@@ -2682,13 +2741,22 @@ export class AutoRAGAgent {
 				// A steer typed after verification's last model request is still owed an
 				// answer within this search: pi holds it queued, so verify once more.
 				while (!stopped() && !planAbort.signal.aborted && this.interactive.queuedSteers.length > 0) {
-					await activeSession.prompt(buildSteerContinuationPrompt(this.interactive.steers));
+					await activeSession.prompt(buildSteerContinuationPrompt(this.interactive.steers, fastAnswerDelivered));
 				}
 				// Synchronous with the check above: a later steer is refused, not left unanswered.
 				steering.acceptingSteers = false;
 				if (stopped()) return;
 				const finalText = finalAnswerText(transcript());
-				if (finalText !== undefined) captured = await this.deriveAnswer(finalText);
+				const revisions = this.revisionSession;
+				if (revisions === undefined || !revisions.changed()) {
+					// Nothing was corrected through the tool: the model's reply is the answer, as it always was.
+					if (finalText !== undefined) captured = await this.deriveAnswer(finalText);
+				} else {
+					// The answer is the first answer with every correction applied. The model's closing reply is a note on
+					// what changed, unless it cites evidence: then it also wrote something new, and dropping it would lose it.
+					const revised = composeRevisedAnswer(revisions.revisedText(), finalText);
+					if (revised !== "") captured = await this.deriveAnswer(revised);
+				}
 			})().finally(() => {
 				// Every early return decides synchronously after its last steer check.
 				steering.acceptingSteers = false;
@@ -2797,6 +2865,8 @@ export class AutoRAGAgent {
 			this.activeSession = undefined;
 			this.activeRetrievalOptions = undefined;
 			this.preliminaryCallback = undefined;
+			this.revisionCallback = undefined;
+			this.revisionSession = undefined;
 			this.activeRun = false;
 			this.memoryContextCache = undefined;
 		}
@@ -2853,6 +2923,11 @@ export class AutoRAGAgent {
 		});
 		this.preliminaryCallback = (response) => {
 			queue.push({ type: "preliminary", response });
+			wake?.();
+			wake = undefined;
+		};
+		this.revisionCallback = (revision) => {
+			queue.push({ type: "revision", revision });
 			wake?.();
 			wake = undefined;
 		};
@@ -3870,11 +3945,11 @@ export class AutoRAGAgent {
 		const scope = options.scope ? ` Restrict search to virtual path scope ${options.scope}.` : "";
 		const firstAnswer = formatFirstAnswerContext(fastAnswer, fastAnswerDelivered);
 		const answerRules = fastAnswerDelivered
-			? `Rules for your final answer (DELTA ONLY; the system prompt's answer guidelines still apply):\n` +
-				`- The user already has the first answer above. Your final answer MUST contain only the delta against it: (a) corrections to anything in the first answer that is wrong, unsupported, or outdated, and (b) newly verified findings that were not present in the first answer. Mark each item as a correction or a new finding.\n` +
-				`- NEVER restate first-answer facts that remain correct or repeat its bullet list. If verification changed nothing and found nothing new, the final answer is ONE short line and nothing more (if the first answer said the answer was not confirmed yet, the line says it still could not be confirmed): no mention of what was found instead (no "only X exists" contrast), no account of where or how you searched or what the documents contain.\n` +
+			? `Rules for your reply (CORRECTIONS ARE TOOL CALLS; the system prompt's answer guidelines still apply):\n` +
+				`- ${REVISE_ANSWER_PROMPT_RULE}\n` +
+				`- Correct a claim only with evidence you retrieved or a file you opened: cite it with its [eN] id in the text you pass. A claim you cannot support is retracted, not reworded. Give a short reason in the user's language.\n` +
+				`- Your reply after the last ${REVISE_ANSWER_TOOL_NAME} call is ONE short line, not a new answer: say what changed, or that the first answer held up (if the first answer said the answer was not confirmed yet, say it still could not be confirmed). Do not restate the claims, and give no account of where or how you searched.\n` +
 				`- Do not include specific file paths, datasource descriptions, or retrieval mechanics in the answer text.\n` +
-				`- A correction or new finding that relies on evidence the first answer cited must cite that evidence's id again.\n` +
 				`- ${ANSWER_LANGUAGE_RULE}\n` +
 				`- Leave out unrelated or merely adjacent findings.\n` +
 				`- ${ANSWER_DELIVERABLE_DELTA_RULE}\n` +
@@ -5307,11 +5382,27 @@ function formatSteerContext(steers: readonly string[]): string {
 }
 
 /** One more verification turn for steers that arrived after the last phase's final model request. */
-function buildSteerContinuationPrompt(steers: readonly string[]): string {
-	return (
-		`${formatSteerContext(steers)}Apply the latest correction: search or verify further if it needs that, ` +
-		`then reply with the complete final answer to the original question and no tool call.`
-	);
+function buildSteerContinuationPrompt(steers: readonly string[], correctWithTool = false): string {
+	const finish = correctWithTool
+		? `correct the first answer with ${REVISE_ANSWER_TOOL_NAME} where the correction needs it, then reply with one short line and no tool call.`
+		: `then reply with the complete final answer to the original question and no tool call.`;
+	return `${formatSteerContext(steers)}Apply the latest correction: search or verify further if it needs that, ${finish}`;
+}
+
+function isLocalFile(path: string): boolean {
+	return isAbsolute(path) && isRegularFile(path);
+}
+
+/**
+ * The first answer with the model's corrections applied, followed by the model's closing reply only when that reply
+ * cites evidence: a plain closing note ("removed the payout claim") only describes corrections the tool already
+ * carries. When every claim was retracted, the closing reply is all there is to say.
+ */
+function composeRevisedAnswer(revised: string, closing: string | undefined): string {
+	if (closing === undefined) return revised;
+	if (revised === "") return closing;
+	const cites = answerMarkers(closing, isLocalFile).some((marker) => marker.kind !== "number");
+	return cites ? `${revised}\n\n${closing}` : revised;
 }
 
 /**
@@ -5325,10 +5416,13 @@ function formatFirstAnswerContext(fastAnswer: string | undefined, delivered: boo
 	if (fastAnswer === undefined) {
 		return "(the fast phase produced no answer — write the complete answer)";
 	}
-	const header = delivered
-		? "The user has ALREADY received this immediate first answer (its citations were renumbered for the user; the [eN] ids below are still valid for you):"
-		: "An internal first-pass draft was produced but was NOT shown to the caller; write the complete answer:";
-	return `${header}\n${fastAnswer}`;
+	if (!delivered) {
+		return `An internal first-pass draft was produced but was NOT shown to the caller; write the complete answer:\n${fastAnswer}`;
+	}
+	const listed = splitClaims(fastAnswer)
+		.map((claim) => `${claim.id}: ${claim.text.replace(/\n/gu, "\n    ")}`)
+		.join("\n");
+	return `The user has ALREADY received this immediate first answer. It is split into claims you can name (the [eN] ids are the ones you wrote and are still valid for you):\n${listed}`;
 }
 
 /**

@@ -21,6 +21,7 @@ import {
 	type TuiMode,
 } from "@earendil-works/pi-coding-agent";
 import { getKeybindings, type KeyId, matchesKey } from "@earendil-works/pi-tui";
+import type { TSchema } from "typebox";
 import { PROVIDER_ID as DAZZI_PROVIDER_ID } from "../cloud/config.ts";
 import { registerDazziProvider } from "../cloud/provider.ts";
 import { createContextTokenGuardedTransform, withBoundedOutput } from "./context-token-guard.ts";
@@ -129,20 +130,34 @@ export interface AutoRAGPiSession {
 	readonly dispose: () => Promise<void>;
 }
 
-/** Adapts a pi-agent-core {@link AgentTool} to pi's extension {@link ToolDefinition}. */
-export function toToolDefinition(tool: AgentTool): ToolDefinition {
-	return {
+/** A tool that also says how pi's terminal UI draws its call and its result; every other surface ignores both. */
+export type TerminalTool<TParameters extends TSchema = TSchema, TDetails = any> = AgentTool<TParameters, TDetails> &
+	Partial<Pick<ToolDefinition<TParameters, TDetails>, "renderCall" | "renderResult">>;
+
+/**
+ * Adapts a pi-agent-core {@link AgentTool} to pi's extension {@link ToolDefinition}. A tool that carries terminal
+ * renderers keeps its own schema and details types, so the renderers see typed arguments and results.
+ */
+export function toToolDefinition<TParameters extends TSchema, TDetails>(
+	tool: TerminalTool<TParameters, TDetails>,
+): ToolDefinition;
+export function toToolDefinition(tool: AgentTool<any, any>): ToolDefinition;
+export function toToolDefinition<TParameters extends TSchema, TDetails>(
+	tool: TerminalTool<TParameters, TDetails>,
+): ToolDefinition {
+	// Both tool shapes use the same TypeBox schema; the casts are the adapter boundary between their structurally
+	// identical generics, which TypeScript cannot unify across the registry's erased `ToolDefinition`.
+	const adapted: ToolDefinition<TParameters, TDetails> = {
 		name: tool.name,
 		label: tool.label,
 		description: tool.description,
 		parameters: tool.parameters,
 		...(tool.prepareArguments === undefined ? {} : { prepareArguments: tool.prepareArguments }),
-		execute: async (toolCallId, params, signal, onUpdate) => {
-			// ToolDefinition and AgentTool use the same TypeBox schema; this cast is
-			// the adapter boundary between their structurally identical generics.
-			return tool.execute(toolCallId, params as never, signal, onUpdate);
-		},
+		...(tool.renderCall === undefined ? {} : { renderCall: tool.renderCall }),
+		...(tool.renderResult === undefined ? {} : { renderResult: tool.renderResult }),
+		execute: async (toolCallId, params, signal, onUpdate) => tool.execute(toolCallId, params, signal, onUpdate),
 	};
+	return adapted as unknown as ToolDefinition;
 }
 
 const EMBEDDED_AUTH_MARKER = "<autorag-embedded-model>";

@@ -51,7 +51,7 @@ The status line shows `🔌 Discord: #<channel>`, and the channel appears in you
 ## Using it
 
 - Send a question in the session channel. The bot reacts with ⏳ while it works.
-- If the search has two phases, the fast answer is posted as soon as verification starts. The verified final answer follows with a mention of the asker. A one-phase search posts one reply.
+- If the search has two phases, the fast answer is posted as soon as verification starts. Each correction verification makes to it is posted as its own message (`✎ Corrected c1 — reason`, the original struck out, the replacement in bold). The closing reply follows with a mention of the asker; it is a short note on what changed, not a second answer. A one-phase search posts one reply.
 - Tool calls are posted as short labels while the search runs.
 - When the model needs to ask you something, it asks in the channel and reads your next message as the answer.
 - A message sent while a search is running gets `Still processing`. Steering a running search from Discord is not supported yet.

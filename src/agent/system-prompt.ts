@@ -84,6 +84,11 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 		),
 		toolLine(
 			config,
+			"revise_answer",
+			"correct the first answer the user has already read, one claim (c1, c2, …) at a time: retract or replace what is wrong, add what is new and verified. Use it instead of rewriting that answer in your reply; each correction is shown to the user struck through next to its reason",
+		),
+		toolLine(
+			config,
 			"manage_automations",
 			"create, list, change, delete, and test file-triggered automations, and start or stop their background daemon",
 		),
@@ -132,6 +137,7 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 						"list_file_conversions",
 						"manage_automations",
 						"calculator",
+						"revise_answer",
 						"web_search",
 						"web_fetch",
 						"jev",
