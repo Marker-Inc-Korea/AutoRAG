@@ -4,6 +4,10 @@ updates:
       directory: "/"
       schedule:
           interval: "weekly"
+    - package-ecosystem: "npm" # Docs site (docs/, VitePress)
+      directory: "/docs"
+      schedule:
+          interval: "weekly"
     - package-ecosystem: "pip" # Legacy AutoRAG (Python)
       directory: "/legacy"
       schedule:

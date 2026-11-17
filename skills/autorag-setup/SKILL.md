@@ -207,7 +207,7 @@ resolves in order:
    daemon is started and no local model is loaded.
 2. A running `minsync serve` daemon (loopback only; MinSync 0.4.12+).
    AutoRAG never starts it: run `minsync serve --idle-timeout 0` yourself, as
-   a launchd/systemd service (see `docs/minsync-setup.md`), or press
+   a launchd/systemd service (see `docs/indexing/embedding-backends.md`), or press
    Ctrl+Shift+E in `autorag tui`. `autorag setup` only reports whether it is
    alive.
 3. MinSync's in-process engine, through the optional Node-API addon
@@ -412,7 +412,7 @@ config resolution.
 
 A root that is missing, unlistable, or empty while it previously held documents
 keeps its mirrors and reports `search-root-unavailable`; see
-`docs/minsync-setup.md`.
+`docs/indexing/embedding-backends.md`.
 
 ## Probe and configure datasource skills (setup wizard)
 
@@ -504,7 +504,7 @@ it up is an agent task with these steps. Run each command; do not just describe 
 6. **Before importing past history, install a skip list** in Hister's `rules.json`
    (login, mail, documents, social and console domains, private hosts, token-bearing
    URLs). `hister import browser history` re-downloads each URL *without* the
-   browser's cookies. See docs/datasource-skills.md, "Browser history via Hister".
+   browser's cookies. See docs/datasources/hister.md.
 7. Add `"browser": { "type": "hister", "connector": { "semantic": true } }` under
    `datasources`, then `autorag refresh` (only probes Hister) and
    `autorag lite retrieve "<a question>" --scope '/browser/**' --json`.
@@ -530,7 +530,7 @@ autorag setup --sync-hister            # writes them, restarts Hister, re-embeds
   it changes nothing and restarts nothing.
 - It refuses, and says why, when the shared backend is a remote endpoint (browsing
   text would leave the machine) or MinSync's in-process engine (Hister cannot reach
-  it; run `minsync serve --idle-timeout 0`, docs/minsync-setup.md).
+  it; run `minsync serve --idle-timeout 0`, docs/indexing/embedding-backends.md).
 - If `restartRequired` or `reindexRequired` is true in the report, the step was
   not done (no Homebrew service, or it failed): run `brew services restart hister`
   and `hister reindex` yourself. Check with `hister doctor`: the line

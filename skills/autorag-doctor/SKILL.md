@@ -150,7 +150,7 @@ To diagnose an embedding backend that is not alive, `setup --format json` and
 `status` say so (`embedding.reason`, and the `embedding-unavailable`
 diagnostic). AutoRAG never starts the daemon: run `minsync serve
 --idle-timeout 0` by hand (or as a launchd/systemd service, see
-`docs/minsync-setup.md`) and read its own error, or press Ctrl+Shift+E in the
+`docs/indexing/embedding-backends.md`) and read its own error, or press Ctrl+Shift+E in the
 TUI. When no daemon answers and the in-process addon
 (`@nomadamas/minsync-native`) is missing, that is the `embedder-unavailable`
 state. The daemon stops itself after `--idle-timeout` seconds (default 300), so

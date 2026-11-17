@@ -174,7 +174,7 @@ export class LazykatokClient {
 				const endpoint = await this.options.embeddingEndpoint();
 				if (endpoint === undefined) {
 					return unavailable(
-						"no embedding endpoint is available: start `minsync serve` (docs/minsync-setup.md) or set minSync.embedder to a remote endpoint",
+						"no embedding endpoint is available: start `minsync serve` (docs/indexing/embedding-backends.md) or set minSync.embedder to a remote endpoint",
 					);
 				}
 				const shared = lazykatokEmbeddingEnv(endpoint);

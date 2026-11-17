@@ -4322,7 +4322,7 @@ export class AutoRAGAgent {
 				message:
 					health.backend === "remote"
 						? `The configured remote embedding endpoint is not answering (${health.detail ?? "no response"}); semantic search is unavailable until it is back.`
-						: "No embedding backend is running, so semantic search is unavailable (keyword search still works). Start `minsync serve --idle-timeout 0` (docs/minsync-setup.md), press Ctrl+Shift+E in the TUI, or set minSync.embedder to a remote endpoint.",
+						: "No embedding backend is running, so semantic search is unavailable (keyword search still works). Start `minsync serve --idle-timeout 0` (docs/indexing/embedding-backends.md), press Ctrl+Shift+E in the TUI, or set minSync.embedder to a remote endpoint.",
 				source: "embedding",
 			},
 		];
@@ -4354,7 +4354,7 @@ export class AutoRAGAgent {
 					source: "minsync",
 					reason: error.code,
 					message:
-						"MinSync lacks the required durable stage protocol. Install the compatible build documented in docs/minsync-setup.md.",
+						"MinSync lacks the required durable stage protocol. Install the compatible build documented in docs/indexing/embedding-backends.md.",
 				};
 			}
 		}

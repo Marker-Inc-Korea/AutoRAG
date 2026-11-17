@@ -173,7 +173,7 @@ describe("plugins/remote-agents README (the directory listing's description)", (
 	});
 
 	it("tells the user how to connect their own server, linking the doc that exists", () => {
-		expect(README).toContain("docs/remote-agents.md");
+		expect(README).toContain("docs/agents/remote-agents.md");
 		expect(README).toMatch(/autorag-mcp --http/);
 	});
 

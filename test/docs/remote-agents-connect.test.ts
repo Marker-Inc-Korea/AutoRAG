@@ -47,9 +47,9 @@ describe.each(AGENTS)("connect prompt for %s", (agent) => {
 	});
 });
 
-describe("docs/remote-agents.md points at the prompts", () => {
+describe("docs/agents/remote-agents.md points at the prompts", () => {
 	it("links every connect prompt that exists", () => {
-		const doc = readFileSync(new URL("../../docs/remote-agents.md", import.meta.url), "utf8");
+		const doc = readFileSync(new URL("../../docs/agents/remote-agents.md", import.meta.url), "utf8");
 		for (const agent of AGENTS) expect(doc).toContain(`plugins/remote-agents/connect/${agent}.md`);
 	});
 });
