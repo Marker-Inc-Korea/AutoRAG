@@ -1204,6 +1204,38 @@ console.log(JSON.stringify({ results: [{ path: ${JSON.stringify(parsedOutput)}, 
 		await refresh;
 	});
 
+	it("searches the batches a first sync has committed while that sync still runs", async () => {
+		writeFakeMinSync(JSON.stringify({ results: [] }), false, 200);
+		// What MinSync leaves once the first sync is under way: a transaction marker, and no cursor yet.
+		mkdirSync(join(minsyncWorkspace, ".minsync"), { recursive: true });
+		writeFileSync(
+			join(minsyncWorkspace, ".minsync", "txn.json"),
+			JSON.stringify({ source_id: "files", status: "started" }),
+		);
+		const method = new MinSyncVectorMethod({ binaryPath: minsyncBinary, root, workspacePath: minsyncWorkspace });
+		const refresh = method.sync();
+
+		await expect(method.retrieve("renewal cancellation", { topK: 1 })).resolves.toEqual([]);
+		await refresh;
+	});
+
+	it("still refuses a query behind a sync of an index that was already built", async () => {
+		writeFakeMinSync(JSON.stringify({ results: [] }), false, 200);
+		mkdirSync(join(minsyncWorkspace, ".minsync"), { recursive: true });
+		writeFileSync(
+			join(minsyncWorkspace, ".minsync", "txn.json"),
+			JSON.stringify({ source_id: "files", status: "started" }),
+		);
+		writeFileSync(join(minsyncWorkspace, ".minsync", "cursor.json"), JSON.stringify({ ready: true }));
+		const method = new MinSyncVectorMethod({ binaryPath: minsyncBinary, root, workspacePath: minsyncWorkspace });
+		const refresh = method.sync();
+
+		await expect(method.retrieve("renewal cancellation", { topK: 1 })).rejects.toThrow(
+			`another sync is in progress (${minsyncWorkspace})`,
+		);
+		await refresh;
+	});
+
 	it("routes lexical retrieval through MinSync sparse mode", async () => {
 		writeFakeMinSync(
 			JSON.stringify({
