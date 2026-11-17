@@ -33,6 +33,7 @@ import { resolveAutoRAGHome } from "../config/home.ts";
 import { embeddingEndpointSource } from "../datasource/embedding-env.ts";
 import { discrawlEmbeddingRuntimeFor } from "../datasource/skills/discrawl/embedding.ts";
 import { buildDatasourceSkills, type DatasourcesConfig } from "../datasource/skills/factory.ts";
+import { wombatMirrorDir } from "../datasource/skills/wombat/index.ts";
 import { createEmbedderFromConfig } from "../embedding/index.ts";
 import { acquireFileLock, type FileLockHandle } from "../filesystem/file-lock.ts";
 import { isGlobExclusion } from "../filesystem/path-exclusions.ts";
@@ -437,6 +438,29 @@ function resolveConfigFileReadOnly(
 
 function resolveSearchPaths(searchPaths: readonly string[], origin: string): string[] {
 	return searchPaths.map((searchPath) => resolvePersistedPath(searchPath, origin));
+}
+
+/**
+ * wombat parses coding-agent sessions into a text mirror and has MinSync embed it. That mirror sits under the home
+ * directory, so a `searchPaths` entry that covers it would make the local-file index parse, chunk and embed every
+ * conversation a second time under a file path. The datasource owns those conversations; the local index leaves
+ * the mirror out.
+ */
+function wombatMirrorExclusions(datasources: CliConfig["datasources"]): string[] {
+	const mirrors: string[] = [];
+	for (const [name, raw] of Object.entries(datasources ?? {})) {
+		if (raw === false || (typeof raw === "object" && raw !== null && raw.enabled === false)) continue;
+		const entry = typeof raw === "object" && raw !== null ? raw : undefined;
+		if ((entry?.type ?? name) !== "wombat") continue;
+		const connector = entry?.connector as { dataDir?: unknown; env?: Record<string, string | undefined> } | undefined;
+		mirrors.push(
+			wombatMirrorDir({
+				...(typeof connector?.dataDir === "string" ? { dataDir: connector.dataDir } : {}),
+				...(connector?.env === undefined ? {} : { env: connector.env }),
+			}),
+		);
+	}
+	return mirrors;
 }
 
 function resolveExcludePaths(value: unknown, origin: string): string[] | undefined {
@@ -1515,7 +1539,10 @@ export function buildAgentOptions(config: CliConfig, agentDir?: string): Omit<Au
 		};
 	}
 	opts.excludeExactDuplicates = config.excludeExactDuplicates ?? true;
-	if (config.excludePaths !== undefined) opts.excludePaths = config.excludePaths;
+	const wombatMirrors = wombatMirrorExclusions(config.datasources);
+	if (config.excludePaths !== undefined || wombatMirrors.length > 0) {
+		opts.excludePaths = [...new Set([...(config.excludePaths ?? []), ...wombatMirrors])];
+	}
 	if (config.limits !== undefined) opts.limits = config.limits;
 	if (config.refresh !== undefined) opts.refresh = config.refresh;
 	// One embedder serves memory and every datasource, so a single `minSync.embedder` block (local MinSync or a

@@ -284,6 +284,9 @@ import {
 import { createWebFetchTool, WEB_FETCH_TOOL_NAME, type WebFetchToolOptions } from "./web-fetch-tool.ts";
 import { createWebSearchTool, WEB_SEARCH_TOOL_NAME, type WebSearchToolOptions } from "./web-search-tool.ts";
 
+const MINSYNC_SYSTEMIC_FAILURE_THRESHOLD = 3;
+const MINSYNC_BATCH_FAILURE_LIMIT = 100;
+
 /**
  * Retrieval datasource tools whose executions count toward the per-search
  * tool budget and the run's evidence origins. `bash` is a source-inspection
@@ -1164,6 +1167,14 @@ export class AutoRAGAgent {
 	private readonly conversationId = randomUUID();
 	/** The memory context loaded for the in-flight run; cleared whenever a run starts. */
 	private memoryContextCache: { readonly query: string; readonly context: Promise<MemoryContext> } | undefined;
+	/**
+	 * Each run's `<memory_context>` message with the user message it sits in front of. The message is built once, on
+	 * the run's first model request, and every later request of the conversation replays it in the same place, so a
+	 * request always starts with the previous request's messages and a provider's prompt cache keeps covering them.
+	 */
+	private memoryMessages: MemoryMessageRecord[] = [];
+	/** Set when a run starts; the run's first model request takes it and decides where the run's memory message goes. */
+	private memoryRunStart = false;
 	private readonly discordRemote: boolean;
 	/** Whether the bound interactive session offers `ask_user`; the phase prompts name it only then. */
 	private askUserOffered = false;
@@ -1550,16 +1561,32 @@ export class AutoRAGAgent {
 
 	private async withMemoryContext(messages: AgentMessage[]): Promise<AgentMessage[]> {
 		if (this.lastQuery === undefined) return messages;
-		const context = await this.loadMemoryContextFor(this.lastQuery);
-		if (context.empty) return messages;
-		return [
-			{
-				role: "user",
-				content: [{ type: "text", text: `<memory_context>\n${context.text}\n</memory_context>` }],
-				timestamp: Date.now(),
-			},
-			...messages,
-		];
+		if (this.memoryRunStart) {
+			const context = await this.loadMemoryContextFor(this.lastQuery);
+			// Requests that overlap each wait on the same load; the first to resume records the message.
+			if (this.memoryRunStart) {
+				this.memoryRunStart = false;
+				let anchor: number | undefined;
+				for (let index = messages.length - 1; index >= 0; index--) {
+					const message = messages[index];
+					if (message?.role === "user") {
+						anchor = message.timestamp;
+						break;
+					}
+				}
+				if (!context.empty && anchor !== undefined) {
+					this.memoryMessages.push({
+						anchor,
+						message: {
+							role: "user",
+							content: [{ type: "text", text: `<memory_context>\n${context.text}\n</memory_context>` }],
+							timestamp: Date.now(),
+						},
+					});
+				}
+			}
+		}
+		return withMemoryMessages(messages, this.memoryMessages);
 	}
 
 	/**
@@ -2368,6 +2395,9 @@ export class AutoRAGAgent {
 		this.searchToolQueries.clear();
 		this.searchToolWindows.clear();
 		this.memoryContextCache = undefined;
+		this.memoryRunStart = true;
+		// A run that owns no transcript is its own conversation, so earlier runs' memory messages have nothing to sit in.
+		if (this.boundPiRuntime === undefined) this.memoryMessages = [];
 		this.routingDiagnostics = [];
 		if (decisionModel !== undefined) {
 			this.routingDiagnostics.push({
@@ -3961,6 +3991,10 @@ export class AutoRAGAgent {
 			const batchedMinSync = needsParsed && wants("minsync");
 			const minSyncBatches: MinSyncSyncResult[] = [];
 			const minSyncBatchFailures: SearchDocumentDiagnostic[] = [];
+			let minSyncOmittedFailures = 0;
+			let minSyncFailureIdentity: string | undefined;
+			let minSyncFailureStreak = 0;
+			let minSyncSystemicStop = false;
 			// Cumulative offsets keep the persisted MinSync counters monotonic
 			// across syncs instead of restarting at zero per sync.
 			let minSyncSyncedBase = 0;
@@ -3991,14 +4025,28 @@ export class AutoRAGAgent {
 							// indexes the files of any earlier failed sync: only failures after
 							// the last success are still real. A failed sync's content stays
 							// staged, so a later sync retries it and the pipeline moves on.
-							if (result.ok) minSyncBatchFailures.length = 0;
-							else if (result.reason !== "lock-held") {
-								for (const virtualPath of virtualPaths) {
+							if (result.ok) {
+								minSyncBatchFailures.length = 0;
+								minSyncOmittedFailures = 0;
+								minSyncFailureIdentity = undefined;
+								minSyncFailureStreak = 0;
+							} else if (result.reason !== "lock-held") {
+								// Keep both structured fields: different causes can share a public code.
+								const identity = JSON.stringify([result.reason ?? null, result.diagnostic?.code ?? null]);
+								minSyncFailureStreak = identity === minSyncFailureIdentity ? minSyncFailureStreak + 1 : 1;
+								minSyncFailureIdentity = identity;
+								minSyncSystemicStop = minSyncFailureStreak >= MINSYNC_SYSTEMIC_FAILURE_THRESHOLD;
+								const retained = Math.min(
+									virtualPaths.length,
+									MINSYNC_BATCH_FAILURE_LIMIT - minSyncBatchFailures.length,
+								);
+								minSyncOmittedFailures += virtualPaths.length - retained;
+								for (let pathIndex = 0; pathIndex < retained; pathIndex += 1) {
 									minSyncBatchFailures.push({
 										code: "minsync-sync-failed",
 										severity: "warning",
 										message: `This file stayed at its previous index entry: the sync that covered it could not index it and the next sync retries it. ${sanitizeDiagnosticMessage(result.diagnostic?.message ?? result.reason ?? "MinSync sync failed.")}`,
-										source: virtualPath,
+										source: virtualPaths[pathIndex],
 									});
 								}
 							}
@@ -4006,7 +4054,11 @@ export class AutoRAGAgent {
 							minSyncTotalBase = syncTotal;
 							// A held lock means another sync owns the index: stop the pipeline instead
 							// of failing every remaining sync against the same lock.
-							return !result.ok && result.reason === "lock-held" ? { stop: true } : undefined;
+							// Repeated systemic failures stop at the next committed-batch callback;
+							// already in-flight parsing may still commit its current batch.
+							return minSyncSystemicStop || (!result.ok && result.reason === "lock-held")
+								? { stop: true }
+								: undefined;
 						},
 					})
 				: undefined;
@@ -4159,7 +4211,25 @@ export class AutoRAGAgent {
 				finishedAt: new Date().toISOString(),
 			});
 			writeRefreshProgress(this.workspaceProjectRoot, progress);
-			const minsyncDiagnostics = [...minSyncRefreshDiagnostics(minsync), ...minSyncBatchFailures];
+			const minsyncDiagnostics = minSyncRefreshDiagnostics(minsync);
+			if (minSyncSystemicStop && minsync !== undefined) {
+				const terminal = minsyncDiagnostics[0] ?? toMinSyncReasonDiagnostic(minsync.reason ?? "unknown failure");
+				minsyncDiagnostics.splice(0, minsyncDiagnostics.length, {
+					...terminal,
+					reason: sanitizeDiagnosticMessage(minsync.reason ?? minsync.diagnostic?.code ?? "unknown failure"),
+					message: `${terminal.message} MinSync refresh stopped after ${MINSYNC_SYSTEMIC_FAILURE_THRESHOLD} consecutive sync failures with the same cause. Committed mirrors are retained; the next refresh resumes the committed work after the cause is fixed.`,
+				});
+			} else {
+				minsyncDiagnostics.push(...minSyncBatchFailures);
+				if (minSyncOmittedFailures > 0) {
+					minsyncDiagnostics.push({
+						code: "minsync-sync-failed",
+						severity: "warning",
+						source: "minsync",
+						message: `${minSyncOmittedFailures} additional per-file MinSync sync failure warnings omitted (limit ${MINSYNC_BATCH_FAILURE_LIMIT}).`,
+					});
+				}
+			}
 			const publicMinsync: AutoRAGMinSyncRefreshResult | undefined = minsync
 				? {
 						ok: minsync.ok,
@@ -5199,6 +5269,35 @@ function frameSteers(messages: AgentMessage[], steerTexts: ReadonlySet<string>):
 		if (first?.type !== "text" || !steerTexts.has(first.text)) return message;
 		return { ...message, content: [{ ...first, text: buildSteerMessage(first.text) }, ...rest] };
 	});
+}
+
+/** One run's `<memory_context>` message and the timestamp of the user message it was first placed in front of. */
+interface MemoryMessageRecord {
+	readonly anchor: number;
+	readonly message: AgentMessage;
+}
+
+/**
+ * Puts each recorded memory message back in front of the user message it was first placed before. A record whose user
+ * message is no longer in the transcript (compacted away, another branch) is skipped.
+ */
+function withMemoryMessages(messages: AgentMessage[], records: readonly MemoryMessageRecord[]): AgentMessage[] {
+	if (records.length === 0) return messages;
+	const pending = new Map(records.map((record) => [record.anchor, record.message]));
+	const out: AgentMessage[] = [];
+	let inserted = false;
+	for (const message of messages) {
+		if (message.role === "user") {
+			const memory = pending.get(message.timestamp);
+			if (memory !== undefined) {
+				pending.delete(message.timestamp);
+				out.push(memory);
+				inserted = true;
+			}
+		}
+		out.push(message);
+	}
+	return inserted ? out : messages;
 }
 
 /** Restates the run's steers for a verification phase that starts after them. */

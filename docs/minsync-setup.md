@@ -799,6 +799,27 @@ is a `minsync-sync-failed`.
 
 ## Migration and failure behavior
 
+During a MinSync-backed refresh, three consecutive unsuccessful sync runs with
+the same structured reason and diagnostic code stop further MinSync work. Missing
+fields compare consistently; changing only the error message does not reset the
+count. A different reason or code starts a new streak, and any successful sync
+(including one with per-file skips) clears it. A held index lock still stops
+immediately.
+
+Parsing overlaps indexing, so in-flight parsing may finish its current batch
+before observing the stop at the next applicable committed-batch callback. There
+is no final retry after the threshold. Committed mirrors and the durable stage
+journal remain available: fix the reported cause and run `autorag refresh --method
+minsync` again to resume incrementally without reparsing unchanged committed
+sources. Deletions remain deferred until the final parse batch.
+
+A systemic stop reports one MinSync component failure in each diagnostic list,
+preserving the terminal cause and original error text, including stderr, exit
+status, and paths. Other failed runs retain at most 100 per-file sync warnings
+plus one summary with the omitted count and the normal component diagnostic.
+A later successful sync clears these warnings and the omitted count. Parser,
+datasource, and partial-sync per-file diagnostics are reported separately.
+
 A MinSync workspace keeps its state in the `.minsync` subdirectory of
 `<workspace>/.autorag/minsync`, and records the embedding identity alongside the
 sync cursor and `config.toml`:

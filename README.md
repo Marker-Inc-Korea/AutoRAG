@@ -25,7 +25,7 @@
 </p>
 
 - **Fast file search.** Hybrid keyword + meaning search with a reranker finds files by what is inside them, and every answer links the passage it came from.
-- **Messengers, mail, and more.** Slack, KakaoTalk, Discord, Telegram, WhatsApp, every inbox you sign in to, GitHub, and Obsidian are searched alongside your files.
+- **Messengers, mail, and more.** Slack, KakaoTalk, Discord, Telegram, WhatsApp, every inbox you sign in to, GitHub, Obsidian, and your past coding-agent sessions (Claude Code, Codex, and 18 more) are searched alongside your files.
 - **Preview anything.** Press Space for Quick Look: Markdown, code, PDF, video, audio, Office, and HWP/HWPX, without opening another app.
 - **File-based automations.** Watch a folder, pick a trigger, and let the agent triage or organize new files for you.
 - **Duplicate detection.** `final`, `final-v3`, and `(1)` copies collapse into one row tagged Latest, Similar, or Identical.
@@ -123,7 +123,7 @@ Japanese, and Simplified Chinese.
   <img src="assets/autorag-agent-datasources.png" alt="Supported sources: KakaoTalk, Slack, Discord, Telegram, WhatsApp, Mail, Notion, GitHub, Obsidian, browser history, RSS, Google Drive, iCloud Drive, Dropbox" width="100%" />
 </p>
 
-Cloud drives (Google Drive, iCloud Drive, OneDrive, Dropbox, and others) are searched through their synced folders. Plus local documents, GitHub Gists, coding-agent sessions, and photos. Data stays in each tool's own store. [Full list and setup](docs/datasource-skills.md).
+Cloud drives (Google Drive, iCloud Drive, OneDrive, Dropbox, and others) are searched through their synced folders. Plus local documents, GitHub Gists, coding-agent sessions (via [wombat](docs/datasource-skills.md#wombat): `cargo install wombat-sessions`, then add a `wombat` datasource), and photos. Data stays in each tool's own store. [Full list and setup](docs/datasource-skills.md).
 
 ### Private by design
 

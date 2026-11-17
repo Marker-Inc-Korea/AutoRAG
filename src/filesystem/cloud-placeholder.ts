@@ -542,20 +542,59 @@ export class DarwinCloudProbe implements CloudFileProbe {
 		}
 	}
 
+	/**
+	 * The paths whose `st_flags` mark them dataless. One `stat` process answers a whole batch, but a path it cannot
+	 * read (renamed or deleted after the listing, denied, a provider that cannot resolve it) makes it exit 1 and
+	 * print nothing for that path, so the remaining output no longer lines up with the batch. A batch that exits
+	 * nonzero is therefore probed again one path at a time, and a path `stat` cannot read is not a placeholder: the
+	 * read that follows reports it as missing or unreadable. A `stat` that never answers (timeout, or not
+	 * startable) loses only the paths it was asked about, which are then read as ordinary files. No probe
+	 * failure ends the refresh.
+	 */
 	async datalessAmong(paths: readonly string[]): Promise<ReadonlySet<string>> {
 		const dataless = new Set<string>();
+		const record = (path: string, flags: string | undefined): void => {
+			if (datalessFromDarwinFlags(Number.parseInt(flags ?? "", 10))) dataless.add(path);
+		};
 		for (let start = 0; start < paths.length; start += STAT_BATCH) {
 			const batch = paths.slice(start, start + STAT_BATCH);
-			const { stdout } = await this.exec("/usr/bin/stat", ["-f", "%f", ...batch], {
-				timeoutMs: 30_000,
-				maxBuffer: 4 * 1024 * 1024,
-			});
-			const flags = stdout.split("\n").filter(Boolean);
-			for (const [index, path] of batch.entries()) {
-				if (datalessFromDarwinFlags(Number.parseInt(flags[index] ?? "", 10))) dataless.add(path);
+			const outcome = await this.statFlags(batch);
+			if (outcome.kind === "flags") {
+				for (const [index, path] of batch.entries()) record(path, outcome.flags[index]);
+			} else if (outcome.kind === "unreadable-path") {
+				for (const path of batch) {
+					const single = await this.statFlags([path]);
+					if (single.kind === "flags") record(path, single.flags[0]);
+				}
 			}
 		}
 		return dataless;
+	}
+
+	/**
+	 * `stat -f %f` over `paths`. `flags` holds one line per path when every path was read; `unreadable-path` means
+	 * `stat` exited nonzero because it could not read some path; `unanswered` means it never answered (killed at
+	 * the timeout, or could not be started).
+	 */
+	private async statFlags(
+		paths: readonly string[],
+	): Promise<
+		| { readonly kind: "flags"; readonly flags: readonly string[] }
+		| { readonly kind: "unreadable-path" | "unanswered" }
+	> {
+		try {
+			const { stdout } = await this.exec("/usr/bin/stat", ["-f", "%f", ...paths], {
+				timeoutMs: 30_000,
+				maxBuffer: 4 * 1024 * 1024,
+			});
+			return { kind: "flags", flags: stdout.split("\n").filter(Boolean) };
+		} catch (error) {
+			// Node's execFile rejection carries the exit status off-type; only the two fields read here are touched.
+			const failure = error as { killed?: unknown; code?: unknown };
+			return {
+				kind: failure.killed !== true && typeof failure.code === "number" ? "unreadable-path" : "unanswered",
+			};
+		}
 	}
 
 	async providerOf(path: string): Promise<CloudProvider | undefined> {

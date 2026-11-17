@@ -77,6 +77,6 @@ describe("issue 1677 advisory floors", () => {
 
 	it("does not invent a chromadb or nltk bump past an unpatched range", () => {
 		expect(uvPackageVersions(uvLock, "chromadb")).toEqual(["1.5.9"]);
-		expect(uvPackageVersions(uvLock, "nltk")).toEqual(["3.10.3"]);
+		expect(uvPackageVersions(uvLock, "nltk")).toEqual(["3.10.4"]);
 	});
 });

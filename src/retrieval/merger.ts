@@ -256,6 +256,18 @@ export class ParallelRetriever {
 								reason,
 							});
 						},
+						// Stale index entries are dropped hit by hit; the surface still searched, so this is a
+						// diagnostic only and must not land in `skips` (that would mark the surface unsearched).
+						onSourceMissing: ({ method: skipped, missing }) => {
+							const listed = missing.map((entry) => `${entry.sourcePath} (${entry.code})`).join(", ");
+							diagnostics.push({
+								code: "retrieval-source-missing",
+								severity: "warning",
+								message: `Retrieval method "${skipped}" skipped ${missing.length} hit(s) whose source file no longer exists; the remaining hits were used. Refresh the index to drop the stale entries: ${listed}`,
+								source: skipped,
+								reason: listed,
+							});
+						},
 					});
 					if (window === undefined || fetchDepth === undefined) {
 						results.set(name, candidates);

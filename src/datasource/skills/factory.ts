@@ -11,6 +11,7 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { Embedder } from "../../embedding/embedder.ts";
+import { resolveMinSyncBinary } from "../../minsync/binary.ts";
 import { AliasedDatasourceSkill } from "../aliased-skill.ts";
 import { DescribedDatasourceSkill } from "../described-skill.ts";
 import type { EmbeddingEndpointSource } from "../embedding-env.ts";
@@ -385,13 +386,52 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 			skillName: registrationName,
 			connectorOptions: config.connector as RssConnectorOptions,
 		}),
-	wombat: (config, workspaceRoot, registrationName) =>
-		new WombatSkill({
+	wombat: (config, workspaceRoot, registrationName, embedding) => {
+		const connector = (config.connector ?? {}) as WombatOptions;
+		return new WombatSkill({
 			...common(config, workspaceRoot),
 			datasourceId: registrationName,
-			...(config.connector as WombatOptions),
-		}),
+			...wombatSharedMinSync(connector, workspaceRoot, embedding.minSync),
+			...connector,
+		});
+	},
 };
+
+/**
+ * wombat indexes through MinSync like the local-file index does, so it runs the MinSync AutoRAG resolved (one binary,
+ * one version, one auto-install) instead of whichever `minsync` its own PATH holds. The shared `minSync.embedder`
+ * reaches it only as far as it keeps session text on this machine: a sparse-only (`none`) or `native:` model. A remote
+ * endpoint is never handed over, because conversations are private and wombat's own local default applies instead.
+ * Anything the operator set in `connector` wins.
+ */
+function wombatSharedMinSync(
+	connector: WombatOptions,
+	workspaceRoot: string | undefined,
+	minSync: ObsidianMinSyncOptions | undefined,
+): Pick<WombatOptions, "minSyncBinary" | "embedder"> {
+	if (minSync === undefined) return {};
+	const embedder = minSync.embedder;
+	const id = embedder?.id;
+	const local =
+		embedder?.baseUrl === undefined && id !== undefined && (id === "none" || id.startsWith("native:"))
+			? id
+			: undefined;
+	return {
+		...(connector.minSyncBinary !== undefined || workspaceRoot === undefined
+			? {}
+			: {
+					minSyncBinary: (install: boolean) =>
+						resolveMinSyncBinary({
+							root: workspaceRoot,
+							binaryPath: minSync.binaryPath,
+							autoInstall: minSync.autoInstall,
+							installer: minSync.installer,
+							install,
+						}),
+				}),
+		...(connector.embedder !== undefined || local === undefined ? {} : { embedder: local }),
+	};
+}
 
 /** Skills whose backend runs on one platform only; elsewhere they are neither offered nor built. */
 const PLATFORM_ONLY_SKILLS: Readonly<Record<string, NodeJS.Platform>> = { kakao: "darwin" };

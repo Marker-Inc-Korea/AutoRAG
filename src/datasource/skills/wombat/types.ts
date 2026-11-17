@@ -13,8 +13,25 @@ export interface WombatOptions {
 	readonly dataDir?: string;
 	/** `--config`: a wombat `config.toml`. */
 	readonly configPath?: string;
-	/** Restrict indexing and search to these coding agents (`codex`, `claude-code`, `opencode`, `pi`, `omp`). */
+	/** Restrict indexing and search to these coding agents (see {@link WOMBAT_AGENTS}). */
 	readonly agents?: readonly string[];
+	/**
+	 * `--source <agent>=<root>`: read exactly these session roots and ignore wombat's per-agent defaults under
+	 * the home directory. Absent, wombat discovers every agent's own default location.
+	 */
+	readonly sources?: Readonly<Record<string, readonly string[]>>;
+	/**
+	 * `--minsync-bin`: the `minsync` AutoRAG already resolved, so wombat never runs a second or older copy.
+	 * `install` is true for a sync, which may install MinSync, and false for a query, which only looks. A query
+	 * whose lookup throws falls back to wombat's own PATH lookup; a sync whose lookup throws fails with
+	 * `minsync-unavailable`.
+	 */
+	readonly minSyncBinary?: (install: boolean) => Promise<string>;
+	/**
+	 * `--embedder`, used only when wombat first initializes its MinSync workspace: `none` for a sparse-only index
+	 * or a `native:` id. Absent, MinSync's own default (local Qwen3-Embedding-0.6B) applies. A remote id is refused.
+	 */
+	readonly embedder?: string;
 	/** `--include-subagents`: index subagent / sidechain transcripts too. */
 	readonly includeSubagents?: boolean;
 	/** `--include-ephemeral`: index headless, benchmark and temp-directory sessions too. */
@@ -36,6 +53,7 @@ export type WombatFailureReason =
 	| "stdout-too-large"
 	| "stderr-too-large"
 	| "invalid-output"
+	| "minsync-unavailable"
 	| "remote-embedding-rejected";
 
 export interface WombatFailure {

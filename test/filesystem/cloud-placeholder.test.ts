@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -42,6 +42,100 @@ import {
 
 /** The comparable form of a path: `join` uses `\` on Windows while every root comparison works in `/`. */
 const slash = (path: string): string => path.replaceAll("\\", "/");
+
+describe("DarwinCloudProbe.datalessAmong", () => {
+	const PLACEHOLDER = "1073741920";
+
+	/** A `stat -f %f` fake: `flags` maps a path to its st_flags; a path absent from it is unreadable. */
+	function fakeStat(flags: Readonly<Record<string, string>>): { exec: CloudExec; calls: string[][] } {
+		const calls: string[][] = [];
+		const exec: CloudExec = async (helper, args) => {
+			expect(helper).toBe("/usr/bin/stat");
+			const paths = args.slice(2);
+			calls.push([...paths]);
+			const stdout = paths
+				.filter((path) => flags[path] !== undefined)
+				.map((path) => `${flags[path]}\n`)
+				.join("");
+			if (paths.every((path) => flags[path] !== undefined)) return { stdout, stderr: "" };
+			const stderr = paths
+				.filter((path) => flags[path] === undefined)
+				.map((path) => `stat: ${path}: stat: No such file or directory\n`)
+				.join("");
+			throw Object.assign(new Error(`Command failed: /usr/bin/stat -f %f ${paths.join(" ")}\n${stderr}`), {
+				code: 1,
+				killed: false,
+				stdout,
+				stderr,
+			});
+		};
+		return { exec, calls };
+	}
+
+	it("keeps every path's own flag when one listed path vanished before the probe", async () => {
+		const { exec } = fakeStat({ "/c/a": "0", "/c/b": PLACEHOLDER, "/c/d": "0", "/c/e": PLACEHOLDER });
+		const dataless = await new DarwinCloudProbe({ exec }).datalessAmong(["/c/a", "/c/gone", "/c/b", "/c/d", "/c/e"]);
+		expect([...dataless].sort()).toEqual(["/c/b", "/c/e"]);
+	});
+
+	it("does not fail the probe when no listed path can be read", async () => {
+		const { exec } = fakeStat({});
+		const dataless = await new DarwinCloudProbe({ exec }).datalessAmong(["/c/gone", "/c/also-gone"]);
+		expect(dataless.size).toBe(0);
+	});
+
+	it("probes a fully readable batch with one stat process", async () => {
+		const { exec, calls } = fakeStat({ "/c/a": PLACEHOLDER, "/c/b": "0" });
+		const dataless = await new DarwinCloudProbe({ exec }).datalessAmong(["/c/a", "/c/b"]);
+		expect([...dataless]).toEqual(["/c/a"]);
+		expect(calls).toHaveLength(1);
+	});
+
+	it("loses only the batch that times out and still classifies the other batches", async () => {
+		const first = Array.from({ length: 200 }, (_, index) => `/c/first-${index}`);
+		const second = ["/c/second-0", "/c/second-1"];
+		const exec: CloudExec = async (_helper, args) => {
+			const paths = args.slice(2);
+			if (paths[0] === "/c/first-0") {
+				throw Object.assign(new Error(`Command failed: /usr/bin/stat -f %f ${paths.join(" ")}`), {
+					code: null,
+					killed: true,
+					signal: "SIGTERM",
+					stdout: "",
+					stderr: "",
+				});
+			}
+			return {
+				stdout: paths.map((path) => (path === "/c/second-1" ? `${PLACEHOLDER}\n` : "0\n")).join(""),
+				stderr: "",
+			};
+		};
+		const dataless = await new DarwinCloudProbe({ exec }).datalessAmong([...first, ...second]);
+		expect([...dataless]).toEqual(["/c/second-1"]);
+	});
+
+	it("does not fail the probe when stat cannot be started", async () => {
+		const exec: CloudExec = async () => {
+			throw Object.assign(new Error("spawn /usr/bin/stat ENOENT"), { code: "ENOENT" });
+		};
+		const dataless = await new DarwinCloudProbe({ exec }).datalessAmong(["/c/a"]);
+		expect(dataless.size).toBe(0);
+	});
+
+	it("reads real st_flags from the real stat for a batch that includes a missing path", async () => {
+		const directory = mkdtempSync(join(tmpdir(), "autorag-stat-"));
+		try {
+			const present = join(directory, "present.txt");
+			writeFileSync(present, "x");
+			const later = join(directory, "later.txt");
+			writeFileSync(later, "y");
+			const dataless = await new DarwinCloudProbe().datalessAmong([present, join(directory, "missing.txt"), later]);
+			expect(dataless.size).toBe(0);
+		} finally {
+			rmSync(directory, { recursive: true, force: true });
+		}
+	});
+});
 
 describe("darwin dataless flag parsing", () => {
 	// Values measured with `/usr/bin/stat -f %f` on macOS 26: a File Provider placeholder reads

@@ -28,6 +28,22 @@ export interface RetrievalFallbackEvent {
 	reason: string;
 }
 
+/** One hit dropped because the file it was indexed from no longer exists on disk. */
+export interface RetrievalMissingSource {
+	/** Virtual path the index knows the document by. */
+	virtualPath: string;
+	/** The original source path that could not be resolved. */
+	sourcePath: string;
+	/** Filesystem error code (`ENOENT` or `ENOTDIR`). */
+	code: string;
+}
+
+export interface RetrievalSourceMissingEvent {
+	/** Registered name of the method that skipped the hits. */
+	method: string;
+	missing: readonly RetrievalMissingSource[];
+}
+
 export interface RetrievalOptions {
 	topK?: number;
 	scope?: string;
@@ -44,6 +60,12 @@ export interface RetrievalOptions {
 	 * Methods that wrap another method must not forward it.
 	 */
 	onFallback?: (event: RetrievalFallbackEvent) => void;
+	/**
+	 * Owned by the retrieval pipeline, not by callers: invoked once per query when a method skipped hits whose
+	 * source file no longer exists (a stale index entry). The remaining hits are still returned, so this is a
+	 * warning and not a failure of the surface. Methods that wrap another method must not forward it.
+	 */
+	onSourceMissing?: (event: RetrievalSourceMissingEvent) => void;
 }
 
 export interface RetrievalMethod {
@@ -53,6 +75,7 @@ export interface RetrievalMethod {
 
 export type RetrievalDiagnosticCode =
 	| "retrieval-method-failed"
+	| "retrieval-source-missing"
 	| "rerank-failed"
 	| "time-window-untimed"
 	| "time-window-ceiling";

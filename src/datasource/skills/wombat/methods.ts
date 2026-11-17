@@ -18,7 +18,7 @@ const METHOD_TYPE: Readonly<Record<WombatSearchMode, "bm25" | "vector" | "hybrid
 	hybrid: "hybrid",
 };
 
-/** Retrieval over indexed coding-agent sessions (Codex, Claude Code, OpenCode, pi, omp) through the external wombat CLI. */
+/** Retrieval over indexed coding-agent sessions (any agent in `WOMBAT_AGENTS`) through the external wombat CLI. */
 export class WombatMethod implements RetrievalMethod {
 	private readonly client: WombatSearchClient;
 	private readonly mode: WombatSearchMode;
