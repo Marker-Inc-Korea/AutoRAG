@@ -11,6 +11,7 @@ on:
     paths:
       - "docs/**"
       - "legacy/docs/**"
+      - "scripts/docs/**"
       - "src/cli/**"
       - "src/mcp/**"
       - "src/datasource/skills/factory.ts"
@@ -19,6 +20,7 @@ on:
     paths:
       - "docs/**"
       - "legacy/docs/**"
+      - "scripts/docs/**"
       - ".github/workflows/docs.yml"
   workflow_dispatch:
 
@@ -65,6 +67,9 @@ jobs:
           mkdir -p docs/.vitepress/dist/legacy
           cp -R legacy/docs/build/html/. docs/.vitepress/dist/legacy/
           rm -f docs/.vitepress/dist/legacy/CNAME
+          # Old marker-inc-korea.github.io/AutoRAG/<page>.html links keep working: a stub at the old path sends the
+          # reader to the same page under /legacy/.
+          node scripts/docs/legacy-redirects.mjs legacy/docs/build/html docs/.vitepress/dist
           touch docs/.vitepress/dist/.nojekyll
 
       - uses: actions/upload-pages-artifact@v4
