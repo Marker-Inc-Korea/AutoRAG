@@ -1211,15 +1211,19 @@ console.log(JSON.stringify({ results: [{ path: ${JSON.stringify(parsedOutput)}, 
 	 * is the number of files seen at once, with no read-modify-write between processes.
 	 */
 	function writeFirstSyncFake(opts: { prepMs?: number; syncMs: number; queryMs?: number }): {
+		/** The most `minsync query` processes alive at one moment. */
 		readonly overlap: () => number;
+		/** For each `minsync sync` that started: how many queries were running at that moment. */
+		readonly queriesAliveAtSyncStart: () => number[];
 	} {
 		const liveDir = join(root, "live-queries");
-		const peakFile = join(root, "peak-queries");
+		const peakLog = join(root, "peak-queries.log");
+		const syncSawLog = join(root, "sync-saw-queries.log");
 		const started = join(root, "sync-started");
 		writeFileSync(
 			minsyncBinary,
 			`#!/usr/bin/env node
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createRequire } from "node:module";
 const args = process.argv.slice(2);
@@ -1229,6 +1233,8 @@ if (args[0] === "stage") { createRequire(import.meta.url)(${JSON.stringify(fakeM
 if (args[0] === "init") { mkdirSync(state, { recursive: true }); writeFileSync(join(state, "config.toml"), "[embedder]\\nid = \\"openai\\"\\n"); console.log(JSON.stringify({ initialized: true })); process.exit(0); }
 if (args[0] === "check") { console.log(JSON.stringify({ vectorstore_ok: true, embedder_ok: true })); process.exit(0); }
 if (args[0] === "sync") {
+  mkdirSync(${JSON.stringify(liveDir)}, { recursive: true });
+  appendFileSync(${JSON.stringify(syncSawLog)}, readdirSync(${JSON.stringify(liveDir)}).length + "\\n");
   writeFileSync(${JSON.stringify(started)}, "1");
   await wait(${opts.prepMs ?? 0});
   mkdirSync(state, { recursive: true });
@@ -1242,9 +1248,7 @@ if (args[0] === "query") {
   mkdirSync(${JSON.stringify(liveDir)}, { recursive: true });
   const mine = join(${JSON.stringify(liveDir)}, String(process.pid));
   writeFileSync(mine, "1");
-  const now = readdirSync(${JSON.stringify(liveDir)}).length;
-  const before = existsSync(${JSON.stringify(peakFile)}) ? Number(readFileSync(${JSON.stringify(peakFile)}, "utf8")) : 0;
-  if (now > before) writeFileSync(${JSON.stringify(peakFile)}, String(now));
+  appendFileSync(${JSON.stringify(peakLog)}, readdirSync(${JSON.stringify(liveDir)}).length + "\\n");
   await wait(${opts.queryMs ?? 0});
   rmSync(mine);
   console.log(JSON.stringify({ results: [] }));
@@ -1255,7 +1259,17 @@ process.exit(2);
 `,
 		);
 		chmodSync(minsyncBinary, 0o755);
-		return { overlap: () => (existsSync(peakFile) ? Number(readFileSync(peakFile, "utf8")) : 0) };
+		const lines = (file: string): number[] =>
+			existsSync(file)
+				? readFileSync(file, "utf8")
+						.split("\n")
+						.filter((line) => line.trim() !== "")
+						.map(Number)
+				: [];
+		return {
+			overlap: () => Math.max(0, ...lines(peakLog)),
+			queriesAliveAtSyncStart: () => lines(syncSawLog),
+		};
 	}
 
 	/** Resolves once the fake `minsync sync` process is running, whether or not it has opened its transaction yet. */
@@ -1339,26 +1353,64 @@ process.exit(2);
 		await refresh;
 	});
 
-	it("does not let a query queued beside a first sync run beside the normal sync that follows it", async () => {
-		const fake = writeFirstSyncFake({ syncMs: 300, queryMs: 400 });
+	it("never runs a normal sync under a query that was queued beside the first sync", async () => {
+		const fake = writeFirstSyncFake({ syncMs: 300, queryMs: 500 });
 		const method = new MinSyncVectorMethod({ binaryPath: minsyncBinary, root, workspacePath: minsyncWorkspace });
 		const first = method.sync();
 		await untilFirstSyncOpened();
-		// Two queries beside the first sync: the second waits its turn behind the first, and the first sync ends meanwhile.
-		const queries = [method.retrieve("renewal one", { topK: 1 }), method.retrieve("renewal two", { topK: 1 })];
-		const outcomes = await Promise.allSettled(queries);
+		// Two queries beside the first sync: the second waits behind the first, and the first sync ends while it waits.
+		const settled = Promise.allSettled([
+			method.retrieve("renewal one", { topK: 1 }),
+			method.retrieve("renewal two", { topK: 1 }),
+		]);
 		await first;
-		// A refresh of the now built index follows at once.
+		// A refresh of the now built index starts at once, while the second query is still queued or running.
 		const later = method.sync();
-		await expect(later).resolves.toBeDefined();
-		// Whatever each query did, no two ran at once and the later sync never started under a running query.
-		expect(fake.overlap()).toBeLessThanOrEqual(1);
+		const [one, two] = await settled;
+		await later;
+		expect(one?.status).toBe("fulfilled");
+		// The second query either ran before the later sync began or was refused: never beside it.
 		expect(
-			outcomes.every(
-				(outcome) =>
-					outcome.status === "fulfilled" || String(outcome.reason).includes("another sync is in progress"),
-			),
+			two?.status === "fulfilled" ||
+				String((two as PromiseRejectedResult).reason).includes("another sync is in progress"),
 		).toBe(true);
+		// Both syncs started with no query running: the later one waited for the queries instead of starting under them.
+		expect(fake.queriesAliveAtSyncStart()).toEqual([0, 0]);
+		expect(fake.overlap()).toBeLessThanOrEqual(1);
+	});
+
+	it("makes a query with no sync pending wait for the queries still running from the first sync", async () => {
+		const fake = writeFirstSyncFake({ syncMs: 200, queryMs: 600 });
+		const method = new MinSyncVectorMethod({ binaryPath: minsyncBinary, root, workspacePath: minsyncWorkspace });
+		const first = method.sync();
+		await untilFirstSyncOpened();
+		const beside = method.retrieve("renewal beside", { topK: 1 });
+		await first;
+		// The first sync is over and no sync is pending, but the first query is still running.
+		await expect(method.retrieve("renewal after", { topK: 1 })).resolves.toEqual([]);
+		await beside;
+		expect(fake.overlap()).toBe(1);
+	});
+
+	it("refuses a queued query when a normal sync took over before its turn came", async () => {
+		const fake = writeFirstSyncFake({ syncMs: 250, queryMs: 700 });
+		const method = new MinSyncVectorMethod({ binaryPath: minsyncBinary, root, workspacePath: minsyncWorkspace });
+		const first = method.sync();
+		await untilFirstSyncOpened();
+		// Query one runs for a while beside the first sync; query two waits behind it.
+		const one = method.retrieve("renewal one", { topK: 1 });
+		const two = method.retrieve("renewal two", { topK: 1 });
+		const settledTwo = Promise.allSettled([two]);
+		await first;
+		// The normal sync is registered while query two is still queued, and it holds its turn behind query one.
+		const later = method.sync();
+		await one;
+		const [outcomeTwo] = await settledTwo;
+		await later;
+		// Query two's turn came with a normal sync pending, so it must not run beside it.
+		expect(outcomeTwo?.status).toBe("rejected");
+		expect(String((outcomeTwo as PromiseRejectedResult).reason)).toContain("another sync is in progress");
+		expect(fake.queriesAliveAtSyncStart()).toEqual([0, 0]);
 	});
 
 	it("still refuses a query behind a sync of an index that was already built", async () => {
