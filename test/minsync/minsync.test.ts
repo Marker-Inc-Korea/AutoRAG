@@ -1204,9 +1204,81 @@ console.log(JSON.stringify({ results: [{ path: ${JSON.stringify(parsedOutput)}, 
 		await refresh;
 	});
 
+	/**
+	 * A fake MinSync whose `sync` leaves what a real first sync leaves (a `txn.json`, no `cursor.json` until it ends) and waits,
+	 * and whose `query` counts how many queries run at the same moment.
+	 */
+	function writeFirstSyncFake(syncMs: number, queryMs = 0): { readonly overlap: () => number } {
+		const peakFile = join(root, "peak-queries");
+		writeFileSync(
+			minsyncBinary,
+			`#!/usr/bin/env node
+import { appendFileSync, mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { createRequire } from "node:module";
+const args = process.argv.slice(2);
+const state = join(process.cwd(), ".minsync");
+const live = ${JSON.stringify(`${peakFile}.live`)};
+const peak = ${JSON.stringify(peakFile)};
+const read = (p) => (existsSync(p) ? Number(readFileSync(p, "utf8")) : 0);
+if (args[0] === "stage") { createRequire(import.meta.url)(${JSON.stringify(fakeMinSyncStageSimulatorPath)}).runStage({stateDir: args[args.indexOf("--state-dir") + 1]}); } else {
+if (args[0] === "init") { mkdirSync(state, { recursive: true }); writeFileSync(join(state, "config.toml"), "[embedder]\\nid = \\"openai\\"\\n"); console.log(JSON.stringify({ initialized: true })); process.exit(0); }
+if (args[0] === "check") { console.log(JSON.stringify({ vectorstore_ok: true, embedder_ok: true })); process.exit(0); }
+if (args[0] === "sync") {
+  mkdirSync(state, { recursive: true });
+  writeFileSync(join(state, "txn.json"), JSON.stringify({ source_id: "files", status: "started" }));
+  await new Promise((resolve) => setTimeout(resolve, ${syncMs}));
+  writeFileSync(join(state, "cursor.json"), JSON.stringify({ ready: true }));
+  console.log(JSON.stringify({ files_processed: 1, files_processed_paths: [] }));
+  process.exit(0);
+}
+if (args[0] === "query") {
+  writeFileSync(live, String(read(live) + 1));
+  writeFileSync(peak, String(Math.max(read(peak), read(live))));
+  await new Promise((resolve) => setTimeout(resolve, ${queryMs}));
+  writeFileSync(live, String(read(live) - 1));
+  console.log(JSON.stringify({ results: [] }));
+  process.exit(0);
+}
+process.exit(2);
+}
+`,
+		);
+		chmodSync(minsyncBinary, 0o755);
+		return { overlap: () => (existsSync(peakFile) ? Number(readFileSync(peakFile, "utf8")) : 0) };
+	}
+
+	/** Resolves once the fake first sync has really opened its transaction, so a query after this sees what a real one would. */
+	async function untilFirstSyncStarted(): Promise<void> {
+		await vi.waitFor(() => expect(existsSync(join(minsyncWorkspace, ".minsync", "txn.json"))).toBe(true), {
+			timeout: 5_000,
+		});
+	}
+
 	it("searches the batches a first sync has committed while that sync still runs", async () => {
-		writeFakeMinSync(JSON.stringify({ results: [] }), false, 200);
-		// What MinSync leaves once the first sync is under way: a transaction marker, and no cursor yet.
+		writeFirstSyncFake(600);
+		const method = new MinSyncVectorMethod({ binaryPath: minsyncBinary, root, workspacePath: minsyncWorkspace });
+		const refresh = method.sync();
+		await untilFirstSyncStarted();
+
+		await expect(method.retrieve("renewal cancellation", { topK: 1 })).resolves.toEqual([]);
+		await refresh;
+	});
+
+	it("runs the queries of a first sync one at a time, not all at once", async () => {
+		const fake = writeFirstSyncFake(900, 150);
+		const method = new MinSyncVectorMethod({ binaryPath: minsyncBinary, root, workspacePath: minsyncWorkspace });
+		const refresh = method.sync();
+		await untilFirstSyncStarted();
+
+		await Promise.all([1, 2, 3].map((n) => method.retrieve(`renewal cancellation ${n}`, { topK: 1 })));
+		await refresh;
+		expect(fake.overlap()).toBe(1);
+	});
+
+	it("refuses a query beside the first sync that follows an interrupted one, whose rows may be another embedder's", async () => {
+		writeFirstSyncFake(400);
+		// An earlier first sync was cut short: its marker is still there and there is no cursor.
 		mkdirSync(join(minsyncWorkspace, ".minsync"), { recursive: true });
 		writeFileSync(
 			join(minsyncWorkspace, ".minsync", "txn.json"),
@@ -1215,17 +1287,15 @@ console.log(JSON.stringify({ results: [{ path: ${JSON.stringify(parsedOutput)}, 
 		const method = new MinSyncVectorMethod({ binaryPath: minsyncBinary, root, workspacePath: minsyncWorkspace });
 		const refresh = method.sync();
 
-		await expect(method.retrieve("renewal cancellation", { topK: 1 })).resolves.toEqual([]);
+		await expect(method.retrieve("renewal cancellation", { topK: 1 })).rejects.toThrow(
+			`another sync is in progress (${minsyncWorkspace})`,
+		);
 		await refresh;
 	});
 
 	it("still refuses a query behind a sync of an index that was already built", async () => {
 		writeFakeMinSync(JSON.stringify({ results: [] }), false, 200);
 		mkdirSync(join(minsyncWorkspace, ".minsync"), { recursive: true });
-		writeFileSync(
-			join(minsyncWorkspace, ".minsync", "txn.json"),
-			JSON.stringify({ source_id: "files", status: "started" }),
-		);
 		writeFileSync(join(minsyncWorkspace, ".minsync", "cursor.json"), JSON.stringify({ ready: true }));
 		const method = new MinSyncVectorMethod({ binaryPath: minsyncBinary, root, workspacePath: minsyncWorkspace });
 		const refresh = method.sync();
