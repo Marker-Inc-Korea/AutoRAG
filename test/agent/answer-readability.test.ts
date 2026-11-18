@@ -107,11 +107,11 @@ describe("answer readability rules", () => {
 		}
 	});
 
-	it("a delta answer keeps the answer language but none of the rules that invite re-listing", () => {
+	it("a correction turn keeps the answer language but none of the rules that invite re-listing", () => {
 		const delta = newAgent().buildRefinementPrompt("환불 예외는 누구 승인이 필요해?", {}, "draft [e1]", true);
 		expect(delta).toContain(ANSWER_LANGUAGE_RULE);
 		for (const rule of COMPLETE_ONLY_RULES) expect(delta, rule.slice(0, 40)).not.toContain(rule);
-		expect(delta).toContain("DELTA ONLY");
+		expect(delta).toContain("CORRECTIONS ARE TOOL CALLS");
 	});
 
 	it("tells a delta answer to keep file paths and retrieval mechanics out, like every other phase", () => {

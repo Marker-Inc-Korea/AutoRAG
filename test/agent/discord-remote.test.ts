@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fauxAssistantMessage } from "@earendil-works/pi-ai";
+import { type FauxResponseStep, fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
 import { registerFauxProvider } from "@earendil-works/pi-ai/compat";
 import type { ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import { MockBackend } from "jev-use";
@@ -83,7 +83,7 @@ function recordingUi(notices: string[]): ExtensionUIContext {
 }
 
 async function discordAgent(
-	answers: string[],
+	answers: (string | FauxResponseStep)[],
 	options: { discordRemote: boolean; route?: "extra" | "local"; followUp?: number } = { discordRemote: true },
 ) {
 	const route = options.route ?? "extra";
@@ -91,7 +91,11 @@ async function discordAgent(
 		api: `faux-discord-${randomUUID()}`,
 		models: [{ id: "discord-model" }],
 	});
-	registration.setResponses(answers.map((answer) => fauxAssistantMessage(answer, { stopReason: "stop" })));
+	registration.setResponses(
+		answers.map((answer) =>
+			typeof answer === "string" ? fauxAssistantMessage(answer, { stopReason: "stop" }) : answer,
+		),
+	);
 	const agentDir = join(root, "agent");
 	mkdirSync(agentDir, { recursive: true });
 	const model = registration.getModel();
@@ -173,6 +177,42 @@ describe("Discord remote control", () => {
 			await tui.agent.waitForIdle();
 			const answers = fake.posted.filter((post) => post.content.includes("Paris") || post.content.includes("Lyon"));
 			expect(answers.map((post) => post.content)).toEqual(["Fast answer: Lyon.", `<@${ALLOWED}> Verified: Paris.`]);
+		} finally {
+			await tui.dispose();
+		}
+	});
+
+	it("posts each correction of the fast answer to the channel, then the closing reply pinging the asker", async () => {
+		writeDiscordConfig([ALLOWED]);
+		const correction = fauxAssistantMessage(
+			[
+				fauxToolCall("revise_answer", {
+					op: "replace",
+					claimId: "c1",
+					text: "Paris.",
+					reason: "Lyon is not the capital",
+				}),
+			],
+			{ stopReason: "toolUse" },
+		);
+		const tui = await discordAgent(["Lyon.", correction, "Corrected the capital."], {
+			discordRemote: true,
+			route: "local",
+			followUp: 0.9,
+		});
+		try {
+			await fake.waitFor(() => fake.sessionChannelId !== undefined, "session channel");
+			fake.sendUserMessage(fake.sessionChannelId as string, ALLOWED, "Capital of France?");
+			await fake.waitForPost((post) => post.content.includes("Corrected the capital."));
+			await tui.agent.waitForIdle();
+			const posts = fake.posted
+				.map((post) => post.content)
+				.filter((content) => /Lyon|Paris|Corrected/u.test(content));
+			expect(posts).toEqual([
+				"Lyon.",
+				"✎ Corrected c1 — Lyon is not the capital\n~~Lyon.~~\n**Paris.**",
+				`<@${ALLOWED}> Corrected the capital.`,
+			]);
 		} finally {
 			await tui.dispose();
 		}
