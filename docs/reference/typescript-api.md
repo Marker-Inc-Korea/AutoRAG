@@ -205,7 +205,9 @@ const server = createAutoRAGMcpServer(lite, { readOnly: true });
 
 ## Profiles entry point
 
-`@autorag/librarian/profiles` exposes agent profiles — a system prompt, a tool set, and a thinking level turned into an in-memory Pi session on the agent's own model. `createProfileSession`, `listAutomationProfiles`, `getAutomationProfile`, `registerAutomationProfile`, and `createRetrievalToolkit` are the primary exports.
+`@autorag/librarian/profiles` exposes agent profiles — a system prompt, a tool set, and a thinking level turned into an in-memory Pi session on the agent's own model. `createProfileSession`, `listAutomationProfiles`, `getAutomationProfile`, `registerAutomationProfile`, `createRetrievalToolkit`, and `createWebTools` are the primary exports.
+
+`createWebTools` opts a profile into the librarian's own `web_search` / `web_fetch` tools (in that order), sharing one fresh evidence ledger and never touching retrieval memory. `search`/`fetch` accept the corresponding `AutoRAGAgent` options, or `false` to leave that tool out.
 
 ## See also
 
