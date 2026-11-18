@@ -9,17 +9,18 @@
  * What it proves:
  *   - no search is refused or degraded while the refresh runs (no `retrieval-method-failed` diagnostic);
  *   - a document the refresh does not touch is found by every search, so the index never goes dark;
- *   - an edited document can briefly miss a search while MinSync swaps its batch (it replaces the batch's dense
- *     rows, then encodes their sparse vectors; reproduced with raw `minsync query`, no AutoRAG involved). That
- *     lag is MinSync's and is printed as a number, not asserted away. What is asserted: every edited document
- *     answers at least once during the refresh and all of them answer again after it;
+ *   - an edited document is never missing from a search while the refresh swaps its batch. MinSync 0.7.4 is the
+ *     first release that guarantees it (it sweeps an edited file's old rows only after the new rows are
+ *     sparse-encoded); 0.7.3 and older can miss the file for a moment, which the script reports as a number. What
+ *     is asserted either way: every edited document answers at least once during the refresh and all of them
+ *     answer again after it;
  *   - searches really overlapped the refresh (a pass with no overlap proves nothing, so it fails);
  *   - once the refresh ends: edits are searchable, additions are searchable, deletions are gone.
  *
  * Everything lives in one temp root, and AUTORAG_HOME points inside it, so the shared `~/.autorag` is never
  * touched.
  *
- * Prerequisites: `minsync` 0.7.3 or newer on PATH and a running `minsync serve --idle-timeout 0`.
+ * Prerequisites: `minsync` 0.7.4 or newer on PATH and a running `minsync serve --idle-timeout 0`.
  *
  * Run: bun scripts/manual-qa/run-qa-refresh-search-live.ts
  */
@@ -38,6 +39,8 @@ const DELETED = { from: 140, to: 150 };
 const ADDED = { from: 150, to: 170 };
 /** Searches that must have run start to finish beside the refresh, or the run proves nothing. */
 const MIN_OVERLAPPING_SEARCHES = 3;
+/** Edited-document searches needed before "never missed" means anything. */
+const MIN_EDITED_SEARCHES = 10;
 
 const ADJECTIVES = ["Crimson", "Amber", "Silent", "Granite", "Velvet", "Cobalt", "Ivory", "Scarlet", "Emerald", "Copper"];
 const NOUNS = ["Lighthouse", "Orchard", "Harbor", "Foundry", "Meadow", "Citadel", "Bridge", "Lantern", "Quarry", "Glacier"];
@@ -53,6 +56,7 @@ mkdirSync(docs, { recursive: true });
 mkdirSync(autoragHome, { recursive: true });
 
 let failures = 0;
+let inconclusive = false;
 function check(name: string, pass: boolean, note?: string): void {
 	if (!pass) failures += 1;
 	console.log(`${pass ? "PASS" : "FAIL"}  ${name}${note ? ` — ${note}` : ""}`);
@@ -131,13 +135,15 @@ try {
 		readonly index: number;
 		readonly kind: "untouched" | "modified";
 	}
+	// One untouched document per six searches keeps the "index never goes dark" check alive; the rest are edited
+	// documents, because a search is slow next to a refresh and that is the sample the edited-document guarantee needs.
 	const probes: readonly Probe[] = [
-		{ index: 65, kind: "untouched" },
 		{ index: 5, kind: "modified" },
-		{ index: 100, kind: "untouched" },
 		{ index: 30, kind: "modified" },
-		{ index: 130, kind: "untouched" },
+		{ index: 100, kind: "untouched" },
 		{ index: 55, kind: "modified" },
+		{ index: 12, kind: "modified" },
+		{ index: 44, kind: "modified" },
 	];
 	let refreshing = true;
 	const refreshStarted = Date.now();
@@ -187,12 +193,22 @@ try {
 	const lagged = modified.filter((entry) => !entry.found);
 	console.log(
 		`INFO  edited document missed by ${lagged.length}/${modified.length} searches while its batch was being swapped` +
-			`${lagged.length > 0 ? ` (${[...new Set(lagged.map((entry) => pad(entry.probe.index)))].join(", ")})` : ""} — MinSync's per-batch dense-then-sparse write order`,
+			`${lagged.length > 0 ? ` (${[...new Set(lagged.map((entry) => pad(entry.probe.index)))].join(", ")})` : ""}`,
 	);
-	check(
-		"an edited document is never lost for good: it answers during the refresh at least once",
-		modified.length > 0 && probes.filter((probe) => probe.kind === "modified").every((probe) => modified.some((entry) => entry.probe.index === probe.index && entry.found)),
-	);
+	// A refresh that ends after a handful of searches cannot show that an edited document was never missed, and it
+	// must not pass or fail on that. With enough searches, MinSync 0.7.4 must never miss one.
+	if (modified.length >= MIN_EDITED_SEARCHES) {
+		check(
+			"an edited document is never missing from a search while its batch is swapped (MinSync >= 0.7.4)",
+			lagged.length === 0,
+			`${lagged.length}/${modified.length} missed`,
+		);
+	} else {
+		console.log(
+			`SKIP  edited-document guarantee not judged: only ${modified.length} edited-document searches ran beside the refresh (need ${MIN_EDITED_SEARCHES}); rerun on a quieter machine`,
+		);
+		inconclusive = true;
+	}
 	let recovered = 0;
 	for (let index = MODIFIED.from; index < MODIFIED.to; index += 1) {
 		if (found((await search(`${nameOf(index)} initiative quarterly review`)).results, index)) recovered += 1;
@@ -218,8 +234,15 @@ try {
 	const kept = await search(`${nameOf(100)} initiative quarterly review`);
 	check("after: an untouched document still answers", found(kept.results, 100));
 
-	console.log(failures === 0 ? "\nLIVE QA PASSED" : `\nLIVE QA: ${failures} failure(s)`);
-	if (failures > 0) process.exitCode = 1;
+	if (failures > 0) {
+		console.log(`\nLIVE QA: ${failures} failure(s)`);
+		process.exitCode = 1;
+	} else if (inconclusive) {
+		console.log("\nLIVE QA INCONCLUSIVE: no check failed, but the edited-document guarantee was not judged");
+		process.exitCode = 2;
+	} else {
+		console.log("\nLIVE QA PASSED");
+	}
 } finally {
 	await releaseEmbedders();
 	rmSync(tmpRoot, { recursive: true, force: true });

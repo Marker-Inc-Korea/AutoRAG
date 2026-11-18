@@ -354,7 +354,7 @@ wombat is built on MinSync, so it shares AutoRAG's MinSync instead of bringing i
   the original log around that turn, including the tool calls and outputs the index leaves out. The skill's
   always-visible description says this, because the skill body is read only when the agent loads it.
 
-Live QA: `bun scripts/manual-qa/run-qa-wombat-live.ts` (real `wombat` >= 0.1.3 and `minsync` >= 0.7.3, isolated HOME).
+Live QA: `bun scripts/manual-qa/run-qa-wombat-live.ts` (real `wombat` >= 0.1.3 and `minsync` >= 0.7.4, isolated HOME).
 
 ## Universal connection aliases
 
