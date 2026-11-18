@@ -1,5 +1,7 @@
 import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { basename, join, normalize } from "node:path";
+import { readPagesSidecar } from "../mirror/pages-sidecar.ts";
+import type { ParsedPages } from "../parser/pages.ts";
 import { abortReason } from "../process/abort-reason.ts";
 import { type ChunkLocation, locateChunk } from "../retrieval/chunk-location.ts";
 import { OVERFETCH_ABSOLUTE_CAP, type RecordCut } from "../retrieval/record-cut.ts";
@@ -8,6 +10,7 @@ import { describeRetrievalError } from "../retrieval/skip.ts";
 import type {
 	RetrievalMethod,
 	RetrievalMethodDescriptor,
+	RetrievalMissingSource,
 	RetrievalOptions,
 	RetrievalResult,
 } from "../retrieval/types.ts";
@@ -43,6 +46,11 @@ export interface MinSyncVectorMethodOptions {
 }
 
 export type MinSyncHybridMethodOptions = Omit<MinSyncVectorMethodOptions, "mode">;
+
+function fileSystemErrorCode(error: unknown): string | undefined {
+	const code = error instanceof Error ? (error as NodeJS.ErrnoException).code : undefined;
+	return typeof code === "string" ? code : undefined;
+}
 
 export class MinSyncVectorMethod implements RetrievalMethod {
 	private readonly root: string;
@@ -171,7 +179,8 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 			});
 		}
 		const results: RetrievalResult[] = [];
-		const mirrorTexts = new Map<string, string | undefined>();
+		const missingSources: RetrievalMissingSource[] = [];
+		const mirrorTexts = new Map<string, MirrorDocument | undefined>();
 		for (const hit of hits) {
 			const entry = byPath.get(hit.path);
 			if (!entry || !matchesVirtualPathScope(entry.virtualPath, options.scope)) continue;
@@ -179,23 +188,43 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 			// MinSync's per-chunk `docId` is what keeps distinct passages distinct.
 			// Falling back to the mirror basename would give them one identity and the
 			// merger would treat them as the same evidence.
+			// A stale index entry (the file moved or was deleted since the last refresh) must not fail the
+			// whole method; skip the hit so later hits can fill topK, and report it below.
+			let resolvedSource: string;
+			try {
+				resolvedSource = realpathSync(normalize(entry.sourcePath));
+			} catch (error) {
+				const code = fileSystemErrorCode(error);
+				if (code !== "ENOENT" && code !== "ENOTDIR") throw error;
+				missingSources.push({ virtualPath: entry.virtualPath, sourcePath: entry.sourcePath, code });
+				continue;
+			}
 			const chunkDiscriminator = hit.docId ?? basename(hit.path);
 			const chunkId = `minsync:${entry.virtualPath}:${chunkDiscriminator}`;
-			const location = locateChunkInMirror(mirrorTexts, entry, hit.text);
+			const location = locateChunkInMirror(
+				mirrorTexts,
+				entry,
+				withoutHeading(hit.text, hit.headingPath ?? hit.path),
+			);
 			results.push({
 				id: chunkId,
 				content: hit.text,
-				source: realpathSync(normalize(entry.sourcePath)),
+				source: resolvedSource,
 				score: hit.score,
 				metadata: {
 					method: this.mode === "vector" ? "minsync" : `minsync-${this.mode}`,
 					virtualPath: entry.virtualPath,
 					minsyncChunkId: chunkId,
 					minsyncPath: hit.path,
+					// The window's fallback time for a local file: when the source was last modified.
+					sourceMtimeMs: entry.sourceMtimeMs,
 					...(location !== undefined
 						? {
 								lineNumber: location.lineStart,
 								lineEnd: location.lineEnd,
+								...(location.pageStart !== undefined && location.pageEnd !== undefined
+									? { pageStart: location.pageStart, pageEnd: location.pageEnd }
+									: {}),
 								...(location.section !== undefined ? { section: location.section } : {}),
 							}
 						: {}),
@@ -204,6 +233,8 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 			// With a record cut the whole in-scope pool is collected, then cut by document below.
 			if (this.recordCut === undefined && results.length >= topK) break;
 		}
+		if (missingSources.length > 0)
+			options.onSourceMissing?.({ method: this.describe().name, missing: missingSources });
 		return this.recordCut === undefined ? results : this.recordCut.cut(results, topK, (result) => result.source);
 	}
 
@@ -251,31 +282,51 @@ export class MinSyncHybridMethod extends MinSyncVectorMethod {
 	}
 }
 
+/**
+ * MinSync starts a chunk's `text` with its `heading_path` line (the document's workspace-relative path,
+ * truncated). That line is not part of the document, so a lookup that includes it never matches. Only a first
+ * line equal to the hit's own heading is dropped; the result's `content` stays exactly as MinSync returned it.
+ */
+function withoutHeading(text: string, heading: string): string {
+	return text.startsWith(`${heading}\n`) ? text.slice(heading.length + 1) : text;
+}
+
 /** Parsed mirrors bigger than this are not searched for a chunk's line range. */
 const MAX_MIRROR_BYTES = 16 * 1024 * 1024;
+
+interface MirrorDocument {
+	readonly text: string;
+	/** Page index measured on exactly `text`; absent for a document without pages. */
+	readonly pages: ParsedPages | undefined;
+}
 
 /**
  * Where `chunk` sits in the parsed markdown MinSync indexed for `entry`. The
  * staged copy is what MinSync chunked; the parsed mirror is the same text and is
  * the fallback before the first sync. Undefined when the document cannot be read
  * or the chunk is not found in exactly one place, so a line is never guessed.
+ * The page comes from the parser's page index for the parsed mirror, kept only
+ * while it was measured on this very text.
  */
 function locateChunkInMirror(
-	cache: Map<string, string | undefined>,
+	cache: Map<string, MirrorDocument | undefined>,
 	entry: { readonly minSyncPath: string; readonly parsedOutputPath: string },
 	chunk: string,
 ): ChunkLocation | undefined {
-	let text: string | undefined;
 	const path = existsSync(entry.minSyncPath) ? entry.minSyncPath : entry.parsedOutputPath;
+	let document: MirrorDocument | undefined;
 	if (cache.has(path)) {
-		text = cache.get(path);
+		document = cache.get(path);
 	} else {
 		try {
-			text = statSync(path).size <= MAX_MIRROR_BYTES ? readFileSync(path, "utf8") : undefined;
+			if (statSync(path).size <= MAX_MIRROR_BYTES) {
+				const text = readFileSync(path, "utf8");
+				document = { text, pages: readPagesSidecar(entry.parsedOutputPath, text) };
+			}
 		} catch {
-			text = undefined;
+			document = undefined;
 		}
-		cache.set(path, text);
+		cache.set(path, document);
 	}
-	return text === undefined ? undefined : locateChunk(text, chunk);
+	return document === undefined ? undefined : locateChunk(document.text, chunk, document.pages);
 }

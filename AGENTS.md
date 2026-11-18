@@ -218,7 +218,7 @@ run. Native lanes are expected to remain `SKIP` only when no native store is
 configured.
 Native stores, profiles, and keychains remain owned by their CLIs: the runner
 does not copy datasource data or force an AutoRAG workspace. Native datasource
-references and setup details are in `docs/manual-qa-datasources.md` and the
+references and setup details are in `docs/contributing/manual-qa.md` and the
 individual scripts under `scripts/manual-qa/`, including the real lazykatok harness
 at `scripts/manual-qa/run-qa-lazykatok-live.ts`.
 
@@ -252,7 +252,7 @@ raw). Vectors come from a loopback
 `minsync serve` daemon when one answers, otherwise from MinSync's in-process
 engine through the optional `@nomadamas/minsync-native` addon. AutoRAG never
 starts or stops the daemon: the operator runs `minsync serve --idle-timeout 0`
-(launchd/systemd, see `docs/minsync-setup.md`) or presses Ctrl+Shift+E in the
+(launchd/systemd, see `docs/indexing/embedding-backends.md`) or presses Ctrl+Shift+E in the
 TUI. `autorag setup` and `autorag status` only report the resolved
 `embedding.backend` (`daemon`, `in-process`, or `remote`) with the provider,
 model, and dimension, or why none is alive.
@@ -370,7 +370,7 @@ with any of them should be rejected or reshaped:
    search is optimized for low latency across several model turns.
 
 Rationale for value 1 comes from the competitive landscape study
-(see `docs/competitive-landscape-2026-09.md`): MCP-native, local-first, and
+(see `docs/contributing/design-notes.md`): MCP-native, local-first, and
 hybrid retrieval are commoditized, while harness-free federation with
 source-native provenance is the durable differentiator.
 
@@ -478,9 +478,9 @@ The librarian agent owns the full workflow:
 | `jikji_find` | Runs `jikji find ROOT "query"` and returns a policy-aware answer pack | Optional local discovery |
 | `everything_search` | Windows only: instant file/folder name, extension, path, size, and date search over the configured search roots through the bundled voidtools Everything + ES | Locating files by name before reading them |
 | `fsearch_search` | macOS/Linux only: instant file/folder name, extension, path, size, and date search over the configured search roots through the user's fsearch-cli (FSearch) database + watch daemon; degrades to a slow filesystem walk when fsearch-cli is not installed | Locating files by name before reading them |
-| `search_all_documents` | Fan-out across configured retrieval methods and merge/rank candidates | Combined retrieval |
+| `search_all_documents` | Fan-out across configured retrieval methods and merge/rank candidates. Takes `{ query, topK?, scope?, since?, until? }`; `since`/`until` are an ISO-8601 time window `[since, until)` (see "Time windows" in `docs/datasources/search-semantics.md`) | Combined retrieval |
 | `semantic_search_local_docs` | MinSync semantic/vector retrieval over parsed mirrors | Semantic retrieval |
-| `search_datasource_<name>` | Search one datasource connection only; one tool is generated per configured connection (e.g. `search_datasource_discord`, `search_datasource_kakao_work`) and spawns no other datasource CLIs. This is the only datasource search surface — use it instead of any fan-out datasource tool | Targeted single-datasource retrieval |
+| `search_datasource_<name>` | Search one datasource connection only; one tool is generated per configured connection (e.g. `search_datasource_discord`, `search_datasource_kakao_work`) and spawns no other datasource CLIs. Takes `{ query, topK?, scope?, since?, until? }`. This is the only datasource search surface — use it instead of any fan-out datasource tool | Targeted single-datasource retrieval |
 | `check_memory` | Look up judged evidence from this conversation, similar past questions (hybrid BM25 + vector), and long-term insights | Advisory reference before searching |
 | `load_datasource_skill` | Load instructions for a configured datasource skill | Datasource-specific searches |
 | `scan_duplicate_documents` | Read-only dupey scan of configured local document roots | Duplicate-family review |
@@ -521,11 +521,11 @@ The `RetrievalMethodRegistry` and `ResultMerger` are live: configured methods ar
 
 Jikji is intentionally not a retrieval method. It is an optional local-discovery layer: AutoRAG calls `jikji find ROOT "query" --json` through `jikji_find`, parses the upstream answer pack, and exposes `handoff_action`, `tool_call_policy`, and `agent_should_not_rerank` to the librarian. Direct `bash` reading remains available so Jikji never prevents source verification. `prepare`/`refresh` remain for indexing only and do not answer queries directly.
 
-Datasource skills are retrieval-method factories plus indexing hooks for external, server-configured data sources. They remain inside the same pipeline — `RetrievalMethodRegistry` → `ParallelRetriever` → `filterDatasourceScope` → `ResultMerger`. Every connected datasource is searchable: a generated `search_datasource_<id>` tool exposes `{ query, topK?, scope? }`, where `scope` is ordinary per-query path filtering and `topK` bounds candidates. There is no datasource fan-out tool: every configured connection gets its own tool, and `search_all_documents` already spans every retrieval method including datasources. Results are not redacted — traceability is preferred over opacity, so pair AutoRAG with a local LLM when privacy matters.
+Datasource skills are retrieval-method factories plus indexing hooks for external, server-configured data sources. They remain inside the same pipeline — `RetrievalMethodRegistry` → `ParallelRetriever` → `filterDatasourceScope` → `ResultMerger`. Every connected datasource is searchable: a generated `search_datasource_<id>` tool exposes `{ query, topK?, scope?, since?, until? }`, where `scope` is ordinary per-query path filtering, `topK` bounds candidates, and `since`/`until` narrow to a time window (inclusive/exclusive ISO-8601; composes with `scope`, never widens a datasource's configured reach). There is no datasource fan-out tool: every configured connection gets its own tool, and `search_all_documents` already spans every retrieval method including datasources. Results are not redacted — traceability is preferred over opacity, so pair AutoRAG with a local LLM when privacy matters.
 
 CLI-backed datasources own their archive, lexical index, and vectors: KakaoTalk through the external `lazykatok` CLI, and **Discord** through the external [`discrawl`](https://github.com/openclaw/discrawl) CLI. AutoRAG only spawns them and maps results. AutoRAG never reads KakaoTalk databases directly; failures surface as diagnostics, and remote embedding egress settings are rejected before the CLI is spawned.
 
-External crawler-backed skills cover **WhatsApp** (wacrawl), **Telegram** (telecrawl), **Slack** (slacrawl), and **Notion** (notcrawl); each crawler owns its archive, sync, credentials, and FTS search while AutoRAG provides bounded process execution, diagnostics, and retrieval mapping. The remaining connector-backed datasource skills use the shared framework (`src/datasource/connector.ts`, `chunk-store.ts`, `connector-skill.ts`): **GitHub**, **Google Drive**, **Obsidian** (vault indexed by MinSync in its own workspace: incremental + BM25 + semantic), and **RSS/news**. Gmail, IMAP, Maildir, and static `.eml`/`.mbox` mailbox retrieval is provided by **mailcrawl**. Results remain traceable. Manual QA harnesses live in `scripts/manual-qa/` (see `docs/manual-qa-datasources.md`).
+External crawler-backed skills cover **WhatsApp** (wacrawl), **Telegram** (telecrawl), **Slack** (slacrawl), and **Notion** (notcrawl); each crawler owns its archive, sync, credentials, and FTS search while AutoRAG provides bounded process execution, diagnostics, and retrieval mapping. The remaining connector-backed datasource skills use the shared framework (`src/datasource/connector.ts`, `chunk-store.ts`, `connector-skill.ts`): **GitHub**, **Google Drive**, **Obsidian** (vault indexed by MinSync in its own workspace: incremental + BM25 + semantic), and **RSS/news**. Gmail, IMAP, Maildir, and static `.eml`/`.mbox` mailbox retrieval is provided by **mailcrawl**. Results remain traceable. Manual QA harnesses live in `scripts/manual-qa/` (see `docs/contributing/manual-qa.md`).
 
 ## Directory Access
 
@@ -589,7 +589,7 @@ their judged evidence, and (3) matching long-term insights — injected as a
 Jev's datasource-selection step also receives up to 5 similar past questions as
 hints. Memory never reorders search results. Evidence from datasources not
 configured for the run is never shown. See
-[docs/retrieval-memory.md](docs/retrieval-memory.md).
+[docs/retrieval/memory.md](docs/retrieval/memory.md).
 
 ## Files
 
@@ -635,6 +635,9 @@ configured for the run is never shown. See
 | `src/minsync/method.ts` | MinSync retrieval method (vector / SPLADE sparse / hybrid over shared CDC chunks) |
 | `src/minsync/version.ts` | MinSync version floor (`MINSYNC_MIN_VERSION`) and the `--version` probe that gates PATH and cached binaries |
 | `src/language.ts` | Curated global language tags, normalization, and defaults |
+| `src/retrieval/chunk-location.ts` | `locateChunk`: measured location of a retrieved chunk in its parsed document: `lineStart`/`lineEnd`, nearest `section`, and `pageStart`/`pageEnd` when the document has real pages. Unique match only; a chunk that occurs twice or that the chunker rewrote reports nothing. `describeLocation`/`locationSuffix` render it for `[eN]` lines and CLI output |
+| `src/parser/pages.ts` | Page index of a parsed document (`ParsedPages`: `mode` `"layout"` or `"section"`, `pageCount`, per-page line `spans`). `alignPages` places kordoc's `pages[]` in the markdown tolerating a missing/empty page; `joinPages` builds PPTX markdown and spans together. `"section"` pages are an approximation and are never reported as a page number. Formats without pages (DOCX, text, spreadsheets) have none |
+| `src/mirror/pages-sidecar.ts` | Persists the page index beside each parsed mirror entry (`.autorag/parsed/pages/<hash>.json`, keyed to the SHA-256 of the markdown it was measured on; ignored when that text changed). Written and removed by `syncParsedMirrors`; read by `MinSyncVectorMethod` at result-mapping time |
 | `src/parser/kordoc.ts` | Default document parser (kordoc) for HWP/HWPX/HWPML, PDF, DOCX, XLSX/XLS |
 | `src/parser/ocr-engines.ts` | OCR switch options, Tesseract runtime (worker lifecycle, timeout, cache path) and the language → engine split |
 | `src/datasource/` | Datasource skill contracts, scope filtering, polling metadata, diagnostics, and KakaoTalk/lazykatok skill implementation |
@@ -642,7 +645,9 @@ configured for the run is never shown. See
 | `src/datasource/chunk-store.ts` | Persistent chunk store with BM25-style lexical search per skill instance |
 | `src/datasource/connector-skill.ts` | Shared DatasourceSkill base composing a connector with the chunk store |
 | `src/datasource/skills/` | Built-in skills: lazykatok, discrawl, wacrawl, telecrawl, slack, lark, clawgallery, notion, github, mailcrawl, obsidian, rss (+ config factory) |
-| `src/agent/search-single-datasource-tool.ts` | One generated `search_datasource_<id>` tool per configured datasource connection with model-safe `{ query, topK?, scope? }` parameters |
+| `src/agent/search-single-datasource-tool.ts` | One generated `search_datasource_<id>` tool per configured datasource connection with model-safe `{ query, topK?, scope?, since?, until? }` parameters |
+| `src/retrieval/time-window.ts` | Time window `[since, until)`: ISO parsing, `resultTimeMs` (`publishedAt`, else `sourceMtimeMs`), the post-filter and over-fetch depth |
+| `src/agent/time-window-tool.ts` | Tool-boundary `since`/`until` schema, parse (verbatim error), and the "nothing in this range" / ceiling notice |
 | `src/profiles/agent-factory.ts` | `createProfileSession`: one plain in-memory pi session per `AgentProfile` (prompt, tool names, custom tools, thinking, opt-in AGENTS.md/skills/extensions) on the AutoRAG agent's model and credential store; never touches retrieval memory. Exported as `@autorag/librarian/profiles` |
 | `src/profiles/session-model.ts` | Resolves the profile model (`resolveSessionModel`) and keeps the Dazzi plan's OAuth credential (`preferPlanOAuth`, `openPlanRuntime`, `applyDazziThinkingLevels`) |
 | `src/profiles/retrieval-tools.ts` | Optional `search_all_documents` / `search_datasource_<id>` tools for a profile, backed by an agent whose memory file is a throwaway |

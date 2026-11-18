@@ -28,4 +28,4 @@ GitHub secret scanning and push protection are enabled on this repository. Pull 
 
 ## Supply chain
 
-Dependency, license, SBOM, CVE, and release gates are documented in `docs/supply-chain.md`. Changing the project license itself is a Marker Inc. ownership decision under `GOVERNANCE.md`; these gates only enforce third-party compatibility with the current MIT + Apache-2.0 split. OpenSSF Scorecard and the OSPS Baseline mapping are in `docs/openssf-baseline.md`.
+Dependency, license, SBOM, CVE, and release gates are documented in `docs/contributing/supply-chain.md`. Changing the project license itself is a Marker Inc. ownership decision under `GOVERNANCE.md`; these gates only enforce third-party compatibility with the current MIT + Apache-2.0 split. OpenSSF Scorecard and the OSPS Baseline mapping are in `docs/contributing/supply-chain.md`.

@@ -4,6 +4,7 @@ import { TREE_KILL_GRACE_MS, terminateProcessTree } from "../../../process/termi
 import { boundDiagnosticText } from "../../connector.ts";
 import { DEFAULT_CONNECTOR_SYNC_TIMEOUT_MS } from "../../connector-timeouts.ts";
 import type {
+	WombatAgentsResult,
 	WombatDoctorResult,
 	WombatFailure,
 	WombatFailureReason,
@@ -52,9 +53,20 @@ const SAFE_WOMBAT_ENV_KEYS: Readonly<Record<string, true>> = {
 	WOMBAT_MINSYNC_BIN: true,
 	WOMBAT_EMBEDDER: true,
 	WOMBAT_CHUNKER: true,
+	// Where each coding agent keeps its sessions when the user relocated it (wombat's `SourceRoots::default_from_env`).
 	CODEX_HOME: true,
 	CLAUDE_CONFIG_DIR: true,
 	XDG_DATA_HOME: true,
+	HERMES_HOME: true,
+	GEMINI_CLI_HOME: true,
+	QWEN_HOME: true,
+	COPILOT_HOME: true,
+	CONTINUE_GLOBAL_DIR: true,
+	CODEBUDDY_CONFIG_DIR: true,
+	VIBE_HOME: true,
+	GOOSE_PATH_ROOT: true,
+	FACTORY_HOME: true,
+	KIRO_HOME: true,
 	HF_HOME: true,
 	HF_ENDPOINT: true,
 	MINSYNC_SERVER: true,
@@ -62,11 +74,22 @@ const SAFE_WOMBAT_ENV_KEYS: Readonly<Record<string, true>> = {
 /** An embedder id or endpoint that would ship session text off the machine is refused before the CLI starts. */
 const REMOTE_EMBEDDER_PREFIXES = ["openai:", "tei:"];
 
+/** A coding agent's id as wombat prints it: lower-case words joined by `-` or `_`. */
+const AGENT_ID = /^[a-z0-9][a-z0-9_-]{0,63}$/u;
+/** One catalog row is about 700 bytes; this holds tens of thousands of sessions. */
+const AGENT_LIST_MAX_BYTES = 64 * 1_048_576;
+/** Several agents: ask the CLI for this many times topK and filter afterwards. */
+const MULTI_AGENT_OVERFETCH = 12;
+/** The CLI clamps the number of hits it will consider to this. */
+const MAX_SEARCH_LIMIT = 300;
+
 export interface WombatSearchClient {
 	search(mode: WombatSearchMode, query: string, options?: WombatSearchOptions): Promise<WombatSearchResult>;
 }
 
 export interface WombatSyncClient extends WombatSearchClient {
+	/** The agents holding indexed sessions (read-only). Absent on a client that cannot list them. */
+	indexedAgents?(signal?: AbortSignal): Promise<WombatAgentsResult>;
 	doctor(signal?: AbortSignal): Promise<WombatDoctorResult>;
 	sync(signal?: AbortSignal): Promise<WombatSyncResult>;
 }
@@ -79,7 +102,13 @@ export class WombatClient implements WombatSyncClient {
 	}
 
 	async doctor(signal?: AbortSignal): Promise<WombatDoctorResult> {
-		const result = await this.run(["doctor", "--json"], signal, this.options.timeoutMs ?? DEFAULT_SEARCH_TIMEOUT_MS);
+		// `doctor` only runs as the first step of an index, so it may install MinSync like the sync after it.
+		const result = await this.run(
+			["doctor", "--json"],
+			signal,
+			this.options.timeoutMs ?? DEFAULT_SEARCH_TIMEOUT_MS,
+			true,
+		);
 		if (!result.ok) return failure(result);
 		const parsed = parseObject(result.stdout);
 		if (parsed === undefined || typeof parsed.ready !== "boolean") {
@@ -107,6 +136,7 @@ export class WombatClient implements WombatSyncClient {
 			args,
 			signal,
 			this.options.indexTimeoutMs ?? this.options.timeoutMs ?? DEFAULT_INDEX_TIMEOUT_MS,
+			true,
 		);
 		if (!result.ok) return failure(result);
 		const parsed = parseObject(result.stdout);
@@ -134,15 +164,45 @@ export class WombatClient implements WombatSyncClient {
 		);
 	}
 
+	/**
+	 * Which coding agents have sessions in the index, most sessions first. Reads the session catalog through
+	 * `wombat sessions --json`: no sync, no embedding, a few hundred milliseconds even for thousands of sessions.
+	 */
+	async indexedAgents(signal?: AbortSignal): Promise<WombatAgentsResult> {
+		const result = await this.run(
+			["sessions", "--json", "--limit", "1000000"],
+			signal,
+			this.options.timeoutMs ?? DEFAULT_SEARCH_TIMEOUT_MS,
+			false,
+			AGENT_LIST_MAX_BYTES,
+		);
+		if (!result.ok) return failure(result);
+		const parsed = parseJson(result.stdout);
+		if (!Array.isArray(parsed)) return failure({ ...result, ok: false, reason: "invalid-output" });
+		const counts = new Map<string, number>();
+		for (const row of parsed) {
+			const agent = row !== null && typeof row === "object" ? (row as Record<string, unknown>).agent : undefined;
+			// A catalog row is data, not instruction: an id that is not a plain agent id never reaches a tool description.
+			if (typeof agent !== "string" || !AGENT_ID.test(agent)) continue;
+			counts.set(agent, (counts.get(agent) ?? 0) + 1);
+		}
+		const agents = [...counts].map(([id, sessions]) => ({ id, sessions })).sort((a, b) => b.sessions - a.sessions);
+		return { ok: true, agents };
+	}
+
 	async search(mode: WombatSearchMode, query: string, options?: WombatSearchOptions): Promise<WombatSearchResult> {
 		if (query.trim().length === 0) return { ok: true, hits: [], stdout: "", stderr: "", code: 0 };
+		const topK = options?.topK ?? 20;
+		const agents = options?.agents ?? this.options.agents;
+		// The CLI filters one agent itself. For several, ask for more and filter here, so topK survives the filter.
+		const wanted = agents !== undefined && agents.length > 1 ? new Set(agents) : undefined;
 		const args = [
 			"search",
 			"--mode",
 			mode,
 			"--limit",
-			String(options?.topK ?? 20),
-			...(this.options.agents?.length === 1 ? ["--agent", this.options.agents[0] as string] : []),
+			String(wanted === undefined ? topK : Math.min(topK * MULTI_AGENT_OVERFETCH, MAX_SEARCH_LIMIT)),
+			...(agents?.length === 1 ? ["--agent", agents[0] as string] : []),
 			"--json",
 			query.trim(),
 		];
@@ -152,9 +212,10 @@ export class WombatClient implements WombatSyncClient {
 		if (!Array.isArray(parsed)) return failure({ ...result, ok: false, reason: "invalid-output" });
 		const hits = parsed.map((row, index) => normalizeHit(row, mode, index));
 		if (hits.some((hit) => hit === undefined)) return failure({ ...result, ok: false, reason: "invalid-output" });
+		const kept = (hits as WombatSearchHit[]).filter((hit) => wanted === undefined || wanted.has(hit.agent));
 		return {
 			ok: true,
-			hits: hits as WombatSearchHit[],
+			hits: wanted === undefined ? kept : kept.slice(0, topK),
 			stdout: result.stdout,
 			stderr: result.stderr,
 			code: result.code ?? 0,
@@ -165,6 +226,8 @@ export class WombatClient implements WombatSyncClient {
 		args: readonly string[],
 		signal: AbortSignal | undefined,
 		timeoutMs: number,
+		install = false,
+		maxBufferBytes?: number,
 	): Promise<ProcessResult> {
 		const env: NodeJS.ProcessEnv = {};
 		for (const [key, value] of Object.entries(process.env)) {
@@ -175,12 +238,36 @@ export class WombatClient implements WombatSyncClient {
 			if (value === undefined) delete env[key];
 			else if (Object.hasOwn(SAFE_ENV_KEYS, key) || Object.hasOwn(SAFE_WOMBAT_ENV_KEYS, key)) env[key] = value;
 		}
-		const embedder = env.WOMBAT_EMBEDDER;
-		if (embedder !== undefined && REMOTE_EMBEDDER_PREFIXES.some((prefix) => embedder.startsWith(prefix))) {
-			return { ok: false, reason: "remote-embedding-rejected", stdout: "", stderr: "", code: null };
+		for (const embedder of [env.WOMBAT_EMBEDDER, this.options.embedder]) {
+			if (embedder !== undefined && REMOTE_EMBEDDER_PREFIXES.some((prefix) => embedder.startsWith(prefix))) {
+				return { ok: false, reason: "remote-embedding-rejected", stdout: "", stderr: "", code: null };
+			}
+		}
+		// The MinSync AutoRAG resolved, so wombat does not run a second or older copy. A sync may install it; a
+		// query only looks, and falls back to wombat's own PATH lookup when there is none.
+		let minSyncArgs: string[] = [];
+		if (this.options.minSyncBinary !== undefined) {
+			try {
+				minSyncArgs = ["--minsync-bin", await this.options.minSyncBinary(install)];
+			} catch (error) {
+				if (install) {
+					return {
+						ok: false,
+						reason: "minsync-unavailable",
+						stdout: "",
+						stderr: error instanceof Error ? error.message : String(error),
+						code: null,
+					};
+				}
+			}
 		}
 		// Global flags precede the subcommand: wombat declares them on the top-level command.
 		const globals = [
+			...minSyncArgs,
+			...(this.options.embedder === undefined ? [] : ["--embedder", this.options.embedder]),
+			...Object.entries(this.options.sources ?? {}).flatMap(([agent, roots]) =>
+				roots.flatMap((root) => ["--source", `${agent}=${root}`]),
+			),
 			...(this.options.dataDir === undefined ? [] : ["--data-dir", this.options.dataDir]),
 			...(this.options.configPath === undefined ? [] : ["--config", this.options.configPath]),
 			...(this.options.includeSubagents === true ? ["--include-subagents"] : []),
@@ -190,7 +277,7 @@ export class WombatClient implements WombatSyncClient {
 			this.options.binaryPath ?? DEFAULT_BINARY,
 			[...globals, ...args],
 			env,
-			this.options,
+			maxBufferBytes === undefined ? this.options : { ...this.options, maxBufferBytes },
 			signal,
 			timeoutMs,
 		);

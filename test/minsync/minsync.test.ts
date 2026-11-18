@@ -34,8 +34,14 @@ import {
 } from "../../src/minsync/index.ts";
 import type { MinSyncEmbedderConfig } from "../../src/minsync/types.ts";
 import { MINSYNC_MIN_VERSION } from "../../src/minsync/version.ts";
+import type { ParsedMirrorEntry } from "../../src/mirror/index-store.ts";
+import { writePagesSidecar } from "../../src/mirror/pages-sidecar.ts";
+import { parsedOutputPath } from "../../src/mirror/paths.ts";
+import type { ParsedPages } from "../../src/parser/pages.ts";
 import { RetrievalEngine } from "../../src/retrieval/engine.ts";
-import type { RetrievalFallbackEvent } from "../../src/retrieval/types.ts";
+import { ParallelRetriever } from "../../src/retrieval/merger.ts";
+import { RecordCut } from "../../src/retrieval/record-cut.ts";
+import type { RetrievalFallbackEvent, RetrievalSourceMissingEvent } from "../../src/retrieval/types.ts";
 import { fakeMinSyncStageSimulatorPath } from "../helpers/fake-minsync.ts";
 import { seedMinSyncStage } from "../helpers/seed-minsync-stage.ts";
 
@@ -682,6 +688,192 @@ describe("MinSyncVectorMethod", () => {
 		expect(readFileSync(stagedPolicy, "utf8")).toContain("cancellation terms");
 	});
 
+	describe("page of a chunk (#2111)", () => {
+		const PAGED = [
+			"# Report",
+			"",
+			"alpha page one",
+			"",
+			"bravo page two",
+			"bravo more",
+			"",
+			"charlie page three",
+			"",
+		].join("\n");
+
+		async function retrieveWith(
+			sidecar: unknown,
+			chunks: string[],
+			markdown = PAGED,
+		): Promise<Record<string, unknown>[]> {
+			writeFileSync(parsedOutput, markdown);
+			if (sidecar !== undefined) {
+				writePagesSidecar(parsedOutputPath(root, "/docs/policy.txt"), markdown, sidecar as ParsedPages);
+			}
+			await seedMinSyncStage(root, {
+				version: 1,
+				entries: {
+					"/docs/policy.txt": {
+						virtualPath: "/docs/policy.txt",
+						sourcePath: join(source, "policy.txt"),
+						outputPath: parsedOutput,
+						parserName: "kordoc",
+						sourceMtimeNs: 2,
+						sourceSizeBytes: 18,
+						updatedAt: "2026-01-02T00:00:00.000Z",
+					},
+				},
+			});
+			writeFakeMinSync(
+				JSON.stringify({ results: chunks.map((text) => ({ path: parsedOutput, score: 0.9, text })) }),
+			);
+			const method = new MinSyncVectorMethod({ binaryPath: minsyncBinary, root, workspacePath: minsyncWorkspace });
+			return (await method.retrieve("q", { topK: chunks.length })).map((result) => result.metadata);
+		}
+
+		const LAYOUT = {
+			mode: "layout",
+			pageCount: 4,
+			spans: [
+				{ page: 1, lineStart: 1, lineEnd: 3 },
+				{ page: 2, lineStart: 5, lineEnd: 6 },
+				{ page: 4, lineStart: 8, lineEnd: 8 },
+			],
+		};
+
+		it("stamps the page range next to the line range, both pages for a chunk across a break", async () => {
+			const [one, across, last] = await retrieveWith(LAYOUT, [
+				"bravo page two",
+				"alpha page one\n\nbravo page two",
+				"charlie page three",
+			]);
+			expect(one).toMatchObject({ lineNumber: 5, lineEnd: 5, pageStart: 2, pageEnd: 2 });
+			expect(across).toMatchObject({ lineNumber: 3, lineEnd: 5, pageStart: 1, pageEnd: 2 });
+			expect(last).toMatchObject({ lineNumber: 8, pageStart: 4, pageEnd: 4 });
+		});
+
+		it("locates a chunk whose text MinSync prefixed with its own path line, and keeps the content as returned", async () => {
+			writeFileSync(parsedOutput, PAGED);
+			writePagesSidecar(parsedOutputPath(root, "/docs/policy.txt"), PAGED, LAYOUT as ParsedPages);
+			await seedMinSyncStage(root, {
+				version: 1,
+				entries: {
+					"/docs/policy.txt": {
+						virtualPath: "/docs/policy.txt",
+						sourcePath: join(source, "policy.txt"),
+						outputPath: parsedOutput,
+						parserName: "kordoc",
+						sourceMtimeNs: 2,
+						sourceSizeBytes: 18,
+						updatedAt: "2026-01-02T00:00:00.000Z",
+					},
+				},
+			});
+			const path = "files/docs/policy.txt.md";
+			// MinSync truncates the heading it prepends, so the first line is not always the whole path.
+			const heading = "files/docs/policy.tx";
+			writeFakeMinSync(
+				JSON.stringify({
+					results: [
+						{ path, heading_path: heading, score: 0.9, text: `${heading}\nbravo page two\nbravo more` },
+						{ path, heading_path: path, score: 0.8, text: `${path}\nbravo page two` },
+					],
+				}),
+			);
+			const method = new MinSyncVectorMethod({ binaryPath: minsyncBinary, root, workspacePath: minsyncWorkspace });
+			const [truncated, whole] = await method.retrieve("q", { topK: 2 });
+			expect(truncated?.metadata).toMatchObject({ lineNumber: 5, lineEnd: 6, pageStart: 2, pageEnd: 2 });
+			expect(truncated?.content).toBe(`${heading}\nbravo page two\nbravo more`);
+			expect(whole?.metadata).toMatchObject({ lineNumber: 5, lineEnd: 5, pageStart: 2 });
+		});
+
+		it("never strips a first line that is not MinSync's heading", async () => {
+			writeFileSync(parsedOutput, "files/docs/policy.tx\nreal first line\n");
+			await seedMinSyncStage(root, {
+				version: 1,
+				entries: {
+					"/docs/policy.txt": {
+						virtualPath: "/docs/policy.txt",
+						sourcePath: join(source, "policy.txt"),
+						outputPath: parsedOutput,
+						parserName: "plain-text",
+						sourceMtimeNs: 2,
+						sourceSizeBytes: 18,
+						updatedAt: "2026-01-02T00:00:00.000Z",
+					},
+				},
+			});
+			writeFakeMinSync(
+				JSON.stringify({
+					results: [
+						{
+							path: "files/docs/policy.txt.md",
+							heading_path: "other heading",
+							score: 0.9,
+							text: "files/docs/policy.tx\nreal first line",
+						},
+					],
+				}),
+			);
+			const method = new MinSyncVectorMethod({ binaryPath: minsyncBinary, root, workspacePath: minsyncWorkspace });
+			const [result] = await method.retrieve("q", { topK: 1 });
+			expect(result?.metadata).toMatchObject({ lineNumber: 1, lineEnd: 2 });
+		});
+
+		it("keeps line and section locations unchanged for a document without pages", async () => {
+			const [result] = await retrieveWith(undefined, ["bravo page two"]);
+			expect(result).toMatchObject({ lineNumber: 5, lineEnd: 5, section: "Report" });
+			expect(result).not.toHaveProperty("pageStart");
+			expect(result).not.toHaveProperty("pageEnd");
+		});
+
+		it("never stamps an exact page for a section-mode document", async () => {
+			const [result] = await retrieveWith({ ...LAYOUT, mode: "section" }, ["bravo page two"]);
+			expect(result).toMatchObject({ lineNumber: 5 });
+			expect(result).not.toHaveProperty("pageStart");
+		});
+
+		it("stamps no page for a chunk the chunker rewrote or one that occurs twice", async () => {
+			const [rewritten] = await retrieveWith(LAYOUT, ["alpha | page | one"]);
+			expect(rewritten).not.toHaveProperty("lineNumber");
+			expect(rewritten).not.toHaveProperty("pageStart");
+		});
+
+		it("stamps no page for a chunk that occurs twice", async () => {
+			const [twice] = await retrieveWith(LAYOUT, ["alpha page one"], `${PAGED}\nalpha page one\n`);
+			expect(twice).not.toHaveProperty("lineNumber");
+			expect(twice).not.toHaveProperty("pageStart");
+		});
+
+		it("ignores a page index measured on a different text than the mirror now holds", async () => {
+			writeFileSync(parsedOutput, PAGED);
+			writePagesSidecar(
+				parsedOutputPath(root, "/docs/policy.txt"),
+				"an older version of the document\n",
+				LAYOUT as ParsedPages,
+			);
+			await seedMinSyncStage(root, {
+				version: 1,
+				entries: {
+					"/docs/policy.txt": {
+						virtualPath: "/docs/policy.txt",
+						sourcePath: join(source, "policy.txt"),
+						outputPath: parsedOutput,
+						parserName: "kordoc",
+						sourceMtimeNs: 2,
+						sourceSizeBytes: 18,
+						updatedAt: "2026-01-02T00:00:00.000Z",
+					},
+				},
+			});
+			writeFakeMinSync(JSON.stringify({ results: [{ path: parsedOutput, score: 0.9, text: "bravo page two" }] }));
+			const method = new MinSyncVectorMethod({ binaryPath: minsyncBinary, root, workspacePath: minsyncWorkspace });
+			const [result] = await method.retrieve("q", { topK: 1 });
+			expect(result?.metadata).toMatchObject({ lineNumber: 5 });
+			expect(result?.metadata).not.toHaveProperty("pageStart");
+		});
+	});
+
 	it("stamps the line range and enclosing article of a chunk found in the parsed mirror (#1692)", async () => {
 		// Given
 		writeFileSync(
@@ -762,6 +954,128 @@ describe("MinSyncVectorMethod", () => {
 				args: ["query", "--format", "json", "--mode", "vector", "-k", "2", "renewal cancellation"],
 				cwd: minSyncCwd(),
 			}),
+		);
+	});
+
+	describe("hits whose source file is gone", () => {
+		let goneOutput: string;
+
+		beforeEach(async () => {
+			// A stale index entry: the stage still lists the document, but its source file was moved or deleted.
+			goneOutput = parsedOutputPath(root, "/docs/gone.txt");
+			mkdirSync(dirname(goneOutput), { recursive: true });
+			writeFileSync(goneOutput, "Parsed text of a document whose source vanished.\n");
+			const entry = (virtualPath: string, sourcePath: string, outputPath: string): ParsedMirrorEntry => ({
+				virtualPath,
+				sourcePath,
+				outputPath,
+				parserName: "plain-text",
+				sourceMtimeNs: 1,
+				sourceSizeBytes: 18,
+				updatedAt: "2026-01-01T00:00:00.000Z",
+			});
+			await seedMinSyncStage(root, {
+				version: 1,
+				entries: {
+					"/docs/policy.txt": entry("/docs/policy.txt", join(source, "policy.txt"), parsedOutput),
+					"/docs/gone.txt": entry("/docs/gone.txt", join(source, "gone.txt"), goneOutput),
+				},
+			});
+			// The stale entry ranks first, so it must not hide the live hit behind it.
+			writeFakeMinSync(
+				JSON.stringify({
+					results: [
+						{ path: goneOutput, score: 0.99, text: "Gone chunk." },
+						{ path: parsedOutput, score: 0.5, text: "Live chunk." },
+					],
+				}),
+			);
+		});
+
+		it("skips the hit, keeps the rest and reports the skipped path once", async () => {
+			const method = new MinSyncHybridMethod({ binaryPath: minsyncBinary, root, workspacePath: minsyncWorkspace });
+			const events: RetrievalSourceMissingEvent[] = [];
+
+			const results = await method.retrieve("renewal", { topK: 2, onSourceMissing: (event) => events.push(event) });
+
+			expect(results.map((result) => result.content)).toEqual(["Live chunk."]);
+			expect(events).toHaveLength(1);
+			expect(events[0]?.method).toBe("hybrid");
+			expect(events[0]?.missing).toEqual([
+				{ virtualPath: "/docs/gone.txt", sourcePath: join(source, "gone.txt"), code: "ENOENT" },
+			]);
+		});
+
+		it("skips the hit with the record cut on", async () => {
+			const method = new MinSyncHybridMethod({
+				binaryPath: minsyncBinary,
+				root,
+				workspacePath: minsyncWorkspace,
+				recordCut: new RecordCut(),
+			});
+			const events: RetrievalSourceMissingEvent[] = [];
+
+			const results = await method.retrieve("renewal", { topK: 2, onSourceMissing: (event) => events.push(event) });
+
+			expect(results.map((result) => result.content)).toEqual(["Live chunk."]);
+			expect(events).toHaveLength(1);
+			expect(events[0]?.missing.map((entry) => entry.virtualPath)).toEqual(["/docs/gone.txt"]);
+		});
+
+		it("does not mark the surface unsearched and reports a retrieval-source-missing diagnostic", async () => {
+			const method = new MinSyncHybridMethod({ binaryPath: minsyncBinary, root, workspacePath: minsyncWorkspace });
+
+			const { results, diagnostics, unsearched } = await new ParallelRetriever().retrieveWithDiagnostics(
+				[method],
+				"renewal",
+				{ topK: 2 },
+			);
+
+			expect(results.get("hybrid")).toHaveLength(1);
+			expect(unsearched).toEqual([]);
+			expect(diagnostics.map((diagnostic) => diagnostic.code)).toEqual(["retrieval-source-missing"]);
+			expect(diagnostics[0]?.severity).toBe("warning");
+			expect(diagnostics[0]?.reason).toContain(join(source, "gone.txt"));
+		});
+
+		it.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
+			"still propagates an error that is not a missing file",
+			async () => {
+				// A source under a directory the process cannot traverse fails with EACCES, not ENOENT.
+				const locked = join(root, "locked");
+				mkdirSync(locked);
+				writeFileSync(join(locked, "secret.txt"), "x\n");
+				await seedMinSyncStage(root, {
+					version: 1,
+					entries: {
+						"/docs/policy.txt": {
+							virtualPath: "/docs/policy.txt",
+							sourcePath: join(locked, "secret.txt"),
+							outputPath: parsedOutput,
+							parserName: "plain-text",
+							sourceMtimeNs: 1,
+							sourceSizeBytes: 2,
+							updatedAt: "2026-01-01T00:00:00.000Z",
+						},
+					},
+				});
+				chmodSync(locked, 0o000);
+				try {
+					const method = new MinSyncHybridMethod({
+						binaryPath: minsyncBinary,
+						root,
+						workspacePath: minsyncWorkspace,
+					});
+					const onSourceMissing = vi.fn();
+
+					await expect(method.retrieve("renewal", { topK: 2, onSourceMissing })).rejects.toMatchObject({
+						code: "EACCES",
+					});
+					expect(onSourceMissing).not.toHaveBeenCalled();
+				} finally {
+					chmodSync(locked, 0o755);
+				}
+			},
 		);
 	});
 
@@ -890,6 +1204,38 @@ console.log(JSON.stringify({ results: [{ path: ${JSON.stringify(parsedOutput)}, 
 		await refresh;
 	});
 
+	it("searches the batches a first sync has committed while that sync still runs", async () => {
+		writeFakeMinSync(JSON.stringify({ results: [] }), false, 200);
+		// What MinSync leaves once the first sync is under way: a transaction marker, and no cursor yet.
+		mkdirSync(join(minsyncWorkspace, ".minsync"), { recursive: true });
+		writeFileSync(
+			join(minsyncWorkspace, ".minsync", "txn.json"),
+			JSON.stringify({ source_id: "files", status: "started" }),
+		);
+		const method = new MinSyncVectorMethod({ binaryPath: minsyncBinary, root, workspacePath: minsyncWorkspace });
+		const refresh = method.sync();
+
+		await expect(method.retrieve("renewal cancellation", { topK: 1 })).resolves.toEqual([]);
+		await refresh;
+	});
+
+	it("still refuses a query behind a sync of an index that was already built", async () => {
+		writeFakeMinSync(JSON.stringify({ results: [] }), false, 200);
+		mkdirSync(join(minsyncWorkspace, ".minsync"), { recursive: true });
+		writeFileSync(
+			join(minsyncWorkspace, ".minsync", "txn.json"),
+			JSON.stringify({ source_id: "files", status: "started" }),
+		);
+		writeFileSync(join(minsyncWorkspace, ".minsync", "cursor.json"), JSON.stringify({ ready: true }));
+		const method = new MinSyncVectorMethod({ binaryPath: minsyncBinary, root, workspacePath: minsyncWorkspace });
+		const refresh = method.sync();
+
+		await expect(method.retrieve("renewal cancellation", { topK: 1 })).rejects.toThrow(
+			`another sync is in progress (${minsyncWorkspace})`,
+		);
+		await refresh;
+	});
+
 	it("routes lexical retrieval through MinSync sparse mode", async () => {
 		writeFakeMinSync(
 			JSON.stringify({
@@ -918,6 +1264,106 @@ console.log(JSON.stringify({ results: [{ path: ${JSON.stringify(parsedOutput)}, 
 				cwd: minSyncCwd(),
 			}),
 		);
+	});
+
+	describe("time window", () => {
+		const day = (month: number, d: number): number => Date.UTC(2026, month - 1, d);
+		const NS_PER_MS = 1_000_000;
+
+		/** Three documents dated across July, August and September, all matching the fake query. */
+		async function seedDatedCorpus(): Promise<void> {
+			const entries: Record<string, ParsedMirrorEntry> = {};
+			const hits: { path: string; score: number; text: string; doc_id: string }[] = [];
+			const dated = [
+				["jul", day(7, 10), 0.99],
+				["aug", day(8, 10), 0.8],
+				["sep", day(9, 10), 0.7],
+			] as const;
+			for (const [name, mtimeMs, score] of dated) {
+				const output = join(root, ".autorag", "parsed", "files", "docs", `${name}.txt.md`);
+				writeFileSync(join(source, `${name}.txt`), `raw ${name}\n`);
+				writeFileSync(output, `Parsed ${name} renewal notes.\n`);
+				entries[`/docs/${name}.txt`] = {
+					virtualPath: `/docs/${name}.txt`,
+					sourcePath: join(source, `${name}.txt`),
+					outputPath: output,
+					parserName: "plain-text",
+					sourceMtimeNs: mtimeMs * NS_PER_MS,
+					sourceSizeBytes: 10,
+					updatedAt: "2026-10-01T00:00:00.000Z",
+				};
+				hits.push({
+					path: `files/docs/${name}.txt.md`,
+					score,
+					text: `Parsed ${name} renewal notes.`,
+					doc_id: name,
+				});
+			}
+			await seedMinSyncStage(root, { version: 1, entries });
+			writeFakeMinSync(JSON.stringify({ results: hits }));
+		}
+
+		it.each(["sparse", "hybrid"] as const)(
+			"%s: reports each hit's source mtime and the window keeps only the requested month",
+			async (mode) => {
+				await seedDatedCorpus();
+				const method = new MinSyncVectorMethod({
+					binaryPath: minsyncBinary,
+					root,
+					workspacePath: minsyncWorkspace,
+					mode,
+				});
+
+				const all = await method.retrieve("renewal", { topK: 10 });
+				expect(all.map((r) => r.metadata.sourceMtimeMs)).toEqual([day(7, 10), day(8, 10), day(9, 10)]);
+
+				const engine = new RetrievalEngine();
+				engine.register(method);
+				const august = await engine.retrieve("renewal", { topK: 10, since: day(8, 1), until: day(9, 1) });
+				// The July document ranks first by score, and must not survive an August window.
+				expect(august.results.map((r) => r.metadata.virtualPath)).toEqual(["/docs/aug.txt"]);
+				expect(august.window).toMatchObject({ examined: 3, matched: 1, untimed: 0 });
+			},
+		);
+
+		it("asks MinSync for the over-fetched depth, not the caller's topK, when a window is set", async () => {
+			await seedDatedCorpus();
+			const method = new MinSyncVectorMethod({
+				binaryPath: minsyncBinary,
+				root,
+				workspacePath: minsyncWorkspace,
+				mode: "sparse",
+			});
+			const engine = new RetrievalEngine();
+			engine.register(method);
+
+			await engine.retrieve("renewal", { topK: 2, since: day(8, 1), until: day(9, 1) });
+
+			const queries = loggedCalls()
+				.map((line) => JSON.parse(line) as { args: string[] })
+				.filter((c) => c.args[0] === "query");
+			expect(queries[0]?.args).toContain("22");
+		});
+
+		it("window and scope compose: a window never surfaces a result scope excludes", async () => {
+			await seedDatedCorpus();
+			const method = new MinSyncVectorMethod({
+				binaryPath: minsyncBinary,
+				root,
+				workspacePath: minsyncWorkspace,
+				mode: "sparse",
+			});
+			const engine = new RetrievalEngine();
+			engine.register(method);
+
+			const { results } = await engine.retrieve("renewal", {
+				topK: 10,
+				scope: "/docs/sep.txt",
+				since: day(8, 1),
+			});
+
+			expect(results.map((r) => r.metadata.virtualPath)).toEqual(["/docs/sep.txt"]);
+		});
 	});
 
 	it("never auto-installs during retrieval; a missing binary fails with MinSyncRequiredError", async () => {

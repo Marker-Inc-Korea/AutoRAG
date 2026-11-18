@@ -30,6 +30,7 @@ import type {
 	RetrievalOptions,
 	RetrievalResult,
 	RetrievalUnsearchedSurface,
+	RetrievalWindowReport,
 } from "./retrieval/types.ts";
 
 /** Input accepted by {@link createAutoRAGLite}. Flags keep CLI precedence intact. */
@@ -123,6 +124,7 @@ export class AutoRAGLite {
 		results: RetrievalResult[];
 		diagnostics: RetrievalDiagnostic[];
 		unsearched: RetrievalUnsearchedSurface[];
+		window?: RetrievalWindowReport;
 	}> {
 		return this.retrievalEngine.retrieveSelected(query, selection, options);
 	}
@@ -148,6 +150,7 @@ export class AutoRAGLite {
 		results: RetrievalResult[];
 		diagnostics: RetrievalDiagnostic[];
 		unsearched: RetrievalUnsearchedSurface[];
+		window?: RetrievalWindowReport;
 	}> {
 		return this.retrievalEngine.retrieve(query, options);
 	}
@@ -160,6 +163,7 @@ export class AutoRAGLite {
 		byMethod: Map<string, RetrievalResult[]>;
 		diagnostics: RetrievalDiagnostic[];
 		unsearched: RetrievalUnsearchedSurface[];
+		window?: RetrievalWindowReport;
 	}> {
 		return this.retrievalEngine.retrieveByMethod(query, options);
 	}

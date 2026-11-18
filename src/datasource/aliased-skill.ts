@@ -6,6 +6,7 @@ import type {
 	DatasourceSkill,
 	DatasourceSkillDescriptor,
 	DatasourceSkillManifest,
+	SearchFilterSpec,
 	SourceDescription,
 } from "./types.ts";
 
@@ -81,6 +82,10 @@ export class AliasedDatasourceSkill implements DatasourceSkill {
 				return results.filter((result) => this.matchesChannel(result)).map((result) => this.rewriteResult(result));
 			},
 		}));
+	}
+
+	searchFilters(): Promise<readonly SearchFilterSpec[]> {
+		return this.skill.searchFilters?.() ?? Promise.resolve([]);
 	}
 
 	describeSources(): readonly SourceDescription[] {

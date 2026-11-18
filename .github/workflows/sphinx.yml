@@ -1,5 +1,7 @@
 name: Legacy Sphinx build
 
+# Build check only. The legacy docs are published under /legacy/ by .github/workflows/docs.yml.
+
 on:
   push:
     branches:
@@ -7,9 +9,13 @@ on:
     paths:
       - "legacy/docs/**"
       - ".github/workflows/sphinx.yml"
+  pull_request:
+    paths:
+      - "legacy/docs/**"
+      - ".github/workflows/sphinx.yml"
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
@@ -34,17 +40,8 @@ jobs:
     - name: Build HTML
       run: |
         uv run sphinx-build -b html docs/source docs/build/html
-    - name: Copy CNAME
-      run: |
-        cp docs/source/CNAME docs/build/html/CNAME
     - name: Upload artifacts
       uses: actions/upload-artifact@v7
       with:
         name: html-docs
         path: legacy/docs/build/html/
-    - name: Deploy
-      uses: peaceiris/actions-gh-pages@v4
-      if: github.ref == 'refs/heads/main'
-      with:
-        github_token: ${{ secrets.GITHUB_TOKEN }}
-        publish_dir: legacy/docs/build/html

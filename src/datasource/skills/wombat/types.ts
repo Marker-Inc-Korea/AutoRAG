@@ -3,6 +3,11 @@ export type WombatSearchMode = "keyword" | "semantic" | "hybrid";
 
 export interface WombatSearchOptions {
 	readonly topK?: number;
+	/**
+	 * Only hits of these coding agents. One agent goes to the CLI as `--agent`; several are filtered here, because the CLI
+	 * takes one. Absent: the connector's own agent list applies.
+	 */
+	readonly agents?: readonly string[];
 	readonly signal?: AbortSignal;
 }
 
@@ -13,8 +18,25 @@ export interface WombatOptions {
 	readonly dataDir?: string;
 	/** `--config`: a wombat `config.toml`. */
 	readonly configPath?: string;
-	/** Restrict indexing and search to these coding agents (`codex`, `claude-code`, `opencode`, `pi`, `omp`). */
+	/** Restrict indexing and search to these coding agents (see {@link WOMBAT_AGENTS}). */
 	readonly agents?: readonly string[];
+	/**
+	 * `--source <agent>=<root>`: read exactly these session roots and ignore wombat's per-agent defaults under
+	 * the home directory. Absent, wombat discovers every agent's own default location.
+	 */
+	readonly sources?: Readonly<Record<string, readonly string[]>>;
+	/**
+	 * `--minsync-bin`: the `minsync` AutoRAG already resolved, so wombat never runs a second or older copy.
+	 * `install` is true for a sync, which may install MinSync, and false for a query, which only looks. A query
+	 * whose lookup throws falls back to wombat's own PATH lookup; a sync whose lookup throws fails with
+	 * `minsync-unavailable`.
+	 */
+	readonly minSyncBinary?: (install: boolean) => Promise<string>;
+	/**
+	 * `--embedder`, used only when wombat first initializes its MinSync workspace: `none` for a sparse-only index
+	 * or a `native:` id. Absent, MinSync's own default (local Qwen3-Embedding-0.6B) applies. A remote id is refused.
+	 */
+	readonly embedder?: string;
 	/** `--include-subagents`: index subagent / sidechain transcripts too. */
 	readonly includeSubagents?: boolean;
 	/** `--include-ephemeral`: index headless, benchmark and temp-directory sessions too. */
@@ -36,6 +58,7 @@ export type WombatFailureReason =
 	| "stdout-too-large"
 	| "stderr-too-large"
 	| "invalid-output"
+	| "minsync-unavailable"
 	| "remote-embedding-rejected";
 
 export interface WombatFailure {
@@ -103,6 +126,18 @@ export interface WombatSearchOk {
 	readonly code: number;
 }
 
+/** One coding agent that has sessions in the index, with how many. */
+export interface WombatIndexedAgent {
+	readonly id: string;
+	readonly sessions: number;
+}
+
+export interface WombatAgentsOk {
+	readonly ok: true;
+	readonly agents: readonly WombatIndexedAgent[];
+}
+
+export type WombatAgentsResult = WombatAgentsOk | WombatFailure;
 export type WombatDoctorResult = WombatOk<WombatDoctorInfo> | WombatFailure;
 export type WombatSyncResult = WombatOk<WombatSyncInfo> | WombatFailure;
 export type WombatSearchResult = WombatSearchOk | WombatFailure;

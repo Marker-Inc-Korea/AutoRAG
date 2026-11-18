@@ -41,6 +41,8 @@ const VALUE_FLAGS = new Set([
 	"model-id",
 	"top-k",
 	"scope",
+	"since",
+	"until",
 	"groups",
 	"query",
 	"result",
@@ -123,7 +125,7 @@ Commands:
                        (lite refresh: --full --force --retry-failed --method; watch: --once)
   lite retrieve <query>
                        Retrieve documents without model curation
-                       (--top-k N  --scope SCOPE  --json  --debug)
+                       (--top-k N  --scope SCOPE  --since ISO  --until ISO  --json  --debug)
   lite report <query>   Persist a structured report (--input FILE)
   duplicates [DIR]     Scan exact/near duplicate document families; never deletes files
   attachments [status|download]

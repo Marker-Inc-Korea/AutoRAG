@@ -10,6 +10,7 @@ import {
 	setupHister,
 	systemHisterDeps,
 } from "../datasource/skills/hister/setup.ts";
+import { findWombatBinary } from "../datasource/skills/wombat/index.ts";
 import {
 	createEmbedderFromConfig,
 	type EmbedderHealth,
@@ -117,7 +118,7 @@ export interface SetupDeps {
 const LOCK_TIMEOUT_MS = 10_000;
 const LOCK_STALE_MS = 30_000;
 const REMEDIATION =
-	"Semantic search needs an embedding backend: run `minsync serve --idle-timeout 0` as a service (docs/minsync-setup.md), or point `minSync.embedder` at a remote endpoint, then run `autorag setup` again.";
+	"Semantic search needs an embedding backend: run `minsync serve --idle-timeout 0` as a service (docs/indexing/embedding-backends.md), or point `minSync.embedder` at a remote endpoint, then run `autorag setup` again.";
 const BUILTIN_BINARIES: Readonly<Record<string, string>> = {
 	kakao: "lazykatok",
 	lark: "lark-cli",
@@ -140,6 +141,8 @@ const DEFAULT_CREDENTIALS: Readonly<Record<string, readonly string[]>> = {
 };
 
 function executableInPath(name: string, env: NodeJS.ProcessEnv): string | undefined {
+	// `cargo install wombat-sessions` lands in ~/.cargo/bin, which a desktop app's PATH often omits.
+	if (name === "wombat") return findWombatBinary(env);
 	if (name.includes("/") || name.includes("\\")) {
 		try {
 			accessSync(name, constants.X_OK);

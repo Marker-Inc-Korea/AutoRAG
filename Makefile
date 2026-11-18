@@ -20,7 +20,7 @@ E2E_MODE ?= cold
 export QA_IMAGE QA_PLATFORM QA_DOCKERFILE QA_CONTAINER_HOME QA_MODEL_ENV
 export E2E_ROOT E2E_MODE E2E_DATASOURCES E2E_ARGS
 
-.PHONY: help install lint format typecheck build test test-all test-macos test-windows test-linux ci supply-chain qa-image qa-shell tui e2e-live e2e-live-cold e2e-live-docker
+.PHONY: help docs docs-dev install lint format typecheck build test test-all test-macos test-windows test-linux ci supply-chain qa-image qa-shell tui e2e-live e2e-live-cold e2e-live-docker
 
 help:
 	@printf '%s\n' \
@@ -29,6 +29,8 @@ help:
 		'make format        Apply Biome formatting and safe fixes' \
 		'make typecheck     Run TypeScript type checking' \
 		'make build         Build library, CLI, and declarations' \
+		'make docs          Build the docs site (docs/, VitePress) into docs/.vitepress/dist' \
+		'make docs-dev      Serve the docs site locally with hot reload' \
 		'make test          Run the complete AutoRAG 2.0 test suite' \
 		'make test-all      Alias for the complete test suite' \
 		'make test-macos    Run the complete suite on a macOS host' \
@@ -53,6 +55,12 @@ help:
 
 install:
 	bun install --frozen-lockfile
+
+docs:
+	cd docs && bun install --frozen-lockfile && bun run build
+
+docs-dev:
+	cd docs && bun install --frozen-lockfile && bun run dev
 
 lint:
 	bun run lint

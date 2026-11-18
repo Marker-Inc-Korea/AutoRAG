@@ -17,7 +17,7 @@ import {
 import { mapDatasourceDiagnostics } from "../datasource/diagnostics.ts";
 import { type DatasourceRetryOptions, indexWithRetry } from "../datasource/retry.ts";
 import { filterDatasourceScope } from "../datasource/scope.ts";
-import type { DatasourceIndexResult, DatasourceSkill } from "../datasource/types.ts";
+import type { DatasourceIndexResult, DatasourceSkill, SearchFilterSpec } from "../datasource/types.ts";
 import {
 	DupeyCliError,
 	type DupeyCliOptions,
@@ -127,7 +127,13 @@ import {
 } from "../retrieval/scope.ts";
 import type { DatasourceCatalogEntry } from "../retrieval/selection.ts";
 import { describeRetrievalError } from "../retrieval/skip.ts";
-import type { RetrievalDiagnostic, RetrievalOptions, RetrievalResult } from "../retrieval/types.ts";
+import { parseTimeWindow, type TimeWindow } from "../retrieval/time-window.ts";
+import type {
+	RetrievalDiagnostic,
+	RetrievalOptions,
+	RetrievalResult,
+	RetrievalWindowReport,
+} from "../retrieval/types.ts";
 import { executeWebSearch } from "../web/search/index.ts";
 import { type ModelNativeSearchAuth, modelNativeAuthFromAgentModel } from "../web/search/model-auth.ts";
 import { citedChunks, deriveResultsFromAnswer } from "./answer-citations.ts";
@@ -278,6 +284,9 @@ import {
 } from "./watch-refresh.ts";
 import { createWebFetchTool, WEB_FETCH_TOOL_NAME, type WebFetchToolOptions } from "./web-fetch-tool.ts";
 import { createWebSearchTool, WEB_SEARCH_TOOL_NAME, type WebSearchToolOptions } from "./web-search-tool.ts";
+
+const MINSYNC_SYSTEMIC_FAILURE_THRESHOLD = 3;
+const MINSYNC_BATCH_FAILURE_LIMIT = 100;
 
 /**
  * Retrieval datasource tools whose executions count toward the per-search
@@ -1090,6 +1099,8 @@ export class AutoRAGAgent {
 	private readonly everythingClient: EverythingClient | undefined;
 	private readonly fsearchClient: FSearchClient | undefined;
 	private readonly datasourceSkills: readonly DatasourceSkill[];
+	/** Filters each connection offered the last time they were read, for the tool descriptions. */
+	private readonly searchFilterCache = new Map<string, readonly SearchFilterSpec[]>();
 	private readonly datasourceRetry: DatasourceRetryOptions;
 	private readonly startupDiagnostics: readonly SearchDocumentDiagnostic[];
 	private readonly datasourceAgentSkills: readonly DatasourceAgentSkill[];
@@ -1155,10 +1166,20 @@ export class AutoRAGAgent {
 	private jikjiDiscovery: Promise<void> = Promise.resolve();
 	/** Search-tool queries by tool call id, read back when the call ends. */
 	private readonly searchToolQueries = new Map<string, string>();
+	/** The window each in-flight search tool call asked for, by tool-call id, so the trace can show it. */
+	private readonly searchToolWindows = new Map<string, { since?: string; until?: string }>();
 	/** Identifies this agent's conversation: everything judged in it is "current" memory. */
 	private readonly conversationId = randomUUID();
 	/** The memory context loaded for the in-flight run; cleared whenever a run starts. */
 	private memoryContextCache: { readonly query: string; readonly context: Promise<MemoryContext> } | undefined;
+	/**
+	 * Each run's `<memory_context>` message with the user message it sits in front of. The message is built once, on
+	 * the run's first model request, and every later request of the conversation replays it in the same place, so a
+	 * request always starts with the previous request's messages and a provider's prompt cache keeps covering them.
+	 */
+	private memoryMessages: MemoryMessageRecord[] = [];
+	/** Set when a run starts; the run's first model request takes it and decides where the run's memory message goes. */
+	private memoryRunStart = false;
 	private readonly discordRemote: boolean;
 	/** Whether the bound interactive session offers `ask_user`; the phase prompts name it only then. */
 	private askUserOffered = false;
@@ -1548,16 +1569,32 @@ export class AutoRAGAgent {
 
 	private async withMemoryContext(messages: AgentMessage[]): Promise<AgentMessage[]> {
 		if (this.lastQuery === undefined) return messages;
-		const context = await this.loadMemoryContextFor(this.lastQuery);
-		if (context.empty) return messages;
-		return [
-			{
-				role: "user",
-				content: [{ type: "text", text: `<memory_context>\n${context.text}\n</memory_context>` }],
-				timestamp: Date.now(),
-			},
-			...messages,
-		];
+		if (this.memoryRunStart) {
+			const context = await this.loadMemoryContextFor(this.lastQuery);
+			// Requests that overlap each wait on the same load; the first to resume records the message.
+			if (this.memoryRunStart) {
+				this.memoryRunStart = false;
+				let anchor: number | undefined;
+				for (let index = messages.length - 1; index >= 0; index--) {
+					const message = messages[index];
+					if (message?.role === "user") {
+						anchor = message.timestamp;
+						break;
+					}
+				}
+				if (!context.empty && anchor !== undefined) {
+					this.memoryMessages.push({
+						anchor,
+						message: {
+							role: "user",
+							content: [{ type: "text", text: `<memory_context>\n${context.text}\n</memory_context>` }],
+							timestamp: Date.now(),
+						},
+					});
+				}
+			}
+		}
+		return withMemoryMessages(messages, this.memoryMessages);
 	}
 
 	/**
@@ -1758,6 +1795,8 @@ export class AutoRAGAgent {
 				dispose: () => {},
 			};
 		}
+		// The ids a datasource can filter on are part of its tool's description, so read them before the tools are declared.
+		await this.refreshSearchFilters();
 		const piSession = await createAutoRAGPiSession({
 			cwd: this.workspaceProjectRoot,
 			agentDir: this.piAgentDir,
@@ -1810,6 +1849,8 @@ export class AutoRAGAgent {
 		if (event.type === "tool_execution_start" && this.searchToolNames.has(event.toolName)) {
 			const query: unknown = event.args?.query;
 			if (typeof query === "string") this.searchToolQueries.set(event.toolCallId, query);
+			const window = windowForTrace(event.args);
+			if (window !== undefined) this.searchToolWindows.set(event.toolCallId, window);
 			return;
 		}
 		if (event.type !== "tool_execution_end" || !this.lastQuery) return;
@@ -1825,9 +1866,12 @@ export class AutoRAGAgent {
 		if (Array.isArray(details?.results)) {
 			const calledQuery = this.searchToolQueries.get(event.toolCallId);
 			this.searchToolQueries.delete(event.toolCallId);
+			const calledWindow = this.searchToolWindows.get(event.toolCallId);
+			this.searchToolWindows.delete(event.toolCallId);
 			this.retrievalTrace.push({
 				tool: event.toolName,
 				...(calledQuery !== undefined ? { query: calledQuery } : {}),
+				...(calledWindow !== undefined ? { window: calledWindow } : {}),
 				resultCount:
 					typeof details?.resultCount === "number" ? details.resultCount : (details?.results?.length ?? 0),
 				results: details?.results ?? [],
@@ -2359,7 +2403,11 @@ export class AutoRAGAgent {
 		this.evidenceLedger.beginRun();
 		if (!conversational) this.evidenceOrigins.clear();
 		this.searchToolQueries.clear();
+		this.searchToolWindows.clear();
 		this.memoryContextCache = undefined;
+		this.memoryRunStart = true;
+		// A run that owns no transcript is its own conversation, so earlier runs' memory messages have nothing to sit in.
+		if (this.boundPiRuntime === undefined) this.memoryMessages = [];
 		this.routingDiagnostics = [];
 		if (decisionModel !== undefined) {
 			this.routingDiagnostics.push({
@@ -2867,6 +2915,7 @@ export class AutoRAGAgent {
 	 * first registration.
 	 */
 	private singleDatasourceToolSpecs(): SingleDatasourceToolSpec[] {
+		const agentSelf = this;
 		const seen = new Set<string>();
 		const specs: SingleDatasourceToolSpec[] = [];
 		for (const skill of this.datasourceSkills) {
@@ -2881,10 +2930,16 @@ export class AutoRAGAgent {
 				.map((source) => source.source)
 				.filter((source) => source.split("/").filter((segment) => segment.length > 0).length === 2)
 				.slice(0, this.limits.toolDescriptionInstanceScopes);
+			const datasourceId = descriptor.datasourceId;
 			specs.push({
-				datasourceId: descriptor.datasourceId,
+				datasourceId,
 				description: descriptor.description,
 				instanceScopes,
+				// Read when the tool is declared: after the filters were refreshed, so a first session already names the ids.
+				get filterNames(): readonly string[] {
+					return (agentSelf.searchFilterCache.get(datasourceId) ?? []).map((filter) => filter.name);
+				},
+				searchFilters: () => agentSelf.searchFilterCache.get(datasourceId) ?? [],
 			});
 		}
 		return specs;
@@ -3950,6 +4005,10 @@ export class AutoRAGAgent {
 			const batchedMinSync = needsParsed && wants("minsync");
 			const minSyncBatches: MinSyncSyncResult[] = [];
 			const minSyncBatchFailures: SearchDocumentDiagnostic[] = [];
+			let minSyncOmittedFailures = 0;
+			let minSyncFailureIdentity: string | undefined;
+			let minSyncFailureStreak = 0;
+			let minSyncSystemicStop = false;
 			// Cumulative offsets keep the persisted MinSync counters monotonic
 			// across syncs instead of restarting at zero per sync.
 			let minSyncSyncedBase = 0;
@@ -3980,14 +4039,28 @@ export class AutoRAGAgent {
 							// indexes the files of any earlier failed sync: only failures after
 							// the last success are still real. A failed sync's content stays
 							// staged, so a later sync retries it and the pipeline moves on.
-							if (result.ok) minSyncBatchFailures.length = 0;
-							else if (result.reason !== "lock-held") {
-								for (const virtualPath of virtualPaths) {
+							if (result.ok) {
+								minSyncBatchFailures.length = 0;
+								minSyncOmittedFailures = 0;
+								minSyncFailureIdentity = undefined;
+								minSyncFailureStreak = 0;
+							} else if (result.reason !== "lock-held") {
+								// Keep both structured fields: different causes can share a public code.
+								const identity = JSON.stringify([result.reason ?? null, result.diagnostic?.code ?? null]);
+								minSyncFailureStreak = identity === minSyncFailureIdentity ? minSyncFailureStreak + 1 : 1;
+								minSyncFailureIdentity = identity;
+								minSyncSystemicStop = minSyncFailureStreak >= MINSYNC_SYSTEMIC_FAILURE_THRESHOLD;
+								const retained = Math.min(
+									virtualPaths.length,
+									MINSYNC_BATCH_FAILURE_LIMIT - minSyncBatchFailures.length,
+								);
+								minSyncOmittedFailures += virtualPaths.length - retained;
+								for (let pathIndex = 0; pathIndex < retained; pathIndex += 1) {
 									minSyncBatchFailures.push({
 										code: "minsync-sync-failed",
 										severity: "warning",
 										message: `This file stayed at its previous index entry: the sync that covered it could not index it and the next sync retries it. ${sanitizeDiagnosticMessage(result.diagnostic?.message ?? result.reason ?? "MinSync sync failed.")}`,
-										source: virtualPath,
+										source: virtualPaths[pathIndex],
 									});
 								}
 							}
@@ -3995,7 +4068,11 @@ export class AutoRAGAgent {
 							minSyncTotalBase = syncTotal;
 							// A held lock means another sync owns the index: stop the pipeline instead
 							// of failing every remaining sync against the same lock.
-							return !result.ok && result.reason === "lock-held" ? { stop: true } : undefined;
+							// Repeated systemic failures stop at the next committed-batch callback;
+							// already in-flight parsing may still commit its current batch.
+							return minSyncSystemicStop || (!result.ok && result.reason === "lock-held")
+								? { stop: true }
+								: undefined;
 						},
 					})
 				: undefined;
@@ -4148,7 +4225,25 @@ export class AutoRAGAgent {
 				finishedAt: new Date().toISOString(),
 			});
 			writeRefreshProgress(this.workspaceProjectRoot, progress);
-			const minsyncDiagnostics = [...minSyncRefreshDiagnostics(minsync), ...minSyncBatchFailures];
+			const minsyncDiagnostics = minSyncRefreshDiagnostics(minsync);
+			if (minSyncSystemicStop && minsync !== undefined) {
+				const terminal = minsyncDiagnostics[0] ?? toMinSyncReasonDiagnostic(minsync.reason ?? "unknown failure");
+				minsyncDiagnostics.splice(0, minsyncDiagnostics.length, {
+					...terminal,
+					reason: sanitizeDiagnosticMessage(minsync.reason ?? minsync.diagnostic?.code ?? "unknown failure"),
+					message: `${terminal.message} MinSync refresh stopped after ${MINSYNC_SYSTEMIC_FAILURE_THRESHOLD} consecutive sync failures with the same cause. Committed mirrors are retained; the next refresh resumes the committed work after the cause is fixed.`,
+				});
+			} else {
+				minsyncDiagnostics.push(...minSyncBatchFailures);
+				if (minSyncOmittedFailures > 0) {
+					minsyncDiagnostics.push({
+						code: "minsync-sync-failed",
+						severity: "warning",
+						source: "minsync",
+						message: `${minSyncOmittedFailures} additional per-file MinSync sync failure warnings omitted (limit ${MINSYNC_BATCH_FAILURE_LIMIT}).`,
+					});
+				}
+			}
 			const publicMinsync: AutoRAGMinSyncRefreshResult | undefined = minsync
 				? {
 						ok: minsync.ok,
@@ -4233,7 +4328,7 @@ export class AutoRAGAgent {
 				message:
 					health.backend === "remote"
 						? `The configured remote embedding endpoint is not answering (${health.detail ?? "no response"}); semantic search is unavailable until it is back.`
-						: "No embedding backend is running, so semantic search is unavailable (keyword search still works). Start `minsync serve --idle-timeout 0` (docs/minsync-setup.md), press Ctrl+Shift+E in the TUI, or set minSync.embedder to a remote endpoint.",
+						: "No embedding backend is running, so semantic search is unavailable (keyword search still works). Start `minsync serve --idle-timeout 0` (docs/indexing/embedding-backends.md), press Ctrl+Shift+E in the TUI, or set minSync.embedder to a remote endpoint.",
 				source: "embedding",
 			},
 		];
@@ -4265,7 +4360,7 @@ export class AutoRAGAgent {
 					source: "minsync",
 					reason: error.code,
 					message:
-						"MinSync lacks the required durable stage protocol. Install the compatible build documented in docs/minsync-setup.md.",
+						"MinSync lacks the required durable stage protocol. Install the compatible build documented in docs/indexing/embedding-backends.md.",
 				};
 			}
 		}
@@ -4931,10 +5026,14 @@ export class AutoRAGAgent {
 	async retrieveWithDiagnostics(
 		query: string,
 		options: RetrievalOptions = {},
-	): Promise<{ results: RetrievalResult[]; diagnostics: RetrievalDiagnostic[] }> {
+	): Promise<{ results: RetrievalResult[]; diagnostics: RetrievalDiagnostic[]; window?: RetrievalWindowReport }> {
 		options = this.normalizeRetrievalOptions(options);
 		const methods = this.methodRegistry.list();
-		const { results: byMethod, diagnostics } = await this.retriever.retrieveWithDiagnostics(methods, query, options);
+		const {
+			results: byMethod,
+			diagnostics,
+			window,
+		} = await this.retriever.retrieveWithDiagnostics(methods, query, options);
 		const filteredByMethod = filterDatasourceScope(byMethod, methods, options.scope);
 		const merged = this.merger.merge(filteredByMethod, {
 			topK: options.topK ?? this.limits.mergedEvidenceCeiling,
@@ -4942,16 +5041,24 @@ export class AutoRAGAgent {
 			...(this.limits.recordCut === undefined ? {} : { recordCut: this.limits.recordCut }),
 		});
 		const results = await this.applyRerank(query, merged, diagnostics);
-		return { results, diagnostics };
+		return { results, diagnostics, ...(window === undefined ? {} : { window }) };
 	}
 
 	async searchAllDocuments(
 		query: string,
-		options: { readonly topK?: number; readonly scope?: string; readonly signal?: AbortSignal } = {},
-	): Promise<{ results: RetrievalResult[]; diagnostics: RetrievalDiagnostic[] }> {
+		options: {
+			readonly topK?: number;
+			readonly scope?: string;
+			readonly since?: number;
+			readonly until?: number;
+			readonly signal?: AbortSignal;
+		} = {},
+	): Promise<{ results: RetrievalResult[]; diagnostics: RetrievalDiagnostic[]; window?: RetrievalWindowReport }> {
 		return this.retrieveWithDiagnostics(query, {
 			topK: options.topK,
 			scope: options.scope,
+			...(options.since === undefined ? {} : { since: options.since }),
+			...(options.until === undefined ? {} : { until: options.until }),
 			...(options.signal === undefined ? {} : { signal: options.signal }),
 		});
 	}
@@ -4969,12 +5076,22 @@ export class AutoRAGAgent {
 	async searchSingleDatasourceDocuments(
 		datasourceId: string,
 		query: string,
-		options: { readonly topK?: number; readonly scope?: string; readonly signal?: AbortSignal } = {},
-	): Promise<{ results: RetrievalResult[]; diagnostics: RetrievalDiagnostic[] }> {
+		options: {
+			readonly topK?: number;
+			readonly scope?: string;
+			readonly since?: number;
+			readonly until?: number;
+			readonly filters?: Readonly<Record<string, readonly string[]>>;
+			readonly signal?: AbortSignal;
+		} = {},
+	): Promise<{ results: RetrievalResult[]; diagnostics: RetrievalDiagnostic[]; window?: RetrievalWindowReport }> {
 		const retrievalOptions: RetrievalOptions = {
 			...this.activeRetrievalOptions,
 			topK: options.topK,
 			scope: options.scope,
+			...(options.filters === undefined ? {} : { filters: options.filters }),
+			...(options.since === undefined ? {} : { since: options.since }),
+			...(options.until === undefined ? {} : { until: options.until }),
 			...(options.signal === undefined ? {} : { signal: options.signal }),
 		};
 		const methods = this.methodRegistry.list().filter((method) => {
@@ -4982,11 +5099,11 @@ export class AutoRAGAgent {
 			return descriptor.datasourceId === datasourceId;
 		});
 		if (methods.length === 0) return { results: [], diagnostics: [] };
-		const { results: byMethod, diagnostics } = await this.retriever.retrieveWithDiagnostics(
-			methods,
-			query,
-			retrievalOptions,
-		);
+		const {
+			results: byMethod,
+			diagnostics,
+			window,
+		} = await this.retriever.retrieveWithDiagnostics(methods, query, retrievalOptions);
 		const filteredByMethod = filterDatasourceScope(byMethod, methods, options.scope);
 		const merged = this.merger.merge(filteredByMethod, {
 			topK: options.topK ?? this.limits.singleDatasourceTopK,
@@ -4995,7 +5112,35 @@ export class AutoRAGAgent {
 		});
 		// Single-datasource retrieval is intentionally NOT model-reranked: the
 		// caller already narrowed to one connection, so the merged order is kept.
-		return { results: merged, diagnostics };
+		return { results: merged, diagnostics, ...(window === undefined ? {} : { window }) };
+	}
+
+	/**
+	 * The per-search filters one datasource connection offers now, with the exact ids each accepts. Read from the
+	 * datasource itself, so a connection that cannot answer (CLI missing, empty index) offers none and a value is not
+	 * second-guessed here. Also refreshes what the connection's tool description names.
+	 */
+	async searchFilterSpecs(datasourceId: string, signal?: AbortSignal): Promise<readonly SearchFilterSpec[]> {
+		const skill = this.datasourceSkills.find((candidate) => candidate.describe().datasourceId === datasourceId);
+		if (skill?.searchFilters === undefined || signal?.aborted === true) return [];
+		try {
+			const specs = await skill.searchFilters();
+			this.searchFilterCache.set(datasourceId, specs);
+			return specs;
+		} catch {
+			// A filter list is a convenience for the model; a failing datasource still answers searches (or reports why not).
+			return [];
+		}
+	}
+
+	/** Reads every connection's filters once, before a session declares its tools, so the ids appear in the descriptions. */
+	private async refreshSearchFilters(signal?: AbortSignal): Promise<void> {
+		const ids = new Set<string>();
+		for (const skill of this.datasourceSkills) {
+			const id = skill.describe().datasourceId;
+			if (id !== undefined && skill.searchFilters !== undefined) ids.add(id);
+		}
+		await Promise.all([...ids].map((id) => this.searchFilterSpecs(id, signal)));
 	}
 
 	/** The retrieval method registry (posix, MinSync, and datasource methods). */
@@ -5170,6 +5315,35 @@ function frameSteers(messages: AgentMessage[], steerTexts: ReadonlySet<string>):
 	});
 }
 
+/** One run's `<memory_context>` message and the timestamp of the user message it was first placed in front of. */
+interface MemoryMessageRecord {
+	readonly anchor: number;
+	readonly message: AgentMessage;
+}
+
+/**
+ * Puts each recorded memory message back in front of the user message it was first placed before. A record whose user
+ * message is no longer in the transcript (compacted away, another branch) is skipped.
+ */
+function withMemoryMessages(messages: AgentMessage[], records: readonly MemoryMessageRecord[]): AgentMessage[] {
+	if (records.length === 0) return messages;
+	const pending = new Map(records.map((record) => [record.anchor, record.message]));
+	const out: AgentMessage[] = [];
+	let inserted = false;
+	for (const message of messages) {
+		if (message.role === "user") {
+			const memory = pending.get(message.timestamp);
+			if (memory !== undefined) {
+				pending.delete(message.timestamp);
+				out.push(memory);
+				inserted = true;
+			}
+		}
+		out.push(message);
+	}
+	return inserted ? out : messages;
+}
+
 /** Restates the run's steers for a verification phase that starts after them. */
 function formatSteerContext(steers: readonly string[]): string {
 	if (steers.length === 0) return "";
@@ -5209,6 +5383,29 @@ function formatFirstAnswerContext(fastAnswer: string | undefined, delivered: boo
  * states the search-range failure, carries the agent's own last note as the
  * reason, suggests next steps, and points at the attached retrieval trace.
  */
+/**
+ * The window a search tool call asked for, as ISO instants, for the run trace. Undefined when the call carried none or
+ * its bounds do not parse: the tool itself rejects those verbatim, so the trace never records a window that was not used.
+ */
+function windowForTrace(args: unknown): { since?: string; until?: string } | undefined {
+	if (typeof args !== "object" || args === null) return undefined;
+	const { since, until } = args as { since?: unknown; until?: unknown };
+	let window: TimeWindow | undefined;
+	try {
+		window = parseTimeWindow({
+			since: typeof since === "string" ? since : undefined,
+			until: typeof until === "string" ? until : undefined,
+		});
+	} catch {
+		return undefined;
+	}
+	if (window === undefined) return undefined;
+	return {
+		...(window.since === undefined ? {} : { since: new Date(window.since).toISOString() }),
+		...(window.until === undefined ? {} : { until: new Date(window.until).toISOString() }),
+	};
+}
+
 function buildMissingFinalAnswer(
 	query: string,
 	reason: string | undefined,

@@ -368,3 +368,37 @@ describe("CLI config datasources wiring", () => {
 		expect(() => resolveConfig({ flags: { config: badDatasources } })).toThrow(ConfigError);
 	});
 });
+
+describe("wombat's mirror is not indexed a second time", () => {
+	it("excludes the mirror from local indexing, whether it sits in the default or a custom data dir", () => {
+		const home = join(tmpRoot, "home");
+		const custom = join(tmpRoot, "custom-wombat");
+		const configPath = writeConfig({
+			searchPaths: [tmpRoot],
+			workspacePath: tmpRoot,
+			excludePaths: [join(tmpRoot, "private")],
+			datasources: {
+				wombat: {},
+				work: { type: "wombat", connector: { dataDir: custom } },
+			},
+		});
+		const previous = process.env.HOME;
+		process.env.HOME = home;
+		try {
+			const options = buildAgentOptions(resolveConfig({ flags: { config: configPath } }));
+			expect(options.excludePaths).toEqual([
+				join(tmpRoot, "private"),
+				join(home, ".wombat", "mirror"),
+				join(custom, "mirror"),
+			]);
+		} finally {
+			if (previous === undefined) delete process.env.HOME;
+			else process.env.HOME = previous;
+		}
+	});
+
+	it("leaves excludePaths alone when no wombat datasource is configured", () => {
+		const configPath = writeConfig({ searchPaths: [tmpRoot], workspacePath: tmpRoot, datasources: {} });
+		expect(buildAgentOptions(resolveConfig({ flags: { config: configPath } })).excludePaths).toBeUndefined();
+	});
+});
