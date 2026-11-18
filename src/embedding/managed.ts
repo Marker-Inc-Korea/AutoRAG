@@ -59,7 +59,7 @@ async function probeRemote(remote: RemoteEmbedderSettings, fetchImpl: typeof fet
 
 /**
  * The one embedder every AutoRAG consumer shares. AutoRAG owns no embedding model and never starts or stops
- * a process: the operator runs `minsync serve` (see docs/minsync-setup.md) or points at a remote endpoint.
+ * a process: the operator runs `minsync serve` (see docs/indexing/embedding-backends.md) or points at a remote endpoint.
  *
  * - **remote**: a configured endpoint is used as is; nothing local is looked for or loaded.
  * - **daemon**: a running `minsync serve` is preferred, because it keeps one warm copy of the model for every
@@ -149,7 +149,7 @@ export function createManagedEmbedder(options: ManagedEmbedderOptions): ManagedE
 			return { source: await loadInProcess(), viaDaemon: false };
 		} catch (error) {
 			throw new Error(
-				`no embedding daemon is running and no in-process embedder is installed: ${message(error)}. Start \`minsync serve\` (see docs/minsync-setup.md) or set minSync.embedder to a remote endpoint.`,
+				`no embedding daemon is running and no in-process embedder is installed: ${message(error)}. Start \`minsync serve\` (see docs/indexing/embedding-backends.md) or set minSync.embedder to a remote endpoint.`,
 				{ cause: error },
 			);
 		}

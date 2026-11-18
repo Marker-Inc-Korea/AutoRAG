@@ -17,7 +17,7 @@ import {
 import { mapDatasourceDiagnostics } from "../datasource/diagnostics.ts";
 import { type DatasourceRetryOptions, indexWithRetry } from "../datasource/retry.ts";
 import { filterDatasourceScope } from "../datasource/scope.ts";
-import type { DatasourceIndexResult, DatasourceSkill } from "../datasource/types.ts";
+import type { DatasourceIndexResult, DatasourceSkill, SearchFilterSpec } from "../datasource/types.ts";
 import {
 	DupeyCliError,
 	type DupeyCliOptions,
@@ -1103,6 +1103,8 @@ export class AutoRAGAgent {
 	private readonly everythingClient: EverythingClient | undefined;
 	private readonly fsearchClient: FSearchClient | undefined;
 	private readonly datasourceSkills: readonly DatasourceSkill[];
+	/** Filters each connection offered the last time they were read, for the tool descriptions. */
+	private readonly searchFilterCache = new Map<string, readonly SearchFilterSpec[]>();
 	private readonly datasourceRetry: DatasourceRetryOptions;
 	private readonly startupDiagnostics: readonly SearchDocumentDiagnostic[];
 	private readonly datasourceAgentSkills: readonly DatasourceAgentSkill[];
@@ -1801,6 +1803,8 @@ export class AutoRAGAgent {
 				dispose: () => {},
 			};
 		}
+		// The ids a datasource can filter on are part of its tool's description, so read them before the tools are declared.
+		await this.refreshSearchFilters();
 		const piSession = await createAutoRAGPiSession({
 			cwd: this.workspaceProjectRoot,
 			agentDir: this.piAgentDir,
@@ -2980,6 +2984,7 @@ export class AutoRAGAgent {
 	 * first registration.
 	 */
 	private singleDatasourceToolSpecs(): SingleDatasourceToolSpec[] {
+		const agentSelf = this;
 		const seen = new Set<string>();
 		const specs: SingleDatasourceToolSpec[] = [];
 		for (const skill of this.datasourceSkills) {
@@ -2994,10 +2999,16 @@ export class AutoRAGAgent {
 				.map((source) => source.source)
 				.filter((source) => source.split("/").filter((segment) => segment.length > 0).length === 2)
 				.slice(0, this.limits.toolDescriptionInstanceScopes);
+			const datasourceId = descriptor.datasourceId;
 			specs.push({
-				datasourceId: descriptor.datasourceId,
+				datasourceId,
 				description: descriptor.description,
 				instanceScopes,
+				// Read when the tool is declared: after the filters were refreshed, so a first session already names the ids.
+				get filterNames(): readonly string[] {
+					return (agentSelf.searchFilterCache.get(datasourceId) ?? []).map((filter) => filter.name);
+				},
+				searchFilters: () => agentSelf.searchFilterCache.get(datasourceId) ?? [],
 			});
 		}
 		return specs;
@@ -4386,7 +4397,7 @@ export class AutoRAGAgent {
 				message:
 					health.backend === "remote"
 						? `The configured remote embedding endpoint is not answering (${health.detail ?? "no response"}); semantic search is unavailable until it is back.`
-						: "No embedding backend is running, so semantic search is unavailable (keyword search still works). Start `minsync serve --idle-timeout 0` (docs/minsync-setup.md), press Ctrl+Shift+E in the TUI, or set minSync.embedder to a remote endpoint.",
+						: "No embedding backend is running, so semantic search is unavailable (keyword search still works). Start `minsync serve --idle-timeout 0` (docs/indexing/embedding-backends.md), press Ctrl+Shift+E in the TUI, or set minSync.embedder to a remote endpoint.",
 				source: "embedding",
 			},
 		];
@@ -4418,7 +4429,7 @@ export class AutoRAGAgent {
 					source: "minsync",
 					reason: error.code,
 					message:
-						"MinSync lacks the required durable stage protocol. Install the compatible build documented in docs/minsync-setup.md.",
+						"MinSync lacks the required durable stage protocol. Install the compatible build documented in docs/indexing/embedding-backends.md.",
 				};
 			}
 		}
@@ -5139,6 +5150,7 @@ export class AutoRAGAgent {
 			readonly scope?: string;
 			readonly since?: number;
 			readonly until?: number;
+			readonly filters?: Readonly<Record<string, readonly string[]>>;
 			readonly signal?: AbortSignal;
 		} = {},
 	): Promise<{ results: RetrievalResult[]; diagnostics: RetrievalDiagnostic[]; window?: RetrievalWindowReport }> {
@@ -5146,6 +5158,7 @@ export class AutoRAGAgent {
 			...this.activeRetrievalOptions,
 			topK: options.topK,
 			scope: options.scope,
+			...(options.filters === undefined ? {} : { filters: options.filters }),
 			...(options.since === undefined ? {} : { since: options.since }),
 			...(options.until === undefined ? {} : { until: options.until }),
 			...(options.signal === undefined ? {} : { signal: options.signal }),
@@ -5169,6 +5182,34 @@ export class AutoRAGAgent {
 		// Single-datasource retrieval is intentionally NOT model-reranked: the
 		// caller already narrowed to one connection, so the merged order is kept.
 		return { results: merged, diagnostics, ...(window === undefined ? {} : { window }) };
+	}
+
+	/**
+	 * The per-search filters one datasource connection offers now, with the exact ids each accepts. Read from the
+	 * datasource itself, so a connection that cannot answer (CLI missing, empty index) offers none and a value is not
+	 * second-guessed here. Also refreshes what the connection's tool description names.
+	 */
+	async searchFilterSpecs(datasourceId: string, signal?: AbortSignal): Promise<readonly SearchFilterSpec[]> {
+		const skill = this.datasourceSkills.find((candidate) => candidate.describe().datasourceId === datasourceId);
+		if (skill?.searchFilters === undefined || signal?.aborted === true) return [];
+		try {
+			const specs = await skill.searchFilters();
+			this.searchFilterCache.set(datasourceId, specs);
+			return specs;
+		} catch {
+			// A filter list is a convenience for the model; a failing datasource still answers searches (or reports why not).
+			return [];
+		}
+	}
+
+	/** Reads every connection's filters once, before a session declares its tools, so the ids appear in the descriptions. */
+	private async refreshSearchFilters(signal?: AbortSignal): Promise<void> {
+		const ids = new Set<string>();
+		for (const skill of this.datasourceSkills) {
+			const id = skill.describe().datasourceId;
+			if (id !== undefined && skill.searchFilters !== undefined) ids.add(id);
+		}
+		await Promise.all([...ids].map((id) => this.searchFilterSpecs(id, signal)));
 	}
 
 	/** The retrieval method registry (posix, MinSync, and datasource methods). */

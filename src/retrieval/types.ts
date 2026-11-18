@@ -54,6 +54,11 @@ export interface RetrievalOptions {
 	 */
 	since?: number;
 	until?: number;
+	/**
+	 * Per-search filters a datasource declares through {@link DatasourceSkill.searchFilters}, by filter name. Like `scope`,
+	 * they only narrow: a method that does not know a filter ignores it, and none can reach past the operator's config.
+	 */
+	filters?: Readonly<Record<string, readonly string[]>>;
 	signal?: AbortSignal;
 	/**
 	 * Owned by the retrieval pipeline, not by callers: invoked when a method answered through a fallback.

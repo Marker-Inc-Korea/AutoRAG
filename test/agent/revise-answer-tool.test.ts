@@ -244,7 +244,15 @@ describe("formatRevision (the terminal view of a correction)", () => {
 			},
 			tagTheme,
 		);
-		const plain = lines.map((line) => line.replace(/<\/?[a-z]+>/gu, ""));
+		// The theme wraps text in <tag>…</tag> pairs; peel the tags off one at a time until none is left.
+		const plain = lines.map((line) => {
+			let text = line;
+			for (let before = ""; before !== text; ) {
+				before = text;
+				text = text.replace(/<\/?[a-z]+>/u, "");
+			}
+			return text;
+		});
 		expect(plain.slice(1)).toEqual(["− - Paid monthly [3]", "+ - Paid monthly, net 60 [3]"]);
 		expect(plain.join("\n")).not.toMatch(/^- - /mu);
 	});

@@ -28,8 +28,23 @@ const BLOCK_ITEM = /^\s*(?:[-*+•]|\d+[.)]|#{1,6}|>)\s/u;
 const CJK_STOP = /[。！？]/u;
 const ASCII_STOP = /[.!?]/u;
 const CLOSER = /[)"'”’」』]/u;
-/** Model-form citations that directly follow a sentence's full stop: they back the sentence, not the next one. */
-const CITATION_RUN = /(?:[ \t]*\[(?:e\d+(?:[ \t]*,[ \t]*e\d+)*|file:[^\]\n]*)\])+/uy;
+/**
+ * One model-form citation, with the spaces before it: `[e3]`, `[e3, e4]` or `[file:path]`. Citations that directly follow a
+ * sentence's full stop back the sentence, not the next one, so {@link citationRunEnd} takes them one after another. The
+ * runs are matched one citation at a time (never as a repeated group) so no input can make the matcher backtrack.
+ */
+const CITATION = /[ \t]*\[(?:e\d+(?:[ \t]*,[ \t]*e\d+)*|file:[^\]\n]*)\]/uy;
+
+/** Where the run of citations that starts at `from` ends; `from` itself when none does. */
+function citationRunEnd(text: string, from: number): number {
+	let end = from;
+	for (;;) {
+		CITATION.lastIndex = end;
+		const match = CITATION.exec(text);
+		if (match === null) return end;
+		end += match[0].length;
+	}
+}
 
 function lineSpans(text: string): Span[] {
 	const spans: Span[] = [];
@@ -67,9 +82,7 @@ function sentenceEnd(text: string, from: number, limit: number): number {
 			continue;
 		}
 		while (stop < limit && CLOSER.test(text.charAt(stop))) stop++;
-		CITATION_RUN.lastIndex = stop;
-		const citations = CITATION_RUN.exec(text);
-		return citations === null ? stop : Math.min(limit, stop + citations[0].length);
+		return Math.min(limit, citationRunEnd(text, stop));
 	}
 	return limit;
 }

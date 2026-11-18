@@ -7,7 +7,7 @@
  * Nothing is faked: the server, its index, and the captured pages come from `hister listen` plus the Hister
  * Chrome/Firefox extension.
  *
- * Prerequisites (see docs/datasource-skills.md, "Browser history via Hister"):
+ * Prerequisites (see docs/datasources/hister.md):
  *   1. `hister listen` is running (default http://127.0.0.1:4433).
  *   2. The Hister extension captured the pages named in HISTER_QA_EXPECT (comma-separated `url|token`).
  *
