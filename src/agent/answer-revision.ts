@@ -29,20 +29,47 @@ const CJK_STOP = /[。！？]/u;
 const ASCII_STOP = /[.!?]/u;
 const CLOSER = /[)"'”’」』]/u;
 /**
- * One model-form citation, with the spaces before it: `[e3]`, `[e3, e4]` or `[file:path]`. Citations that directly follow a
- * sentence's full stop back the sentence, not the next one, so {@link citationRunEnd} takes them one after another. The
- * runs are matched one citation at a time (never as a repeated group) so no input can make the matcher backtrack.
+ * Where the model-form citation that starts at `from` ends, or -1 when none does: spaces and tabs, then `[e3]`, `[e3, e4]`
+ * or `[file:path]`. Citations that directly follow a sentence's full stop back the sentence, not the next one, so
+ * {@link citationRunEnd} takes them one after another. Read by hand, one character at a time and never backwards, so no
+ * input can make the work grow faster than its length.
  */
-const CITATION = /[ \t]*\[(?:e\d+(?:[ \t]*,[ \t]*e\d+)*|file:[^\]\n]*)\]/uy;
+function citationEnd(text: string, from: number): number {
+	let at = from;
+	while (text.charAt(at) === " " || text.charAt(at) === "\t") at++;
+	if (text.charAt(at) !== "[") return -1;
+	at++;
+	if (text.startsWith("file:", at)) {
+		for (at += "file:".length; at < text.length; at++) {
+			const char = text.charAt(at);
+			if (char === "]") return at + 1;
+			if (char === "\n") return -1;
+		}
+		return -1;
+	}
+	for (;;) {
+		if (text.charAt(at) !== "e") return -1;
+		at++;
+		const digits = at;
+		while (text.charAt(at) >= "0" && text.charAt(at) <= "9" && text.charAt(at) !== "") at++;
+		if (at === digits) return -1;
+		let next = at;
+		while (text.charAt(next) === " " || text.charAt(next) === "\t") next++;
+		if (text.charAt(next) === "]") return next + 1;
+		if (text.charAt(next) !== ",") return -1;
+		next++;
+		while (text.charAt(next) === " " || text.charAt(next) === "\t") next++;
+		at = next;
+	}
+}
 
 /** Where the run of citations that starts at `from` ends; `from` itself when none does. */
 function citationRunEnd(text: string, from: number): number {
 	let end = from;
 	for (;;) {
-		CITATION.lastIndex = end;
-		const match = CITATION.exec(text);
-		if (match === null) return end;
-		end += match[0].length;
+		const next = citationEnd(text, end);
+		if (next < 0) return end;
+		end = next;
 	}
 }
 

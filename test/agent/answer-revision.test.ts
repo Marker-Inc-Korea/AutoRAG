@@ -86,6 +86,31 @@ describe("splitClaims", () => {
 		]);
 	});
 
+	it("keeps every citation of a run, comma lists and spaces included, with the sentence they back", () => {
+		const claims = splitClaims("Paid monthly. [e1, e2]\t[e3] [file:/a b] Next. [e4 ,e5]");
+		expect(claims.map((claim) => claim.text)).toEqual(["Paid monthly. [e1, e2]\t[e3] [file:/a b]", "Next. [e4 ,e5]"]);
+	});
+
+	it("leaves a malformed citation to the next sentence instead of swallowing it", () => {
+		for (const broken of ["[e]", "[e1", "[e1,]", "[e1 e2]", "[file:/a", "[file:/a\nb]", "[x1]"]) {
+			const claims = splitClaims(`Paid monthly. ${broken} Next.`);
+			expect(claims[0]?.text).toBe("Paid monthly.");
+		}
+	});
+
+	it("splits a long hostile line in linear time", () => {
+		for (const hostile of [
+			"[file:".repeat(60_000),
+			`Done.${"\t".repeat(100_000)}x`,
+			`Done. ${"[e1]".repeat(60_000)}`,
+			`Done. [e1${",e1".repeat(60_000)}]`,
+		]) {
+			const started = performance.now();
+			splitClaims(hostile);
+			expect(performance.now() - started).toBeLessThan(1_000);
+		}
+	});
+
 	it("does not split inside decimals, versions, or file paths", () => {
 		const claims = splitClaims("Version 3.5 shipped on /a/b.txt yesterday. Next.");
 		expect(claims.map((claim) => claim.text)).toEqual(["Version 3.5 shipped on /a/b.txt yesterday.", "Next."]);
