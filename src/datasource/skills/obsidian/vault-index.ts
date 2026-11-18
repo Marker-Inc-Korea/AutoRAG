@@ -169,7 +169,10 @@ export class ObsidianVaultIndex {
 		const workspaceRoot = this.workspaceRoot;
 		if (workspaceRoot === undefined) throw new Error("no workspace is configured to hold the vault index");
 		const workspace = obsidianMinSyncWorkspace(workspaceRoot, this.instanceId);
-		return runWorkspaceQuery(workspace, () => this.queryLocked(mode, query, options, workspaceRoot, workspace));
+		// A vault answers only from a completed sync (`cursor.json`), so it keeps the exact "another sync is in progress" during its first.
+		return runWorkspaceQuery(workspace, () => this.queryLocked(mode, query, options, workspaceRoot, workspace), {
+			duringFirstSync: false,
+		});
 	}
 
 	private async queryLocked(
