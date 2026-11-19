@@ -53,7 +53,7 @@ autorag --help          # prints the command list, exit 0
 autorag setup           # probes runtime and datasources, exit 0 when everything is ready
 ```
 
-`autorag setup` probes MinSync, the embedding backend (a configured remote endpoint, a running `minsync serve` daemon, or MinSync's in-process engine), and every known datasource. When no config exists yet it writes a default one first, using `--search-paths` and `--workspace`. It exits 0 when every probe is ready and 1 when something is blocked. Add `--format json` for machine-readable output.
+`autorag setup` probes MinSync, the embedding backend (a configured remote endpoint, a running `inl serve` daemon, or MinSync's in-process engine), and every known datasource. When no config exists yet it writes a default one first, using `--search-paths` and `--workspace`. It exits 0 when every probe is ready and 1 when something is blocked. Add `--format json` for machine-readable output.
 
 ```text
 setup: semantic
@@ -62,11 +62,11 @@ embedding: daemon (minsync/Qwen/Qwen3-Embedding-0.6B, 1024d)
   rss: skipped (not configured)
 ```
 
-**Note:** `autorag setup` only probes; it never starts the embedding daemon. Semantic search needs a running `minsync serve` daemon or a configured remote `minSync.embedder`. The write-side setup (indexing, model configuration) is covered in [Quickstart](quickstart.md).
+**Note:** `autorag setup` only probes; it never starts the embedding daemon. Semantic search needs a running `inl serve` daemon or a configured remote `minSync.embedder`. The write-side setup (indexing, model configuration) is covered in [Quickstart](quickstart.md).
 
 ## Platform notes
 
-**MinSync (all platforms).** MinSync is required and auto-installs into `<workspace>/.autorag/bin`, from crates.io (`cargo install minsync`) or, when cargo is unavailable, a verified GitHub release asset. Its model cache lives at `~/.cache/minsync/models`. There is no supported way to disable MinSync.
+**MinSync (all platforms).** MinSync is required and auto-installs into `<workspace>/.autorag/bin`, from crates.io (`cargo install minsync`) or, when cargo is unavailable, a verified GitHub release asset. It shares im-not-llm's model cache at `~/.cache/im-not-llm/models`. There is no supported way to disable MinSync.
 
 **Jikji (all platforms, optional).** AutoRAG auto-installs the pinned `jikji-cli` through cargo when a Rust toolchain exists. A `jikji` on `PATH` older than the pinned version is skipped and replaced by the cached build on the next refresh.
 

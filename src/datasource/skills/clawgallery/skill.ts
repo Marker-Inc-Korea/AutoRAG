@@ -182,6 +182,7 @@ export class ClawGallerySkill implements DatasourceSkill {
 				"- `keyword` searches image paths and captions and remains available without a vector index.",
 				"- `lexical` requires a sparse V-SPLADE index created with `clawgallery vdr sync --backend vsplade`.",
 				"- `embedding` requires a dense VDR index created with `clawgallery vdr sync --backend mlx` (or another dense backend).",
+				"- `embedding` also works with `clawgallery vdr sync --backend inl`, the im-not-llm multimodal embedder (`google/embeddinggemma-2`, 768-d) served by `inl serve --multimodal`.",
 				"- Never use `embedding` just because a V-SPLADE index exists: V-SPLADE is sparse lexical retrieval, not dense embedding retrieval.",
 				"- Never use `lexical` unless a sparse V-SPLADE index exists; it must not fall back to dense vectors.",
 				"- `hybrid` is the default and asks ClawGallery to RRF-fuse keyword results with every available dense and sparse vector channel.",

@@ -351,8 +351,8 @@ export async function main(argv: readonly string[]): Promise<number> {
 		return 1;
 	} finally {
 		// MinSync's in-process model runs native threads that would keep the process alive after its answer
-		// is on stdout. Unload it here, where every command is covered; a `minsync serve` daemon is MinSync's
-		// own process and is left to stop itself when idle.
+		// is on stdout. Unload it here, where every command is covered; an `inl serve` daemon is its own
+		// process and is left to stop itself when idle.
 		await releaseEmbedders();
 	}
 }

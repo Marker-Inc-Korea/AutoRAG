@@ -9,6 +9,7 @@ type LoggedCall = {
 	readonly descendantPid?: number;
 	readonly envApiKey?: string | null;
 	readonly envEmbedder?: string | null;
+	readonly envInlCache?: string | null;
 };
 
 const FAKE_CHILD_READY_TIMEOUT_MS = 10_000;
@@ -46,6 +47,7 @@ appendFileSync(${JSON.stringify(logPath)}, JSON.stringify({
   args,
   envApiKey: process.env.OPENAI_API_KEY ?? null,
   envEmbedder: process.env.KATOK_EMBEDDER ?? null,
+  envInlCache: process.env.INL_CACHE_DIR ?? null,
 }) + "\\n");
 
 const payload = process.env.LAZYKATOK_FAKE_OUTPUT ?? "{}";
@@ -109,7 +111,8 @@ function isLoggedCall(value: unknown): value is LoggedCall {
 		value.args.every((arg) => typeof arg === "string") &&
 		(value.descendantPid === undefined || typeof value.descendantPid === "number") &&
 		(value.envApiKey === undefined || isNullableString(value.envApiKey)) &&
-		(value.envEmbedder === undefined || isNullableString(value.envEmbedder))
+		(value.envEmbedder === undefined || isNullableString(value.envEmbedder)) &&
+		(value.envInlCache === undefined || isNullableString(value.envInlCache))
 	);
 }
 
@@ -145,6 +148,20 @@ describe("LazykatokClient", () => {
 		expect(result.data).toEqual({ version: "1.2.3", ready: true, metadata: {} });
 		const call = loggedCalls()[0];
 		expect(call?.args).toEqual(["doctor", "--json"]);
+	});
+
+	it("forwards the inl cache override to the CLI", async () => {
+		writeFakeLazykatok();
+		const previous = process.env.INL_CACHE_DIR;
+		process.env.INL_CACHE_DIR = "/tmp/inl-cache";
+		try {
+			const client = fakeClient({ LAZYKATOK_FAKE_OUTPUT: jsonEnv({ ready: true }) });
+			await client.doctor();
+			expect(loggedCalls()[0]?.envInlCache).toBe("/tmp/inl-cache");
+		} finally {
+			if (previous === undefined) delete process.env.INL_CACHE_DIR;
+			else process.env.INL_CACHE_DIR = previous;
+		}
 	});
 
 	it("forwards an explicitly configured workspacePath", async () => {

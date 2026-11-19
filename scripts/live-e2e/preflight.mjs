@@ -1,4 +1,4 @@
-/** Local-only `minsync serve` embedding daemon and optional datasource preflight. */
+/** Local-only im-not-llm `inl serve` embedding daemon and optional datasource preflight. */
 
 import { execFileSync } from "node:child_process";
 

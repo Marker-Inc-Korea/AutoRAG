@@ -16,7 +16,7 @@ import type {
 const DEFAULT_BINARY = "clawgallery";
 const DEFAULT_TIMEOUT_MS = 60_000;
 const DEFAULT_MAX_BUFFER_BYTES = 4 * 1024 * 1024;
-const SAFE_ENV = new Set(["HOME", "LANG", "LC_ALL", "PATH", "TMPDIR", "TMP", "TEMP", "NO_COLOR"]);
+const SAFE_ENV = new Set(["HOME", "LANG", "LC_ALL", "PATH", "TMPDIR", "TMP", "TEMP", "NO_COLOR", "INL_CACHE_DIR"]);
 
 export class ClawGalleryClient {
 	private readonly options: ClawGalleryOptions;

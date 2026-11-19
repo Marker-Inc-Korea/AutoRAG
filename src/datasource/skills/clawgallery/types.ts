@@ -1,7 +1,7 @@
 import type { RetrievalOptions } from "../../../retrieval/types.ts";
 
 export type ClawGallerySearchMode = "keyword" | "lexical" | "embedding" | "hybrid";
-export type ClawGalleryVdrBackend = "mlx" | "jina-mlx" | "vsplade";
+export type ClawGalleryVdrBackend = "mlx" | "jina-mlx" | "vsplade" | "inl";
 
 export interface ClawGalleryOptions {
 	readonly binaryPath?: string;

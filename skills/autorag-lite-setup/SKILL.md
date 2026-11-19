@@ -155,11 +155,11 @@ bundled by AutoRAG). Run `autorag setup --format json` and read the `hister` obj
 extension in the user's browser.
 
 Hister embeds with its own `semantic_search` config, so it must use the same model as
-AutoRAG (the `minsync serve` daemon, `Qwen/Qwen3-Embedding-0.6B`, 1024 dimensions) or
+AutoRAG (the `inl serve` daemon, `Qwen/Qwen3-Embedding-0.6B`, 1024 dimensions) or
 its vectors stop lining up without any error. `autorag setup --sync-hister` copies the
 shared settings into Hister's `config.yml` (backup kept), restarts the service, waits
 for it, and runs `hister reindex` when needed; it is idempotent, and it refuses a
-remote or in-process backend. Re-run it after restarting the `minsync serve` daemon
+remote or in-process backend. Re-run it after restarting the `inl serve` daemon
 (its port changes). Verify with `hister doctor`: `server.index.embeddings` must be `ok`.
 Install a skip list in Hister's `rules.json` before importing past history, because the
 importer re-downloads URLs without the browser's cookies (docs/datasources/hister.md).
@@ -186,10 +186,10 @@ AUTORAG_CONFIG=/absolute/path/to/.autorag/config.json autorag lite refresh --jso
   MinSync and Jikji auto-install during refresh (never during a query). If they
   are missing or broken, run a full refresh or return to setup rather than
   silently degrading to lexical-only search.
-- AutoRAG owns no embedding model; MinSync provisions
-  `Qwen/Qwen3-Embedding-0.6B` (1024 dimensions) in `~/.cache/minsync/models`. A
+- AutoRAG owns no embedding model; im-not-llm provisions
+  `Qwen/Qwen3-Embedding-0.6B` (1024 dimensions) in `~/.cache/im-not-llm/models`. A
   configured remote `minSync.embedder` is used first; otherwise a running
-  `minsync serve` daemon (started by `refresh`/`watch`, never by a search), and
+  `inl serve` daemon (started by `refresh`/`watch`, never by a search), and
   failing that MinSync's in-process engine via the optional
   `@nomadamas/minsync-native` addon. The local default needs no embedder flags
   and no API key. Override the embedder only when intentionally using a remote

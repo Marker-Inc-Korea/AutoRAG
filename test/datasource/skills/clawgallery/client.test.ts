@@ -22,6 +22,26 @@ describe("ClawGalleryClient", () => {
 		expect(await client.syncVisual()).toMatchObject({ ok: true, data: { processed: 1 } });
 	});
 
+	it("passes the inl dense backend through to `vdr sync --backend`", async () => {
+		const binaryPath = stubBinary('printf \'{"processed":1,"args":"%s"}\' "$*"');
+		const result = await new ClawGalleryClient({ binaryPath, vdrBackend: "inl" }).syncVisual();
+		expect(result).toMatchObject({ ok: true, data: { processed: 1 } });
+		expect(result.stdout).toContain("--backend inl");
+	});
+
+	it("forwards the inl cache override to the CLI", async () => {
+		const binaryPath = stubBinary('printf \'{"cache":"%s"}\' "$INL_CACHE_DIR"');
+		const previous = process.env.INL_CACHE_DIR;
+		process.env.INL_CACHE_DIR = "/tmp/inl-cache";
+		try {
+			const result = await new ClawGalleryClient({ binaryPath }).bootstrap();
+			expect(result.stdout).toContain("/tmp/inl-cache");
+		} finally {
+			if (previous === undefined) delete process.env.INL_CACHE_DIR;
+			else process.env.INL_CACHE_DIR = previous;
+		}
+	});
+
 	it("maps JSON search hits and preserves the selected mode", async () => {
 		const binaryPath = stubBinary(
 			'printf \'{"id":"img-1","path":"/tmp/login.png","caption":"Login error","score":0.9}\\n\'',

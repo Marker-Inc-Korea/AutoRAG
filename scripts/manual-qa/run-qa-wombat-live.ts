@@ -4,7 +4,7 @@
  *
  * Isolation: the run gets its own HOME, its own wombat data dir and `--source` roots pinned to fixtures, so wombat
  * never reads the operator's real agent logs and never writes `~/.wombat` or `~/.autorag`. The model cache
- * (`~/.cache/minsync/models`) is linked in read-only terms: it is only read.
+ * (`~/.cache/im-not-llm/models`) is linked in read-only terms: it is only read.
  *
  * It walks the user-visible path: factory-built skill -> `agent.refresh` -> SPLADE keyword, dense semantic and hybrid
  * search -> agent narrowing -> incremental append (only the new turns are embedded) -> no-op re-sync (nothing is

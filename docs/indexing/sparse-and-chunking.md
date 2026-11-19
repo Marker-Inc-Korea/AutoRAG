@@ -11,7 +11,7 @@ This page covers MinSync's SPLADE sparse retrieval, how to run a sparse-only wor
 
 MinSync replaced its BM25 full-text index with learned-sparse retrieval: `nlpai-lab/KURE-Sparse-nano` (Apache-2.0) encodes every chunk and every query into weighted vocabulary terms. The keyword half of local search (the `sparse` mode, and the sparse side of `hybrid`) runs through it. It needs no tokenizer library: Korean inflected forms (`인증서를` → `인증서`) match without Kiwi, which AutoRAG no longer probes for, and MinSync no longer takes `--language` at init.
 
-MinSync downloads the 299 MB sparse model into `~/.cache/minsync/models` on first use (sha256-verified) and runs it in-process on Metal or CPU. AutoRAG does not start a `minsync serve --sparse` daemon.
+MinSync downloads the 299 MB sparse model into `~/.cache/im-not-llm/models` on first use (sha256-verified) and runs it in-process on Metal or CPU. AutoRAG does not start an `inl serve --sparse` daemon.
 
 The known limit, from MinSync's release notes: exact strings such as error codes, hashes, and version strings among many look-alike documents match far less reliably than with BM25. For exact lookups, use a bounded `grep`.
 

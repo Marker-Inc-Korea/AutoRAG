@@ -4,9 +4,9 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createEmbedderFromConfig, ensureMinSyncDaemon, releaseEmbedders } from "../../src/embedding/index.ts";
+import { createEmbedderFromConfig, ensureInlDaemon, releaseEmbedders } from "../../src/embedding/index.ts";
 import { QWEN3_QUERY_PREFIX } from "../../src/embedding/prefixes.ts";
-import { writeFakeMinSyncServe } from "../helpers/fake-minsync-serve.ts";
+import { writeFakeInlServe } from "../helpers/fake-inl-serve.ts";
 
 let servers: Server[] = [];
 afterEach(async () => {
@@ -60,7 +60,7 @@ describe("createEmbedderFromConfig prefixes", () => {
 		expect(remote.inputs).toEqual([["x"]]);
 	});
 
-	describe("with MinSync's local Qwen3 behind a daemon", () => {
+	describe("with Qwen3 behind an inl daemon", () => {
 		let home: string;
 		let bin: string;
 		let pid: number | undefined;
@@ -68,9 +68,9 @@ describe("createEmbedderFromConfig prefixes", () => {
 			home = mkdtempSync(join(tmpdir(), "autorag-from-config-home-"));
 			bin = mkdtempSync(join(tmpdir(), "autorag-from-config-bin-"));
 			pid = (
-				await ensureMinSyncDaemon({
+				await ensureInlDaemon({
 					home,
-					binaryPath: writeFakeMinSyncServe(bin, { dimension: 4 }),
+					launcher: { path: writeFakeInlServe(bin, { dimension: 4 }) },
 					env: { ...process.env, HOME: home },
 					readyTimeoutMs: 15_000,
 				})

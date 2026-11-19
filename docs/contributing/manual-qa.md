@@ -11,7 +11,7 @@ Run the live lanes when a change touches retrieval, MinSync or embedding configu
 
 ## Isolation boundary
 
-Every manual QA, live check, and ad-hoc CLI or `AutoRAGAgent` run must keep the host's real state untouched. All clones read one global AutoRAG home, `~/.autorag` (`config.json`, `memory.json`, TUI sessions), and MinSync's model cache is shared at `~/.cache/minsync/models`.
+Every manual QA, live check, and ad-hoc CLI or `AutoRAGAgent` run must keep the host's real state untouched. All clones read one global AutoRAG home, `~/.autorag` (`config.json`, `memory.json`, TUI sessions), and MinSync's model cache is shared at `~/.cache/im-not-llm/models`.
 
 ::: danger **Never touch the real AutoRAG home.**
 Do not write, move, delete, or `--force` anything under `~/.autorag`, and do not "fix" or clean it up. Reading is allowed only when the task needs it; if you think it is wrong, report it.
@@ -28,7 +28,7 @@ mkdir -p "$QA_ROOT/docs" "$AUTORAG_HOME"
 
 A tool that starts a fresh shell per call (an agent `bash` tool, `spawn`) does not inherit a previous call's `export`; repeat the exports in each call, or pass them through `env`. `--workspace` moves the workspace only, not the config path: the config comes from `--config`, then `AUTORAG_CONFIG`, then `$AUTORAG_HOME/config.json`, then `~/.autorag/config.json`. Right before the first command that writes config, confirm `echo "$AUTORAG_CONFIG"` prints a path under `$QA_ROOT`.
 
-Prove it and clean up: hash the real config before and after (`shasum ~/.autorag/config.json`); the two hashes must match. Remove only your own `$QA_ROOT` and the processes you started. Do not stop or reconfigure processes you did not start, including other clones' `minsync serve` daemons and dev servers.
+Prove it and clean up: hash the real config before and after (`shasum ~/.autorag/config.json`); the two hashes must match. Remove only your own `$QA_ROOT` and the processes you started. Do not stop or reconfigure processes you did not start, including other clones' `inl serve` daemons and dev servers.
 
 `autorag init --force` also refuses to replace an existing implicit home config; pass `--config <path>` or set `AUTORAG_CONFIG` when replacement is intentional. First-time implicit initialization remains allowed.
 
@@ -53,7 +53,7 @@ Prerequisites:
 
 - Node.js 24+, Bun, and repository dependencies (`bun install --frozen-lockfile`).
 - A bootstrapped corpus root. Bootstrap is explicit; live targets never create one implicitly.
-- MinSync 0.7.4 or newer on `PATH` (the floor and the pinned install are both 0.7.4: `MINSYNC_MIN_VERSION` in `src/minsync/version.ts`, `MINSYNC_VERSION` in `src/minsync/installer.ts`). The runner starts a loopback `minsync serve` daemon for the run, checks its `/health` endpoint, and stops it afterward. The Docker QA image ships the pinned, sha256-verified `minsync`, so `make e2e-live*` needs nothing on the host. MinSync publishes a Linux x86_64 build only, so that image is `linux/amd64` (the default `QA_PLATFORM`); on an Apple Silicon host it runs under emulation, and building it for arm64 fails for that reason. Keep `MINSYNC_VERSION`/`MINSYNC_SHA256` in `scripts/ci/qa.Dockerfile` in step with `MINSYNC_VERSION` in `src/minsync/installer.ts`.
+- MinSync 0.7.4 or newer on `PATH` (the floor and the pinned install are both 0.7.4: `MINSYNC_MIN_VERSION` in `src/minsync/version.ts`, `MINSYNC_VERSION` in `src/minsync/installer.ts`). The runner starts a loopback `inl serve`/`minsync serve` daemon for the run, checks its `/health` endpoint, and stops it afterward. The Docker QA image ships the pinned, sha256-verified `minsync`, so `make e2e-live*` needs nothing on the host. MinSync publishes a Linux x86_64 build only, so that image is `linux/amd64` (the default `QA_PLATFORM`); on an Apple Silicon host it runs under emulation, and building it for arm64 fails for that reason. Keep `MINSYNC_VERSION`/`MINSYNC_SHA256` in `scripts/ci/qa.Dockerfile` in step with `MINSYNC_VERSION` in `src/minsync/installer.ts`.
 - `OPENAI_API_KEY` and `AUTORAG_OPENAI_API_KEY` unset. Embeddings stay local during live E2E; do not configure a remote `minSync.embedder` endpoint or send corpus text off the machine.
 
 ### Bootstrap
@@ -88,7 +88,7 @@ The summary separates the core MinSync result (`commandsSummary.core`) from `dat
 
 When validating local-file retrieval changes, run a real semantic query through the shared embedder. The local MinSync backend is the default; a remote embedding service is used only when the operator explicitly configures `minSync.embedder`.
 
-The default path uses MinSync's Qwen3-Embedding-0.6B engine (1024 dimensions; queries carry Qwen3's `Instruct: …\nQuery:` header, passages are raw). Vectors come from a loopback `minsync serve` daemon when one answers, otherwise from MinSync's in-process engine. AutoRAG never starts or stops the daemon; `autorag setup` and `autorag status` only report the resolved `embedding.backend` (`daemon`, `in-process`, or `remote`) with its provider, model, and dimension, or why none is alive.
+The default path uses MinSync's Qwen3-Embedding-0.6B engine (1024 dimensions; queries carry Qwen3's `Instruct: …\nQuery:` header, passages are raw). Vectors come from a loopback `inl serve` daemon when one answers, otherwise from MinSync's in-process engine. AutoRAG never starts or stops the daemon; `autorag setup` and `autorag status` only report the resolved `embedding.backend` (`daemon`, `in-process`, or `remote`) with its provider, model, and dimension, or why none is alive.
 
 Run the isolated experiment. Both AutoRAG variables point inside the temp workspace, so `init --force` cannot reach the shared `~/.autorag`:
 

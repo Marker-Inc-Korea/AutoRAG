@@ -42,7 +42,7 @@ export interface SetupDatasourceReport {
 	readonly reason?: string;
 }
 export interface SetupEmbeddingReport {
-	/** Where text is embedded: a configured remote endpoint, the `minsync serve` daemon, or MinSync in-process. */
+	/** Where text is embedded: a configured remote endpoint, the `inl serve` daemon, or MinSync in-process. */
 	readonly backend?: Exclude<EmbeddingBackend, "none">;
 	readonly provider?: string;
 	readonly model?: string;
@@ -118,7 +118,7 @@ export interface SetupDeps {
 const LOCK_TIMEOUT_MS = 10_000;
 const LOCK_STALE_MS = 30_000;
 const REMEDIATION =
-	"Semantic search needs an embedding backend: run `minsync serve --idle-timeout 0` as a service (docs/indexing/embedding-backends.md), or point `minSync.embedder` at a remote endpoint, then run `autorag setup` again.";
+	"Semantic search needs an embedding backend: run `inl serve --idle-timeout 0` as a service (docs/indexing/embedding-backends.md), or point `minSync.embedder` at a remote endpoint, then run `autorag setup` again.";
 const BUILTIN_BINARIES: Readonly<Record<string, string>> = {
 	kakao: "lazykatok",
 	lark: "lark-cli",

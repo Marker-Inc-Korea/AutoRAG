@@ -49,7 +49,7 @@ export interface LazykatokOptions {
 	readonly env?: Readonly<Record<string, string | undefined>>;
 	/**
 	 * Where lazykatok gets its vectors. When set, `index` and the semantic and hybrid searches run lazykatok's
-	 * OpenAI-compatible embedder against the endpoint it returns (a `minsync serve` daemon or the operator's
+	 * OpenAI-compatible embedder against the endpoint it returns (an `inl serve` daemon or the operator's
 	 * remote), and lazykatok's own fastembed model is never used; with no endpoint, or a TEI one, those commands
 	 * fail instead. Without it lazykatok keeps whatever embedder its own environment selects.
 	 */

@@ -357,7 +357,7 @@ describe("setup orchestration", () => {
 		expect(report.mode).toBe("sparse");
 		expect(report.embedding.reason).toContain("addon missing");
 		expect(JSON.stringify(report)).not.toContain("/Users/alice");
-		expect(report.remediation).toContain("minsync serve");
+		expect(report.remediation).toContain("inl serve");
 	});
 });
 

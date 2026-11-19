@@ -98,6 +98,7 @@ AutoRAG's connector-backed datasources run an external CLI that owns its own cre
 | `WOMBAT_DATA_DIR` | `src/datasource/skills/wombat/agents.ts`, `client.ts` | wombat data directory (`~/.wombat` by default) |
 | `WOMBAT_EMBEDDER` | `src/datasource/skills/wombat/client.ts` | Embedder selector passed to wombat |
 | `MINSYNC_SERVER` | `src/datasource/skills/wombat/client.ts` | MinSync server mode forwarded to the wombat child |
+| `INL_CACHE_DIR` | `src/datasource/crawler-client.ts`, `src/datasource/skills/*/client.ts` | im-not-llm model-cache root, forwarded to every CLI that loads or discovers models so a relocated inl root reaches it (default `~/.cache/im-not-llm/models`) |
 | `CLAWGALLERY_CONFIG_DIR` | `src/datasource/skills/clawgallery/client.ts` | ClawGallery config directory |
 | `KATOK_EMBED_API_KEY` | `src/datasource/embedding-env.ts` | Embedder key for the lazykatok child when it embeds for itself |
 
@@ -113,7 +114,7 @@ AutoRAG also reads conventional variables for platform and home discovery — th
 
 | Variable | Read where | Effect |
 |---|---|---|
-| `HOME`, `USERPROFILE` | `src/config/home.ts` | Base for `~/.autorag`; an absolute `HOME`/`USERPROFILE` wins, else `os.homedir()` |
+| `HOME`, `USERPROFILE` | `src/config/home.ts`, `src/embedding/daemon.ts` | Base for `~/.autorag` and im-not-llm's daemon state root `~/.cache/im-not-llm/serve`; an absolute `HOME`/`USERPROFILE` wins, else `os.homedir()` |
 | `PATH` | binary resolution in `src/minsync`, `src/jikji`, `src/cli/setup.ts`, `src/automation/service.ts` | Locates `minsync`, `jikji`, crawler CLIs, and the automation service |
 | `CARGO_HOME` | `src/datasource/skills/wombat/binary.ts`, jikji installer | cargo install location when auto-installing a Rust tool |
 | `XDG_DATA_HOME`, `XDG_CONFIG_HOME` | `src/cli/setup.ts`, `src/automation/service.ts`, `src/datasource/skills/hister/setup.ts` | XDG paths for tools and the automation service on Linux |

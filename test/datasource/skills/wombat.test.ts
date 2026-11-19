@@ -35,6 +35,7 @@ appendFileSync(${JSON.stringify(logPath)}, JSON.stringify({
   args: process.argv.slice(2),
   openai: process.env.OPENAI_API_KEY ?? null,
   dataDir: process.env.WOMBAT_DATA_DIR ?? null,
+  inlCache: process.env.INL_CACHE_DIR ?? null,
 }) + "\\n");
 process.stdout.write(${JSON.stringify(output)});
 process.exit(${exitCode});
@@ -43,7 +44,11 @@ process.exit(${exitCode});
 	chmodSync(binaryPath, 0o755);
 }
 
-function calls(): readonly { readonly args: readonly string[]; readonly openai: string | null }[] {
+function calls(): readonly {
+	readonly args: readonly string[];
+	readonly openai: string | null;
+	readonly inlCache: string | null;
+}[] {
 	if (!existsSync(logPath)) return [];
 	return readFileSync(logPath, "utf8")
 		.trim()
@@ -67,6 +72,19 @@ const hit = {
 };
 
 describe("WombatClient", () => {
+	it("forwards the inl cache override to wombat and the minsync it spawns", async () => {
+		writeFake(JSON.stringify({ hits: [] }));
+		const previous = process.env.INL_CACHE_DIR;
+		process.env.INL_CACHE_DIR = "/tmp/inl-cache";
+		try {
+			await new WombatClient({ binaryPath }).search("hybrid", "q");
+			expect(calls()[0]?.inlCache).toBe("/tmp/inl-cache");
+		} finally {
+			if (previous === undefined) delete process.env.INL_CACHE_DIR;
+			else process.env.INL_CACHE_DIR = previous;
+		}
+	});
+
 	it("runs doctor, sync --index and search with global flags before the subcommand", async () => {
 		const client = new WombatClient({
 			binaryPath,

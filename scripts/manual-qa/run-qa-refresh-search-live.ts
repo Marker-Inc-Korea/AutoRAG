@@ -2,7 +2,7 @@
  * Live manual QA: search keeps answering while a refresh updates an index that already exists.
  *
  * A real corpus on disk, the real `minsync` binary and MinSync's own embedding engine (a running
- * `minsync serve` daemon). Nothing is mocked and no remote embedder is contacted.
+ * `inl serve` daemon). Nothing is mocked and no remote embedder is contacted.
  *
  * It walks the user-visible path: first refresh (the index is built) -> edit, add and delete documents ->
  * an incremental `agent.refresh` with searches issued the whole time it runs -> the refresh's final state.
@@ -20,7 +20,7 @@
  * Everything lives in one temp root, and AUTORAG_HOME points inside it, so the shared `~/.autorag` is never
  * touched.
  *
- * Prerequisites: `minsync` 0.7.4 or newer on PATH and a running `minsync serve --idle-timeout 0`.
+ * Prerequisites: `minsync` 0.7.4 or newer on PATH and a running `inl serve --idle-timeout 0`.
  *
  * Run: bun scripts/manual-qa/run-qa-refresh-search-live.ts
  */
@@ -96,7 +96,7 @@ try {
 	const embedder = createEmbedderFromConfig({});
 	const health = await embedder.health();
 	console.log(`embedding backend: ${health.backend} alive=${health.alive}${health.detail ? ` (${health.detail})` : ""}`);
-	check("an embedding backend is alive (run `minsync serve --idle-timeout 0` first)", health.alive);
+	check("an embedding backend is alive (run `inl serve --idle-timeout 0` first)", health.alive);
 
 	const agent = new AutoRAGAgent({
 		searchPaths: [docs],

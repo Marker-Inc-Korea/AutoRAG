@@ -81,7 +81,7 @@ Native stores stay owned by their CLIs — AutoRAG never rebuilds them. Fix a br
 | `minsync-sync-failed` | MinSync indexing failed; the message carries MinSync's own reason | Fix the reported cause, then `autorag refresh --method minsync` |
 | `minsync-file-skipped` | MinSync skipped one file (unreadable, unparsable, or rejected by the embedder) and kept its older chunks; retried on the next sync | Fix that file's permissions/content, then `autorag refresh --method minsync` |
 | `minsync-lock-held` | Another `minsync` run holds `.minsync/lock`, often an orphan left by a killed host; retryable | Wait for it to finish or stop that `minsync` process, then `autorag refresh --method minsync` |
-| `embedder-unavailable` | No remote endpoint answered, no `minsync serve` daemon could start, and the in-process addon is missing or failed | Run `minsync serve` by hand to read its error, install MinSync (`cargo install minsync`) or `@nomadamas/minsync-native`, or configure a remote `minSync.embedder` |
+| `embedder-unavailable` | No remote endpoint answered, no `inl serve` daemon could start, and the in-process addon is missing or failed | Run `inl serve` by hand to read its error, install MinSync (`cargo install minsync`) or `@nomadamas/minsync-native`, or configure a remote `minSync.embedder` |
 | `embedding-identity-mismatch` | Indexed vectors use a different embedder | `autorag index rebuild --method minsync` |
 | `embedding-unavailable` | A datasource sidecar could not embed (same cause as `embedder-unavailable`) | Start the daemon or install the addon, then re-sync that datasource |
 | `jikji-unavailable` | Jikji binary missing or install failed | Check the Rust toolchain, retry `autorag refresh --method jikji` |
@@ -117,14 +117,14 @@ Native stores stay owned by their CLIs — AutoRAG never rebuilds them. Fix a br
 
 ### Stuck or missing embedding daemon
 
-AutoRAG owns no lock or pid file for embeddings. A running `minsync serve` publishes `host`, `port`, and `pid` under `~/.cache/minsync/serve/<instance>/` and removes them on a clean stop; a leftover file from a crashed daemon is harmless (AutoRAG only adopts a daemon whose `GET /health` answers as a loopback server of the wanted model).
+AutoRAG owns no lock or pid file for embeddings. A running `inl serve` publishes `host`, `port`, and `pid` under `~/.cache/im-not-llm/serve/<instance>/` and removes them on a clean stop; a leftover file from a crashed daemon is harmless (AutoRAG only adopts a daemon whose `GET /health` answers as a loopback server of the wanted model).
 
 ```bash
-ls ~/.cache/minsync/serve/* 2>/dev/null
+ls ~/.cache/im-not-llm/serve/* 2>/dev/null
 autorag setup --format json
 ```
 
-AutoRAG never starts the daemon. Run `minsync serve --idle-timeout 0` by hand (or as a launchd/systemd service), read its own error, or press Ctrl+Shift+E in the TUI. The daemon stops itself after `--idle-timeout` seconds (default 300), so a semantic failure after a quiet spell usually means it timed out. Stop an orphaned daemon by the pid from `~/.cache/minsync/serve/<instance>/pid` only after confirming no live refresh holds it.
+AutoRAG never starts the daemon. Run `inl serve --idle-timeout 0` by hand (or as a launchd/systemd service), read its own error, or press Ctrl+Shift+E in the TUI. The daemon stops itself after `--idle-timeout` seconds (default 300), so a semantic failure after a quiet spell usually means it timed out. Stop an orphaned daemon by the pid from `~/.cache/im-not-llm/serve/<instance>/pid` only after confirming no live refresh holds it.
 
 Index locks are owned by their engines: MinSync/tantivy locks under `<workspace>/.autorag/`, per-CLI locks such as `<workspace>/.autorag/datasources/discrawl/.discrawl-sync.lock`. Delete one only after confirming no owning process is alive.
 
@@ -134,7 +134,7 @@ Index locks are owned by their engines: MinSync/tantivy locks under `<workspace>
 pgrep -fl 'autorag|minsync' | grep -v pgrep
 ```
 
-A refresh killed mid-run can leave a `minsync serve` daemon or a `minsync` child alive. A daemon idle-stops itself; stop a confirmed orphan by the pid above. Never stop a process another clone started. Re-run `autorag status --json` afterwards to confirm `inFlight: false`.
+A refresh killed mid-run can leave an `inl serve` daemon or a `minsync` child alive. A daemon idle-stops itself; stop a confirmed orphan by the pid above. Never stop a process another clone started. Re-run `autorag status --json` afterwards to confirm `inFlight: false`.
 
 ### Embedding model mismatch
 
