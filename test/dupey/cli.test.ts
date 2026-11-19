@@ -141,6 +141,39 @@ writeNext();
 
 		expect(scan.files.map((file) => file.path)).toEqual(paths);
 	});
+
+	it.each([1, 2, 3, 5])(
+		"keeps Japanese, Chinese and 4-byte characters intact with %i-byte pipe writes",
+		async (chunkBytes) => {
+			// 4-byte characters (𠮷, emoji) and half-width kana are cut differently from 3-byte Hangul: a 1-byte
+			// write splits every one of them, a 3-byte write splits every 4-byte one.
+			const paths = [
+				"/画像/東京タワー.png",
+				"/画像/ひらがなのファイル.png",
+				"/画像/ﾊﾝｶｸｶﾅ.png",
+				"/图片/简体中文图片_北京.png",
+				"/圖片/繁體中文圖片_臺灣.png",
+				"/画像/𠮷野家_𠀀.png",
+				"/画像/寿司🍣と拉麺🍜.png",
+				"/画像/日本語 中文 한국어 English.png",
+			];
+			const body = JSON.stringify({
+				dir: "/",
+				files: paths.map((path) => ({ path, content_hash: "h" })),
+				families: [],
+				errors: [{ path: "/文書/読めない.txt", error: "読み取れません: アクセスが拒否されました" }],
+			});
+			const executable = chunkedDupey(body, chunkBytes);
+
+			const scan = await scanWithDupey("/", { executable });
+
+			expect(scan.files.map((file) => file.path)).toEqual(paths);
+			expect(scan.errors).toEqual([
+				{ path: "/文書/読めない.txt", error: "読み取れません: アクセスが拒否されました" },
+			]);
+			expect(JSON.stringify(scan)).not.toContain("\uFFFD");
+		},
+	);
 });
 
 describe("dupey fingerprint adapter", () => {
