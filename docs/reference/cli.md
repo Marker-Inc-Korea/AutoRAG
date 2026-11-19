@@ -180,13 +180,56 @@ Shows the persisted source and chunk evidence attached to a search session, as r
 
 JSON output serializes `{sessionId, results:[...]}`. MCP clients normally use the `autorag.evidence` tool; this command stays available for terminal maintenance.
 
-## memory inspect
+## memory
 
 ```text
-autorag memory inspect
+autorag memory <inspect|export-ltr> [flags]
 ```
 
-Renders a path-opaque snapshot of judged evidence, curated results, evidence chunks, and insights. Model-free; the storage path is never emitted. Any other subcommand is a usage error (exit `2`).
+| Subcommand | Effect |
+|---|---|
+| `inspect` | Renders a path-opaque snapshot of judged evidence, curated results, evidence chunks, and insights. Model-free; the storage path is never emitted |
+| `export-ltr` | Writes the learning-to-rank log beside the memory file as LightGBM LambdaRank files: `train`/`valid` `.tsv` with `.query` and `.position` sidecars, row ids, and a manifest. Model-free; reads the log only |
+
+| Flag | Type | Default | Meaning |
+|---|---|---|---|
+| `--output <dir>` | path | none | `export-ltr` only; directory to write the dataset into (required) |
+| `--valid-fraction <0..1>` | number | `0.2` | `export-ltr` only; newest share of runs held out for validation |
+
+Any other subcommand is a usage error (exit `2`). See [learning-to-rank.md](../retrieval/learning-to-rank.md).
+
+```bash
+autorag memory export-ltr --output ./ltr --valid-fraction 0.2
+```
+
+## ltr
+
+```text
+autorag ltr <status|list|train|enable|disable|use|auto-train|delete> [flags]
+```
+
+Trains a learning-to-rank model from the search log and, only when enabled, serves it after the reranker. Training runs in process (XGBoost compiled to WebAssembly); nothing else needs installing.
+
+| Subcommand | Effect |
+|---|---|
+| `status` | Logged runs, trained models, and whether serving or retraining is due |
+| `list` | Trained models with their holdout verdict |
+| `train` | Fit a ranker on the log and store it. A model passes only when it beats the reranker's own order on the newest runs it never saw |
+| `enable`, `disable` | Turn serving on or off in the `ltr` block of the active config file |
+| `use <model-id\|latest>` | Serve one model, or the newest passing one |
+| `auto-train <on\|off>` | Retrain in the background once enough new runs are logged |
+| `delete <model-id>` | Remove a stored model |
+
+| Flag | Type | Default | Meaning |
+|---|---|---|---|
+| `--min-new-runs <n>` | integer > 0 | `200` | `auto-train` only; new logged runs between automatic retrains |
+
+Setting subcommands change only the `ltr` block of the active config file. See [learning-to-rank.md](../retrieval/learning-to-rank.md).
+
+```bash
+autorag ltr train
+autorag ltr enable
+```
 
 ## index
 

@@ -45,6 +45,10 @@ The same content is available to the agent as it works through the **`check_memo
 
 Jev's datasource-selection step also receives up to **5** of the similar past questions (hybrid BM25 + vector search), each with up to **4** result titles and where each result's evidence came from. The question and titles are JSON-quoted, so a newline or a fake `User question:` line inside them cannot forge the state's structure. This is a hint, not a rule.
 
+## Learning-to-rank log
+
+Beside the memory file, `memory.json.ranking.db` keeps what memory does not: each search run's whole candidate pool (cited or not), the serve-time rank and score of every retrieval channel, where the model was shown each candidate, and graded outcome labels. Chunk text is not stored. Logging never reorders search results; only an opt-in trained model does. See [learning-to-rank.md](learning-to-rank.md).
+
 ## Privacy and datasource scope
 
 - **Evidence from an unconfigured datasource is never shown.** Memory is shared across workspaces and configs, so every record is filtered against the *current* run: a record whose source is a datasource this run does not configure is dropped. The datasource-selection hints apply the same rule more strictly — only evidence from a configured datasource, a configured search path, or the web contributes a past result. Evidence with no recognizable origin is dropped, and a search left with no result is not shown at all.

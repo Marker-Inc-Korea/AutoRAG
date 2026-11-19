@@ -78,10 +78,14 @@ import {
 	planJikjiSourceRoots,
 } from "../jikji/index.ts";
 import { DEFAULT_LANGUAGES, type LanguageTag } from "../language.ts";
+import { applyLtrPatch, type LtrSettings, runAutoTrain } from "../ltr/manager.ts";
+import { createLtrScorer } from "../ltr/scorer.ts";
+import { trainLtrModel } from "../ltr/trainer.ts";
 import { createCheckMemoryTool } from "../memory/check-memory-tool.ts";
 import { loadMemoryContext, type MemoryContext, type MemoryContextOptions } from "../memory/context.ts";
 import { EVIDENCE_SUPPORT_THRESHOLD, type JudgedEvidenceRecord } from "../memory/judged-evidence.ts";
 import { RetrievalMemory } from "../memory/memory.ts";
+import { RankingLogStore, RankingRunRecorder, rankingLogPath } from "../memory/ranking-log.ts";
 import { memoryVectorStorePath } from "../memory/similar-queries.ts";
 import { resolveMinSyncBinary } from "../minsync/binary.ts";
 import { unionChannelResults } from "../minsync/channel-union.ts";
@@ -137,7 +141,7 @@ import type {
 } from "../retrieval/types.ts";
 import { executeWebSearch } from "../web/search/index.ts";
 import { type ModelNativeSearchAuth, modelNativeAuthFromAgentModel } from "../web/search/model-auth.ts";
-import { citedChunks, deriveResultsFromAnswer } from "./answer-citations.ts";
+import { citedChunkKey, citedChunks, deriveResultsFromAnswer } from "./answer-citations.ts";
 import {
 	ANSWER_BULLET_RULE,
 	ANSWER_CITATION_RULE,
@@ -218,6 +222,7 @@ import {
 	type MergedJikjiPolicy,
 } from "./jikji-find-tool.ts";
 import { loadLocalAutoRAGModel } from "./local-model.ts";
+import { createManageLtrTool, MANAGE_LTR_TOOL_NAME } from "./ltr-tool.ts";
 import { loadPackagedSkill, ORGANIZE_SKILL_NAME, type PackagedAgentSkill, SETUP_SKILL_NAME } from "./packaged-skill.ts";
 import { createPermissionGate, PermissionController, type PermissionMode } from "./permission-gate.ts";
 import {
@@ -834,6 +839,28 @@ export interface AutoRAGAgentOptions {
 	 */
 	memoryEmbedder?: Embedder | false;
 	/**
+	 * Learning-to-rank training log beside the memory file (`<memoryPath>.ranking.db`): every finished search run's
+	 * candidate pool, serve-time per-channel ranks and scores, what the model was shown, and the outcome labels.
+	 * Local only; chunk text is never stored. Default on; `false` stops logging. See docs/retrieval/learning-to-rank.md.
+	 */
+	rankingLog?: boolean;
+	/**
+	 * Opt-in learning-to-rank reorder of the baseline: after the baseline reranker, a trained XGBoost model picks the
+	 * order the model reads the candidates in. `enabled` defaults to false; `model` is a model id or `latest` (the
+	 * newest model that passed its holdout gate). Needs the ranking log. See docs/retrieval/learning-to-rank.md.
+	 */
+	ltr?: {
+		readonly enabled?: boolean;
+		readonly model?: string;
+		/** Retrain by itself once the log has grown; see `autorag ltr auto-train`. */
+		readonly autoTrain?: { readonly enabled?: boolean; readonly minNewRuns?: number };
+		/**
+		 * Saves a settings change made through the `manage_ltr` tool (the CLI writes the `ltr` block of the config
+		 * file). Without it the tool can train and report but cannot change settings.
+		 */
+		readonly persist?: (settings: LtrSettings) => void;
+	};
+	/**
 	 * Agent self-configuration. When set, Jev gains a `config` branch for
 	 * questions about AutoRAG's own settings: the turn skips the fast answer,
 	 * receives the full `autorag-setup` skill, edits `configPath` with the pi
@@ -1159,6 +1186,15 @@ export class AutoRAGAgent {
 	private readonly embedder: ManagedEmbedder;
 	private readonly memoryEmbedder: Embedder | undefined;
 	private readonly memoryVectorPath: string;
+	/** Where finished runs are logged for learning to rank; undefined when `rankingLog: false`. */
+	private readonly rankingLogPath: string | undefined;
+	/** The learning-to-rank settings in effect; `manage_ltr` replaces them in place so the next search sees the change. */
+	private ltrSettings: LtrSettings;
+	private readonly ltrPersist: ((settings: LtrSettings) => void) | undefined;
+	private ltrTraining: Promise<unknown> | undefined;
+	private readonly memoryFilePath: string;
+	/** Collects the in-flight run's ranking candidates and labels; undefined between runs. */
+	private rankingRun: RankingRunRecorder | undefined;
 	/** Every retrieval result of the in-flight run with the query/method that surfaced it. */
 	private readonly evidenceOrigins = new EvidenceOriginIndex();
 	/**
@@ -1328,6 +1364,18 @@ export class AutoRAGAgent {
 		this.memory = new RetrievalMemory({ storagePath: memPath });
 		this.memory.load();
 		this.memoryVectorPath = memoryVectorStorePath(memPath);
+		this.rankingLogPath = options.rankingLog === false ? undefined : rankingLogPath(memPath);
+		this.memoryFilePath = memPath;
+		this.ltrSettings = {
+			enabled: options.ltr?.enabled === true,
+			...(options.ltr?.model !== undefined ? { model: options.ltr.model } : {}),
+			...(options.ltr?.autoTrain !== undefined ? { autoTrain: options.ltr.autoTrain } : {}),
+		};
+		this.ltrPersist = options.ltr?.persist;
+		// Every retrieval tool funnels its ranked list through the ledger, so this one hook sees what the model was shown.
+		this.evidenceLedger.observeResults((tool, query, results) =>
+			this.rankingRun?.tool({ surface: tool, query, results }),
+		);
 		this.minSyncEmbedderConfig = options.minSync?.embedder;
 		this.minSyncBinaryPath = options.minSync?.binaryPath;
 		this.embedder = options.embedder ?? createEmbedderFromConfig({ embedder: options.minSync?.embedder });
@@ -1364,6 +1412,18 @@ export class AutoRAGAgent {
 		const convertFilesTool = this.fileeOptions === false ? undefined : createConvertFilesTool(this);
 		const listFileConversionsTool = this.fileeOptions === false ? undefined : createListFileConversionsTool(this);
 		const manageAutomationsTool = createManageAutomationsTool();
+		const manageLtrTool = createManageLtrTool({
+			memoryPath: memPath,
+			settings: () => this.ltrSettings,
+			update: (patch) => {
+				if (this.ltrPersist === undefined) throw new Error("this session has no config file to save settings to");
+				const next = applyLtrPatch(this.ltrSettings, patch);
+				this.ltrPersist(next);
+				this.ltrSettings = next;
+				return next;
+			},
+			train: () => trainLtrModel({ memoryPath: memPath }),
+		});
 		const calculatorTool = createCalculatorTool();
 		const reviseAnswerTool = createReviseAnswerTool({
 			session: () => this.revisionSession,
@@ -1433,6 +1493,7 @@ export class AutoRAGAgent {
 			CALCULATOR_TOOL_NAME,
 			REVISE_ANSWER_TOOL_NAME,
 			MANAGE_AUTOMATIONS_TOOL_NAME,
+			MANAGE_LTR_TOOL_NAME,
 			JEV_TOOL_NAME,
 			WEB_SEARCH_TOOL_NAME,
 			WEB_FETCH_TOOL_NAME,
@@ -1463,6 +1524,7 @@ export class AutoRAGAgent {
 			calculatorTool,
 			reviseAnswerTool,
 			manageAutomationsTool,
+			manageLtrTool,
 			...(jikjiFindTool !== undefined ? [jikjiFindTool] : []),
 			...(everythingSearchTool !== undefined ? [everythingSearchTool] : []),
 			...(fsearchSearchTool !== undefined ? [fsearchSearchTool] : []),
@@ -1629,13 +1691,26 @@ export class AutoRAGAgent {
 		);
 		const methodToken = (value: string): string => `_${value.toLowerCase().replace(/[^a-z0-9]+/gu, "_")}_`;
 		const idsLongestFirst = catalog.map((entry) => entry.datasourceId).sort((a, b) => b.length - a.length);
+		// Retrieval reports real paths (MinSync resolves symlinks; macOS /var is /private/var), so a root matches by its
+		// configured spelling and by its real path.
+		const localRoots = [
+			...new Set(
+				this.configuredSearchPaths.flatMap((configuredRoot) => {
+					let real = configuredRoot;
+					try {
+						real = realpathSync(configuredRoot);
+					} catch {
+						// A missing root keeps only its configured spelling.
+					}
+					return [configuredRoot, real].map((path) => path.replaceAll("\\", "/").replace(/\/+$/u, ""));
+				}),
+			),
+		];
 		return ({ source, method }) => {
 			if (/^https?:\/\//u.test(source)) return "web";
 			const normalizedSource = source.replaceAll("\\", "/");
-			for (const configuredRoot of this.configuredSearchPaths) {
-				const normalizedRoot = configuredRoot.replaceAll("\\", "/").replace(/\/+$/u, "");
-				if (normalizedSource === normalizedRoot || normalizedSource.startsWith(`${normalizedRoot}/`))
-					return "local files";
+			for (const localRoot of localRoots) {
+				if (normalizedSource === localRoot || normalizedSource.startsWith(`${localRoot}/`)) return "local files";
 			}
 			const root = normalizedSource.startsWith("/") ? (normalizedSource.split("/")[1] ?? "") : "";
 			if (nonDatasourceRoots.has(root)) return undefined;
@@ -1692,6 +1767,7 @@ export class AutoRAGAgent {
 		if (details.mapping.length === 0) return undefined;
 		const resultByNumber = new Map(details.results.map((result) => [result.number, result]));
 		const units: (EvidenceJudgmentUnit & {
+			readonly chunkKey: string;
 			readonly record: Omit<JudgedEvidenceRecord, "probability" | "createdAt">;
 		})[] = [];
 		for (const entry of details.mapping) {
@@ -1707,6 +1783,7 @@ export class AutoRAGAgent {
 				const id = `${entry.number}:${ref.stableEvidenceId}`;
 				units.push({
 					id,
+					chunkKey: citedChunkKey(ref),
 					resultNumber: entry.number,
 					title: result.title,
 					summary: result.summary,
@@ -1731,6 +1808,17 @@ export class AutoRAGAgent {
 		}
 		if (units.length === 0) return undefined;
 		const judgment = await judgeEvidence(this.jevJudge, { question, answer: details.answer, units });
+		if (judgment.fallbackReason !== undefined) this.rankingRun?.supported(undefined);
+		else {
+			const support = new Map<string, number>();
+			for (const unit of units) {
+				const probability = judgment.probabilities[unit.id];
+				// One chunk can back several results; its label is the best support Jev gave it.
+				if (probability !== undefined)
+					support.set(unit.chunkKey, Math.max(support.get(unit.chunkKey) ?? 0, probability));
+			}
+			this.rankingRun?.supported(support);
+		}
 		const diagnostic: SearchDocumentDiagnostic =
 			judgment.fallbackReason !== undefined
 				? {
@@ -1755,6 +1843,62 @@ export class AutoRAGAgent {
 		);
 		this.memory.save();
 		return diagnostic;
+	}
+
+	/**
+	 * Start a background retrain when the settings ask for one and the log has grown enough. Fire and forget: the
+	 * answer never waits on it, one runs at a time per process (and one per memory directory, through the claim lock),
+	 * and a failure is dropped here because every attempt is recorded where `autorag ltr status` shows it.
+	 */
+	private maybeAutoTrainLtr(): void {
+		if (this.ltrSettings.autoTrain?.enabled !== true || this.ltrTraining !== undefined) return;
+		this.ltrTraining = runAutoTrain({ memoryPath: this.memoryFilePath, settings: this.ltrSettings })
+			.catch(() => undefined)
+			.finally(() => {
+				this.ltrTraining = undefined;
+			});
+	}
+
+	/**
+	 * Freeze the run's ranking candidates and labels and append them to the learning-to-rank log. Features are taken
+	 * as they are now, at serve time: the memory prior counts only evidence judged before the run started, and the
+	 * similar-question prior is the one this run's memory context actually found (missing when it was never loaded,
+	 * so logging never triggers an extra embedding call). A failed write is reported and never fails the search.
+	 */
+	private async persistRankingRun(details: AutoRAGResultsDetails): Promise<SearchDocumentDiagnostic | undefined> {
+		const run = this.rankingRun;
+		const path = this.rankingLogPath;
+		this.rankingRun = undefined;
+		if (run === undefined || path === undefined) return undefined;
+		const cachedContext = this.memoryContextCache?.query === this.lastQuery ? this.memoryContextCache : undefined;
+		const similarQuestions = cachedContext === undefined ? undefined : (await cachedContext.context).related;
+		const record = run.finish({
+			finalCitationKeys: details.mapping.flatMap((entry) =>
+				(entry.evidenceRefs.length > 0 ? entry.evidenceRefs : [entry]).map((ref) => citedChunkKey(ref)),
+			),
+			finishedAt: Date.now(),
+			priorEvidence: this.memory.getJudgedEvidence(),
+			...(similarQuestions !== undefined ? { similarQuestions } : {}),
+			origin: this.evidenceAttribution(this.listDatasources()),
+		});
+		if (record.candidates.length === 0) return undefined;
+		try {
+			const store = new RankingLogStore(path);
+			try {
+				store.append(record);
+			} finally {
+				store.close();
+			}
+			this.maybeAutoTrainLtr();
+			return undefined;
+		} catch (error) {
+			return {
+				code: "ranking-log-failed",
+				severity: "warning",
+				message: `The learning-to-rank log could not record this search; the answer is unaffected. ${error instanceof Error ? error.message : String(error)}`,
+				source: "memory",
+			};
+		}
 	}
 
 	private async resolveSessionModel(): Promise<{
@@ -2092,6 +2236,10 @@ export class AutoRAGAgent {
 			userMessages: this.conversationQueries.all(),
 			chunks,
 		});
+		this.rankingRun?.cited(
+			chunks.map((chunk) => chunk.key),
+			relevance.fallbackReason === undefined ? relevance.probabilities : undefined,
+		);
 		if (relevance.fallbackReason !== undefined) {
 			this.routingDiagnostics.push({
 				code: "citation-relevance-fallback",
@@ -2486,6 +2634,15 @@ export class AutoRAGAgent {
 		}
 		this.conversationQueries.add(trimmedQuery);
 		this.lastSessionId = sessionId;
+		this.rankingRun =
+			this.rankingLogPath === undefined
+				? undefined
+				: new RankingRunRecorder({
+						runId: sessionId,
+						conversationId: this.conversationId,
+						question: trimmedQuery,
+						startedAt: Date.now(),
+					});
 		let captured: AutoRAGResultsDetails | undefined;
 		let fastCaptured: AutoRAGResultsDetails | undefined;
 		/** True when this run took a Jev branch whose report is not retrieved evidence (`config`, `organize`, or an `extra` turn that cited nothing); it never feeds retrieval memory. */
@@ -2673,6 +2830,7 @@ export class AutoRAGAgent {
 				// Esc aborted the phase that just ran: the user stopped the search.
 				const stopped = (): boolean => this.interactive.userAborted;
 				if (stopped()) return;
+				this.rankingRun?.plan({ searchQueries: plan.queries, datasources: plan.datasources, web: plan.web });
 				// Only `local` reaches here: `config`, `organize`, and `extra` ended
 				// the run in their own single turn above.
 				const baseline = await this.prefetchInitialRetrievalContext(
@@ -2824,10 +2982,14 @@ export class AutoRAGAgent {
 			const memoryDiagnostic = isolatedRun
 				? undefined
 				: await this.recordJudgedEvidence(sessionId, trimmedQuery, captured);
+			const rankingDiagnostic = isolatedRun ? undefined : await this.persistRankingRun(captured);
+			const extraDiagnostics = [memoryDiagnostic, rankingDiagnostic].filter(
+				(diagnostic): diagnostic is SearchDocumentDiagnostic => diagnostic !== undefined,
+			);
 			const response: SearchDocumentsResponse =
-				memoryDiagnostic === undefined
+				extraDiagnostics.length === 0
 					? recorded
-					: { ...recorded, diagnostics: [...(recorded.diagnostics ?? []), memoryDiagnostic] };
+					: { ...recorded, diagnostics: [...(recorded.diagnostics ?? []), ...extraDiagnostics] };
 			this.runLogger.write({
 				event: "search_completed",
 				timestamp: new Date().toISOString(),
@@ -3500,6 +3662,16 @@ export class AutoRAGAgent {
 				const method = typeof result.metadata.method === "string" ? result.metadata.method : fallback;
 				this.evidenceOrigins.add({ query: searchQuery, method, source: result.source, content: result.content });
 			}
+			// Each surface's own ranked list, before interleaving, dedup, rerank, or cut: the raw features a ranker learns from.
+			this.rankingRun?.retrieved({ surface: "minsync", query: searchQuery, results: vector });
+			for (const [datasourceIndex, results] of perDatasource.entries()) {
+				this.rankingRun?.retrieved({
+					surface: `datasource:${datasources[datasourceIndex] ?? ""}`,
+					query: searchQuery,
+					results,
+				});
+			}
+			this.rankingRun?.retrieved({ surface: "web", query: searchQuery, results: webSearch.results });
 		}
 		if (webFailures.length > 0) {
 			this.routingDiagnostics.push({
@@ -3545,6 +3717,16 @@ export class AutoRAGAgent {
 			if (!signal.aborted) this.reportRerankFailure(error);
 		}
 		if (reranked !== undefined) {
+			const descriptor = this.reranker?.describe();
+			this.rankingRun?.reranked({
+				provider: descriptor?.provider ?? "unknown",
+				model: descriptor?.model ?? "unknown",
+				results: reranked,
+			});
+			// The log keeps the reranker's own rank and score (training's baseline); only the order shown changes.
+			const shown = this.applyLtr(reranked);
+			this.rankingRun?.exposed({ surface: "baseline", query, results: shown });
+			reranked = shown;
 			const baseline = formatRerankedBaseline(
 				reranked,
 				reranked.map((result) => this.evidenceLedger.registerResult("baseline", result)),
@@ -3580,6 +3762,12 @@ export class AutoRAGAgent {
 			shownDatasource = shownDatasource.slice(0, quota[1]);
 			shownWeb = shownWeb.slice(0, quota[2]);
 		}
+		// The sections below are shown in this order, so this is the order the model reads the candidates in.
+		this.rankingRun?.exposed({
+			surface: "baseline",
+			query,
+			results: [...shownMinSync, ...shownDatasource, ...shownWeb],
+		});
 		if (shownMinSync.length > 0) {
 			sections.push(
 				`MinSync semantic initial candidates:\n${shownMinSync
@@ -3711,6 +3899,43 @@ export class AutoRAGAgent {
 		const reranked = await reranker.rerank(query, candidates, { topN: this.rerankTopN, signal });
 		if (reranked.length === 0) throw new Error("reranker returned no results for a non-empty candidate pool");
 		return reranked;
+	}
+
+	/**
+	 * Opt-in learning-to-rank step: reorder the reranked baseline with the configured model. A disabled setting does
+	 * nothing at all. An enabled setting that cannot serve (no model passed its gate, the model is gone or no longer
+	 * matches this build's features, or scoring throws) leaves the reranker's order untouched and says why in a
+	 * diagnostic; evidence is never added or dropped.
+	 */
+	private applyLtr(reranked: readonly RetrievalResult[]): RetrievalResult[] {
+		if (this.ltrSettings.enabled !== true || this.rankingRun === undefined) return [...reranked];
+		const scorer = createLtrScorer({
+			enabled: true,
+			...(this.ltrSettings.model !== undefined ? { model: this.ltrSettings.model } : {}),
+			memoryPath: this.memoryFilePath,
+		});
+		if (scorer.status === "disabled") return [...reranked];
+		if (scorer.status !== "active") {
+			this.routingDiagnostics.push({
+				code: "ltr-unavailable",
+				severity: "warning",
+				message: `Learning-to-rank is enabled but not used: ${scorer.reason}. The reranker's order was kept.`,
+				source: "ltr",
+			});
+			return [...reranked];
+		}
+		const outcome = scorer.rank(this.rankingRun.snapshot({ finishedAt: Date.now() }), reranked);
+		if (outcome.error !== undefined) {
+			this.routingDiagnostics.push({
+				code: "ltr-failed",
+				severity: "warning",
+				message: `Learning-to-rank model ${scorer.modelId} failed and the reranker's order was kept: ${outcome.error}`,
+				source: "ltr",
+			});
+			return outcome.results;
+		}
+		this.rankingRun.servedBy(scorer.modelId);
+		return outcome.results;
 	}
 
 	/**

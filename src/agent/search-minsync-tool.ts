@@ -61,6 +61,7 @@ export function createSearchMinSyncDocumentsTool(
 			const { text } = registerAndRender(
 				ledger,
 				SEARCH_MINSYNC_DOCUMENTS_TOOL_NAME,
+				params.query,
 				results,
 				(result) => `${result.source} score=${result.score.toFixed(4)}${locationSuffix(result.metadata)}`,
 				options.recordCut,
