@@ -805,8 +805,6 @@ export interface AutoRAGAgentOptions {
 		 * file). Without it the tool can train and report but cannot change settings.
 		 */
 		readonly persist?: (settings: LtrSettings) => void;
-		/** Python command that has xgboost and numpy, overriding the default (`uv run`, else `python3`). */
-		readonly python?: readonly string[];
 	};
 	/**
 	 * Agent self-configuration. When set, Jev gains a `config` branch for
@@ -1131,7 +1129,6 @@ export class AutoRAGAgent {
 	/** The learning-to-rank settings in effect; `manage_ltr` replaces them in place so the next search sees the change. */
 	private ltrSettings: LtrSettings;
 	private readonly ltrPersist: ((settings: LtrSettings) => void) | undefined;
-	private readonly ltrPython: readonly string[] | undefined;
 	private ltrTraining: Promise<unknown> | undefined;
 	private readonly memoryFilePath: string;
 	/** Collects the in-flight run's ranking candidates and labels; undefined between runs. */
@@ -1299,7 +1296,6 @@ export class AutoRAGAgent {
 			...(options.ltr?.autoTrain !== undefined ? { autoTrain: options.ltr.autoTrain } : {}),
 		};
 		this.ltrPersist = options.ltr?.persist;
-		this.ltrPython = options.ltr?.python;
 		// Every retrieval tool funnels its ranked list through the ledger, so this one hook sees what the model was shown.
 		this.evidenceLedger.observeResults((tool, query, results) =>
 			this.rankingRun?.tool({ surface: tool, query, results }),
@@ -1346,8 +1342,7 @@ export class AutoRAGAgent {
 				this.ltrSettings = next;
 				return next;
 			},
-			train: () =>
-				trainLtrModel({ memoryPath: memPath, ...(this.ltrPython !== undefined ? { python: this.ltrPython } : {}) }),
+			train: () => trainLtrModel({ memoryPath: memPath }),
 		});
 		this.decisionModels = createDecisionModels({ ...options.jev, agentDir: options.piAgentDir });
 		this.jevJudge = this.decisionModels.judge;
@@ -1751,11 +1746,7 @@ export class AutoRAGAgent {
 	 */
 	private maybeAutoTrainLtr(): void {
 		if (this.ltrSettings.autoTrain?.enabled !== true || this.ltrTraining !== undefined) return;
-		this.ltrTraining = runAutoTrain({
-			memoryPath: this.memoryFilePath,
-			settings: this.ltrSettings,
-			...(this.ltrPython !== undefined ? { python: this.ltrPython } : {}),
-		})
+		this.ltrTraining = runAutoTrain({ memoryPath: this.memoryFilePath, settings: this.ltrSettings })
 			.catch(() => undefined)
 			.finally(() => {
 				this.ltrTraining = undefined;

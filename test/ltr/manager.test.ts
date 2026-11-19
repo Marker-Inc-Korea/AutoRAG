@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -124,31 +124,24 @@ describe("applyLtrPatch", () => {
 });
 
 describe("runAutoTrain", () => {
-	function fakePython(): string {
-		const path = join(root, "fake-python.sh");
-		const model = stumpModelJson([...LTR_SERVING_FEATURE_NAMES], "dense_best_rank", 1.5, 5, 0);
-		writeFileSync(path, `#!/bin/sh\ncat > "$4" <<'JSON'\n${model}\nJSON\necho '{"xgboost":"fake"}'\n`);
-		chmodSync(path, 0o755);
-		return path;
-	}
 	const settings = { autoTrain: { enabled: true, minNewRuns: 20 } };
 
 	it("does nothing when auto-train is off, the log is small, or it has not grown enough", async () => {
 		logRuns(MIN_TRAINING_RUNS + 25);
-		expect(await runAutoTrain({ memoryPath, settings: {}, python: [fakePython()] })).toBeUndefined();
+		expect(await runAutoTrain({ memoryPath, settings: {} })).toBeUndefined();
 		writeLtrState(ltrDirectory(memoryPath), { lastAttemptRuns: MIN_TRAINING_RUNS + 25 - 5 });
-		expect(await runAutoTrain({ memoryPath, settings, python: [fakePython()] })).toBeUndefined();
+		expect(await runAutoTrain({ memoryPath, settings })).toBeUndefined();
 		expect(listLtrModels(ltrDirectory(memoryPath))).toHaveLength(0);
 	});
 
 	it("trains once enough new runs were logged and records the attempt", async () => {
 		logRuns(MIN_TRAINING_RUNS + 25);
-		const result = await runAutoTrain({ memoryPath, settings, python: [fakePython()] });
+		const result = await runAutoTrain({ memoryPath, settings });
 		expect(result?.status).toBe("trained");
 		expect(listLtrModels(ltrDirectory(memoryPath))).toHaveLength(1);
 		expect(readLtrState(ltrDirectory(memoryPath)).lastAttemptRuns).toBe(MIN_TRAINING_RUNS + 25);
 		// Not due again until the log grows by minNewRuns.
-		expect(await runAutoTrain({ memoryPath, settings, python: [fakePython()] })).toBeUndefined();
+		expect(await runAutoTrain({ memoryPath, settings })).toBeUndefined();
 	});
 
 	it("leaves a live claim alone so two processes never train at once, and releases its own", async () => {
@@ -161,12 +154,12 @@ describe("runAutoTrain", () => {
 			timeoutError: () => new Error("held"),
 		});
 		try {
-			expect(await runAutoTrain({ memoryPath, settings, python: [fakePython()] })).toBeUndefined();
+			expect(await runAutoTrain({ memoryPath, settings })).toBeUndefined();
 			expect(existsSync(join(dir, "models"))).toBe(false);
 		} finally {
 			held.release();
 		}
-		expect((await runAutoTrain({ memoryPath, settings, python: [fakePython()] }))?.status).toBe("trained");
+		expect((await runAutoTrain({ memoryPath, settings }))?.status).toBe("trained");
 		expect(existsSync(join(dir, "train.lock"))).toBe(false);
 	});
 });

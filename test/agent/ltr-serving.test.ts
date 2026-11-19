@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -276,14 +276,11 @@ describe("learning-to-rank management from the agent", () => {
 			store.append(recordedRun(`seed-${String(i).padStart(3, "0")}`, 1_000 + i, { gold: 0 }).finish(true));
 		}
 		store.close();
-		const python = join(root, "fake-python.sh");
-		writeFileSync(python, `#!/bin/sh\ncat > "$4" <<'JSON'\n${DENSE_FIRST}\nJSON\necho '{"xgboost":"fake"}'\n`);
-		chmodSync(python, 0o755);
 		const server = await startRerankServer();
 		try {
 			const { agent } = buildAgent({
 				rerankUrl: server.rerank,
-				ltr: { enabled: false, autoTrain: { enabled: true, minNewRuns: 1 }, python: [python] },
+				ltr: { enabled: false, autoTrain: { enabled: true, minNewRuns: 1 } },
 			});
 			await agent.searchDocuments("what is the budget?");
 			const directory = ltrDirectory(join(root, "memory.json"));

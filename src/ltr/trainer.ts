@@ -1,7 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { delimiter, join } from "node:path";
+import { existsSync, mkdirSync } from "node:fs";
 import {
 	buildServingDataset,
 	LTR_SERVING_FEATURE_NAMES,
@@ -9,7 +7,6 @@ import {
 	type ServingSplit,
 } from "../memory/ltr-export.ts";
 import { RankingLogStore, rankingLogPath } from "../memory/ranking-log.ts";
-import { spawnProcess } from "../minsync/process.ts";
 import {
 	type LtrHoldoutMetrics,
 	type LtrModelMeta,
@@ -18,7 +15,7 @@ import {
 	saveLtrModel,
 	writeLtrState,
 } from "./model-store.ts";
-import { XGBOOST_TRAIN_SCRIPT } from "./train-script.ts";
+import { averageRankers, type RankingMatrix, type TrainedRanker, trainRanker } from "./wasm-trainer.ts";
 import { parseXgboostModel } from "./xgboost-model.ts";
 
 /** nDCG@10 may fall this far below the baseline and still pass: it is a noisy metric, and the MRR interval decides. */
@@ -41,8 +38,13 @@ export const MIN_TRAINING_RUNS = 100;
 /** Share of the newest eligible runs used for early stopping and for judging the finished model. */
 const VALID_FRACTION = 0.15;
 const HOLDOUT_FRACTION = 0.2;
-const TRAIN_TIMEOUT_MS = 10 * 60 * 1000;
 const BOOTSTRAP_SAMPLES = 2_000;
+/**
+ * One XGBoost model is fitted per seed and the stored model is their average. XGBoost's row and column subsampling
+ * makes a single fit depend on its seed (on one real log, seeds moved the holdout MRR by about 0.007 either way), so
+ * the gate judges the ensemble that is served, not whichever seed happened to be tried first.
+ */
+export const TRAINING_SEEDS: readonly number[] = [0, 1, 2, 3, 4];
 
 export interface RankedRow {
 	readonly runId: string;
@@ -137,32 +139,16 @@ export interface TrainResult {
 
 export interface TrainOptions {
 	readonly memoryPath: string;
-	/** Python command prefix, e.g. `["uv","run","--with","xgboost","--with","numpy","python"]`. Default: see {@link defaultPythonCommand}. */
-	readonly python?: readonly string[];
 	readonly now?: () => number;
 	readonly signal?: AbortSignal;
 }
 
-function onPath(executable: string): boolean {
-	return (process.env.PATH ?? "")
-		.split(delimiter)
-		.some((directory) => directory.length > 0 && existsSync(join(directory, executable)));
-}
-
-/** `uv` runs the trainer with xgboost resolved on demand; otherwise a `python3` that already has xgboost and numpy. */
-export function defaultPythonCommand(): readonly string[] {
-	return onPath("uv")
-		? ["uv", "run", "--quiet", "--with", "xgboost", "--with", "numpy", "python"]
-		: [process.platform === "win32" ? "python" : "python3"];
-}
-
-function tsv(split: ServingSplit, path: string): void {
-	const header = ["label", ...LTR_SERVING_FEATURE_NAMES].join("\t");
-	const body = split.rows.map((row: ServingRow) =>
-		[String(row.label), ...row.features.map((value) => (Number.isFinite(value) ? String(value) : "nan"))].join("\t"),
-	);
-	writeFileSync(path, `${[header, ...body].join("\n")}\n`, "utf-8");
-	writeFileSync(`${path}.query`, `${split.groups.join("\n")}\n`, "utf-8");
+function toMatrix(split: ServingSplit): RankingMatrix {
+	return {
+		rows: split.rows.map((row) => row.features),
+		labels: split.rows.map((row) => row.label),
+		groups: split.groups,
+	};
 }
 
 function score(rows: readonly ServingRow[], predict: (row: ServingRow) => number): RankedRow[] {
@@ -170,28 +156,15 @@ function score(rows: readonly ServingRow[], predict: (row: ServingRow) => number
 }
 
 const RERANK_RANK_INDEX = LTR_SERVING_FEATURE_NAMES.indexOf("rerank_rank");
-/** The xgboost version the trainer script reported on its last stdout line; undefined when it printed none. */
-function readTrainerVersion(stdout: string): string | undefined {
-	const line = stdout.trim().split("\n").at(-1);
-	if (line === undefined) return undefined;
-	try {
-		const parsed: unknown = JSON.parse(line);
-		if (typeof parsed === "object" && parsed !== null && "xgboost" in parsed && typeof parsed.xgboost === "string") {
-			return parsed.xgboost;
-		}
-	} catch {
-		// A trainer that printed something else still produced the model; the version is only informational.
-	}
-	return undefined;
-}
 
 /**
  * Train an XGBoost ranker on the ranking log and store it with its holdout verdict.
  *
  * Only runs where the baseline reranker returned candidates are used, and only the features the pipeline has at that
- * moment ({@link LTR_SERVING_FEATURE_NAMES}). The newest runs are held out: the finished model is scored there against
- * the reranker's own order, and it carries `passedGate` only when it is strictly better on MRR and no worse on
- * nDCG@10. A rejected model is still stored so the operator can inspect it, but `latest` never selects it.
+ * moment ({@link LTR_SERVING_FEATURE_NAMES}). One model is fitted per seed in {@link TRAINING_SEEDS} (XGBoost compiled
+ * to WebAssembly, in process) and averaged into the model that is stored. The newest runs are held out: that averaged
+ * model is scored there against the reranker's own order, and it carries `passedGate` only by {@link holdoutPasses}.
+ * A rejected model is still stored so the operator can inspect it, but `latest` never selects it.
  */
 export async function trainLtrModel(options: TrainOptions): Promise<TrainResult> {
 	const now = options.now ?? Date.now;
@@ -222,67 +195,65 @@ export async function trainLtrModel(options: TrainOptions): Promise<TrainResult>
 		};
 	}
 
-	const work = mkdtempSync(join(tmpdir(), "autorag-ltr-train-"));
+	options.signal?.throwIfAborted();
+	const fitted: TrainedRanker[] = [];
 	try {
-		const script = join(work, "train_xgboost.py");
-		const modelPath = join(work, "model.json");
-		writeFileSync(script, XGBOOST_TRAIN_SCRIPT, "utf-8");
-		tsv(dataset.train, join(work, "train.tsv"));
-		tsv(dataset.valid, join(work, "valid.tsv"));
-		const python = options.python ?? defaultPythonCommand();
-		const [command, ...prefix] = python;
-		if (command === undefined) throw new Error("ltr python command is empty");
-		const result = await spawnProcess(
-			command,
-			[...prefix, script, join(work, "train.tsv"), join(work, "valid.tsv"), modelPath],
-			work,
-			{ timeoutMs: TRAIN_TIMEOUT_MS, ...(options.signal === undefined ? {} : { signal: options.signal }) },
-		);
-		if (!result.ok || !existsSync(modelPath)) {
-			const detail = result.timedOut
-				? "the trainer timed out"
-				: result.stderr.trim().split("\n").slice(-6).join("\n") || `exit code ${String(result.code)}`;
-			const reason = `XGBoost training failed (python command: ${python.join(" ")}). Training needs Python with the xgboost and numpy packages, or uv on PATH. ${detail}`;
-			remember(`failed: ${detail}`);
-			return { ...base, status: "failed", reason };
+		for (const seed of TRAINING_SEEDS) {
+			fitted.push(
+				await trainRanker({
+					train: toMatrix(dataset.train),
+					valid: toMatrix(dataset.valid),
+					featureNames: dataset.featureNames,
+					seed,
+				}),
+			);
+			options.signal?.throwIfAborted();
 		}
-
-		const modelJson = readFileSync(modelPath, "utf-8");
-		const model = parseXgboostModel(modelJson);
-		const baseline = evaluateRanking(
-			score(dataset.holdout.rows, (row) => -(row.features[RERANK_RANK_INDEX] ?? Number.POSITIVE_INFINITY)),
-		);
-		const served = evaluateRanking(score(dataset.holdout.rows, (row) => model.predict(row.features)));
-		const deltas = served.perQueryMrr.map((value, index) => value - (baseline.perQueryMrr[index] as number));
-		const holdout: LtrHoldoutMetrics = {
-			queries: served.queries,
-			baseline: { ndcg10: baseline.ndcg10, mrr: baseline.mrr },
-			model: { ndcg10: served.ndcg10, mrr: served.mrr },
-			deltaMrrCi95: bootstrapCi95(deltas),
-		};
-		const passedGate = holdoutPasses(holdout);
-		const trainerInfo = readTrainerVersion(result.stdout);
-		const meta: LtrModelMeta = {
-			id: `xgb-${new Date(now()).toISOString().replace(/[-:T]/gu, "").slice(0, 14)}-${randomUUID().slice(0, 6)}`,
-			createdAt: now(),
-			featureNames: [...LTR_SERVING_FEATURE_NAMES],
-			objective: "rank:pairwise",
-			trainedOnRuns: dataset.train.groups.length + dataset.valid.groups.length,
-			loggedRunsAtTraining: runs.length,
-			holdout,
-			passedGate,
-			...(trainerInfo !== undefined ? { trainer: { xgboost: trainerInfo } } : {}),
-		};
-		mkdirSync(directory, { recursive: true });
-		saveLtrModel(directory, meta, modelJson);
-		remember(passedGate ? `trained ${meta.id}` : `rejected ${meta.id}`);
-		const summary = `holdout ${holdout.queries} queries: MRR ${baseline.mrr.toFixed(3)} -> ${served.mrr.toFixed(3)}, nDCG@10 ${baseline.ndcg10.toFixed(3)} -> ${served.ndcg10.toFixed(3)}`;
-		return passedGate
-			? { ...base, status: "trained", model: meta, reason: summary }
-			: { ...base, status: "rejected", model: meta, reason: `did not beat the reranker's order: ${summary}` };
-	} finally {
-		rmSync(work, { recursive: true, force: true });
+	} catch (error) {
+		if (options.signal?.aborted) throw error;
+		const detail = error instanceof Error ? error.message : String(error);
+		remember(`failed: ${detail}`);
+		return { ...base, status: "failed", reason: `XGBoost training failed: ${detail}` };
 	}
+
+	const modelJson = averageRankers(fitted.map((entry) => entry.modelJson));
+	const model = parseXgboostModel(modelJson);
+	const baseline = evaluateRanking(
+		score(dataset.holdout.rows, (row) => -(row.features[RERANK_RANK_INDEX] ?? Number.POSITIVE_INFINITY)),
+	);
+	const served = evaluateRanking(score(dataset.holdout.rows, (row) => model.predict(row.features)));
+	const seedMrr = fitted.map((entry) => {
+		const single = parseXgboostModel(entry.modelJson);
+		return evaluateRanking(score(dataset.holdout.rows, (row) => single.predict(row.features))).mrr;
+	});
+	const deltas = served.perQueryMrr.map((value, index) => value - (baseline.perQueryMrr[index] as number));
+	const holdout: LtrHoldoutMetrics = {
+		queries: served.queries,
+		baseline: { ndcg10: baseline.ndcg10, mrr: baseline.mrr },
+		model: { ndcg10: served.ndcg10, mrr: served.mrr },
+		deltaMrrCi95: bootstrapCi95(deltas),
+	};
+	const passedGate = holdoutPasses(holdout);
+	const meta: LtrModelMeta = {
+		id: `xgb-${new Date(now()).toISOString().replace(/[-:T]/gu, "").slice(0, 14)}-${randomUUID().slice(0, 6)}`,
+		createdAt: now(),
+		featureNames: [...LTR_SERVING_FEATURE_NAMES],
+		objective: "rank:pairwise",
+		trainedOnRuns: dataset.train.groups.length + dataset.valid.groups.length,
+		loggedRunsAtTraining: runs.length,
+		holdout,
+		passedGate,
+		trainer: { xgboost: fitted[0]?.xgboostVersion ?? "unknown" },
+		seeds: TRAINING_SEEDS.length,
+		seedMrr,
+	};
+	mkdirSync(directory, { recursive: true });
+	saveLtrModel(directory, meta, modelJson);
+	remember(passedGate ? `trained ${meta.id}` : `rejected ${meta.id}`);
+	const summary = `holdout ${holdout.queries} queries: MRR ${baseline.mrr.toFixed(3)} -> ${served.mrr.toFixed(3)}, nDCG@10 ${baseline.ndcg10.toFixed(3)} -> ${served.ndcg10.toFixed(3)}`;
+	return passedGate
+		? { ...base, status: "trained", model: meta, reason: summary }
+		: { ...base, status: "rejected", model: meta, reason: `did not beat the reranker's order: ${summary}` };
 }
 
 /** True when the log has grown enough since the last attempt that training again is worth a run. */

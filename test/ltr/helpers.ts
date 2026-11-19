@@ -53,7 +53,7 @@ export function recordedRun(
 /**
  * A valid XGBoost `rank:pairwise` JSON model with `trees` single-split trees on one feature: margin =
  * `lowValue` below `threshold` (missing goes left too), `highValue` at or above it. A test double for the real
- * Python trainer that the TypeScript predictor can evaluate exactly.
+ * XGBoost trainer, which the TypeScript predictor can evaluate exactly.
  */
 export function stumpModelJson(
 	featureNames: readonly string[],

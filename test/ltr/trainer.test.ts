@@ -1,12 +1,18 @@
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { listLtrModels, ltrDirectory } from "../../src/ltr/model-store.ts";
-import { evaluateRanking, holdoutPasses, MIN_TRAINING_RUNS, trainLtrModel } from "../../src/ltr/trainer.ts";
-import { LTR_SERVING_FEATURE_NAMES } from "../../src/memory/ltr-export.ts";
+import {
+	evaluateRanking,
+	holdoutPasses,
+	MIN_TRAINING_RUNS,
+	TRAINING_SEEDS,
+	trainLtrModel,
+} from "../../src/ltr/trainer.ts";
+import { parseXgboostModel } from "../../src/ltr/xgboost-model.ts";
 import { RankingLogStore, rankingLogPath } from "../../src/memory/ranking-log.ts";
-import { recordedRun, stumpModelJson } from "./helpers.ts";
+import { recordedRun } from "./helpers.ts";
 
 let root: string;
 let memoryPath: string;
@@ -15,28 +21,6 @@ beforeEach(() => {
 	memoryPath = join(root, "memory.json");
 });
 afterEach(() => rmSync(root, { recursive: true, force: true }));
-
-/**
- * Fake trainer: a script that honours the real contract (argv: script train.tsv valid.tsv out.json; prints a JSON line)
- * but writes a stump model. `good` puts the dense-rank-1 chunk first, which is the cited one in these logs;
- * `bad` leaves the cited chunk last, exactly where the reranker put it.
- */
-function fakePython(kind: "good" | "bad", fail = false): string {
-	const path = join(root, `fake-python-${kind}${fail ? "-fail" : ""}.sh`);
-	// Gold is always dense rank 1 and the reranker reverses the pool, so "dense rank low => high score" is the truth.
-	const model =
-		kind === "good"
-			? stumpModelJson([...LTR_SERVING_FEATURE_NAMES], "dense_best_rank", 1.5, 5, 0)
-			: stumpModelJson([...LTR_SERVING_FEATURE_NAMES], "rerank_rank", 7.5, 5, 0);
-	writeFileSync(
-		path,
-		fail
-			? "#!/bin/sh\necho 'xgboost exploded' >&2\nexit 3\n"
-			: `#!/bin/sh\ncat > "$4" <<'JSON'\n${model}\nJSON\necho '{"xgboost":"fake-1.0","bestIteration":1}'\n`,
-	);
-	chmodSync(path, 0o755);
-	return path;
-}
 
 function seedLog(count: number): void {
 	const store = new RankingLogStore(rankingLogPath(memoryPath));
@@ -92,64 +76,83 @@ describe("holdoutPasses", () => {
 	});
 });
 
-describe("trainLtrModel", () => {
+describe("trainLtrModel (WASM XGBoost, no Python)", () => {
 	it("refuses to train on too few labelled runs and says how many it needs", async () => {
 		seedLog(MIN_TRAINING_RUNS - 5);
-		const result = await trainLtrModel({ memoryPath, python: [fakePython("good")] });
+		const result = await trainLtrModel({ memoryPath });
 		expect(result.status).toBe("insufficient-data");
 		expect(result.reason).toContain(String(MIN_TRAINING_RUNS));
 		expect(listLtrModels(ltrDirectory(memoryPath))).toHaveLength(0);
 	});
 
-	it("stores a model that beats the baseline on the holdout and marks it as passing the gate", async () => {
-		seedLog(MIN_TRAINING_RUNS + 20);
-		const result = await trainLtrModel({ memoryPath, python: [fakePython("good")], now: () => 9_000_000 });
-		expect(result.status).toBe("trained");
+	it("learns a pattern that beats the reranker and stores a model that passed the gate", async () => {
+		// Gold is always the dense rank 1 chunk and the stub reranker always puts it last: a pattern worth learning.
+		seedLog(MIN_TRAINING_RUNS + 60);
+		const result = await trainLtrModel({ memoryPath, now: () => 9_000_000 });
+		expect(result.status, result.reason).toBe("trained");
 		const [stored] = listLtrModels(ltrDirectory(memoryPath));
 		expect(stored?.passedGate).toBe(true);
 		expect(stored?.holdout.model.mrr).toBeGreaterThan(stored?.holdout.baseline.mrr ?? 1);
-		expect(stored?.holdout.queries).toBeGreaterThan(0);
-		expect(stored?.trainer?.xgboost).toBe("fake-1.0");
+		expect(stored?.holdout.deltaMrrCi95[0]).toBeGreaterThan(0);
+		expect(stored?.trainer?.xgboost).toMatch(/^\d+\.\d+\.\d+$/u);
+		expect(stored?.seeds).toEqual(TRAINING_SEEDS.length);
 		expect(JSON.parse(readFileSync(join(ltrDirectory(memoryPath), "state.json"), "utf-8")).lastAttemptRuns).toBe(
-			MIN_TRAINING_RUNS + 20,
+			MIN_TRAINING_RUNS + 60,
 		);
 	});
 
-	it("keeps a model that does not beat the baseline but never lets `latest` pick it", async () => {
-		seedLog(MIN_TRAINING_RUNS + 20);
-		const result = await trainLtrModel({ memoryPath, python: [fakePython("bad")] });
+	it("judges the exact model it stores: an ensemble of one model per seed", async () => {
+		seedLog(MIN_TRAINING_RUNS + 60);
+		const first = await trainLtrModel({ memoryPath, now: () => 1_000 });
+		const second = await trainLtrModel({ memoryPath, now: () => 2_000 });
+		// Deterministic: the same log trains to the same verdict, so a verdict never depends on which run you got.
+		expect(first.model?.holdout).toEqual(second.model?.holdout);
+		expect(first.model?.seedMrr).toHaveLength(TRAINING_SEEDS.length);
+		const stored = readFileSync(
+			join(ltrDirectory(memoryPath), "models", first.model?.id ?? "", "model.json"),
+			"utf-8",
+		);
+		expect(parseXgboostModel(stored).treeCount).toBeGreaterThanOrEqual(TRAINING_SEEDS.length);
+	});
+
+	it("keeps a model that does not beat the reranker, but never lets `latest` pick it", async () => {
+		// Gold is already the reranker's first pick (and the dense first): nothing to learn beyond the baseline.
+		const store = new RankingLogStore(rankingLogPath(memoryPath));
+		for (let index = 0; index < MIN_TRAINING_RUNS + 60; index += 1) {
+			store.append(
+				recordedRun(`run-${String(index).padStart(3, "0")}`, 100_000 + index * 1_000, {
+					gold: 0,
+					rerankMode: "same",
+				}).finish(true),
+			);
+		}
+		store.close();
+		const result = await trainLtrModel({ memoryPath });
 		expect(result.status).toBe("rejected");
 		const [stored] = listLtrModels(ltrDirectory(memoryPath));
 		expect(stored?.passedGate).toBe(false);
 	});
 
-	it("reports the trainer's own error and stores nothing when python fails", async () => {
-		seedLog(MIN_TRAINING_RUNS + 20);
-		const result = await trainLtrModel({ memoryPath, python: [fakePython("good", true)] });
-		expect(result.status).toBe("failed");
-		expect(result.reason).toContain("xgboost exploded");
-		expect(listLtrModels(ltrDirectory(memoryPath))).toHaveLength(0);
-	});
-
-	it("reports a missing python as an actionable failure", async () => {
-		seedLog(MIN_TRAINING_RUNS + 20);
-		const result = await trainLtrModel({ memoryPath, python: [join(root, "no-such-python")] });
-		expect(result.status).toBe("failed");
-		expect(result.reason).toMatch(/python/iu);
-	});
-
 	it("remembers an attempt that found too little data, so the next search does not rescan the log", async () => {
 		seedLog(MIN_TRAINING_RUNS - 5);
-		await trainLtrModel({ memoryPath, python: [fakePython("good")] });
+		await trainLtrModel({ memoryPath });
 		expect(JSON.parse(readFileSync(join(ltrDirectory(memoryPath), "state.json"), "utf-8")).lastAttemptRuns).toBe(
 			MIN_TRAINING_RUNS - 5,
 		);
 	});
 
-	it("does not create a ranking log when none exists", async () => {
-		const result = await trainLtrModel({ memoryPath, python: [fakePython("good")] });
+	it("does not create a ranking log or a model directory when nothing was ever logged", async () => {
+		const result = await trainLtrModel({ memoryPath });
 		expect(result.status).toBe("insufficient-data");
 		expect(existsSync(rankingLogPath(memoryPath))).toBe(false);
 		expect(existsSync(ltrDirectory(memoryPath))).toBe(false);
+	});
+
+	it("stops when the caller aborts", async () => {
+		seedLog(MIN_TRAINING_RUNS + 60);
+		const controller = new AbortController();
+		controller.abort(new Error("stop"));
+		await expect(trainLtrModel({ memoryPath, signal: controller.signal })).rejects.toThrow(/stop/u);
+		expect(listLtrModels(ltrDirectory(memoryPath))).toHaveLength(0);
 	});
 });

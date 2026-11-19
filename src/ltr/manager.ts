@@ -113,8 +113,6 @@ export const AUTO_TRAIN_CLAIM_MS = 15 * 60 * 1000;
 export interface AutoTrainOptions {
 	readonly memoryPath: string;
 	readonly settings: LtrSettings | undefined;
-	/** Python command override; see {@link trainLtrModel}. */
-	readonly python?: readonly string[];
 	readonly signal?: AbortSignal;
 }
 
@@ -144,7 +142,6 @@ export async function runAutoTrain(options: AutoTrainOptions): Promise<TrainResu
 	try {
 		return await trainLtrModel({
 			memoryPath,
-			...(options.python !== undefined ? { python: options.python } : {}),
 			...(options.signal !== undefined ? { signal: options.signal } : {}),
 		});
 	} finally {

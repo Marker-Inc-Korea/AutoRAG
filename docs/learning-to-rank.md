@@ -137,15 +137,24 @@ autorag ltr list
 `train` builds a serving dataset from the log (`buildServingDataset`): only runs where the baseline reranker returned
 candidates, only the serving features (`LTR_SERVING_FEATURE_NAMES`), split by whole run in time order into train
 (oldest), validation (early stopping) and **holdout (newest 20%)**. It needs at least 100 usable runs (runs where
-nothing was cited teach nothing and are skipped). The model is fit by a small embedded Python script
-(`src/ltr/train-script.ts`) that needs `xgboost` and `numpy`: `uv` on PATH is used when present
-(`uv run --with xgboost --with numpy python`), otherwise `python3`; `--python "<cmd>"` overrides.
+nothing was cited teach nothing and are skipped).
+
+Training runs in the AutoRAG process, with no Python and nothing to install: XGBoost compiled to WebAssembly
+(`@bubblyworld/xgboost-ts`, pinned exactly; `src/ltr/wasm-trainer.ts`). It fits `rank:pairwise` (eta 0.05, depth 4,
+subsample and column sample 0.8, early stopping on validation nDCG@10, one thread so the result does not depend on the
+machine) once per seed in `TRAINING_SEEDS` (5) and averages the seed models into the one model that is stored. One
+fit alone depends on its seed (on a 944-run log, five seeds moved the holdout MRR between 0.759 and 0.783), so the
+verdict is about the ensemble that is served, not whichever seed ran first. The package does not document ranking
+groups; the trainer passes each row's query as XGBoost's `qid` through the C API, and
+`test/ltr/wasm-trainer.test.ts` pins that against numbers the Python xgboost library produced on the same data
+(`scripts/ltr/make-train-parity-fixture.py`): same rounds, same validation score, same margins. An upgrade that changes
+the learning fails there.
 
 The finished model is scored in TypeScript, with the same predictor that serves it, on the holdout runs it never saw,
 against the reranker's own order. It carries `passedGate` only when the 95% bootstrap interval of the per-query MRR
 difference lies entirely above zero (a point estimate above baseline is not enough on a few hundred queries) and
-nDCG@10 has not dropped by more than 0.005. The verdict, the holdout query count and the interval are stored in
-`meta.json`. A rejected model is kept so it can be inspected, but `latest` never selects it.
+nDCG@10 has not dropped by more than 0.005. The verdict, the holdout query count, the interval and each seed's own
+holdout MRR are stored in `meta.json`. A rejected model is kept so it can be inspected, but `latest` never selects it.
 
 Models live in `<memoryPath>.ltr/models/<id>/{model.json,meta.json}` beside the memory file, with `state.json`
 (retrain bookkeeping) and `train.lock`. Nothing is created until a train runs.

@@ -4,7 +4,7 @@
  *
  * Gated on AUTORAG_LTR_LIVE=1 plus an OpenRouter credential; the offline suite never calls a model. The librarian, a
  * real MinSync index (dense + SPLADE), the real hosted Jev judge, a real OpenRouter reranker and a real 2026+ chat
- * model run every search. Training runs the shipped Python trainer through `uv` (xgboost, numpy). To keep a live run
+ * model run every search. Training runs the shipped WASM XGBoost trainer, in process. To keep a live run
  * small, the log is seeded with `SEED_RUNS` replayed runs on top of the real searches (same record shape, written
  * through the real recorder), because a trainer needs ~100 runs and a real search costs several model calls.
  *
@@ -12,7 +12,6 @@
  *
  * The model must be a 2026+ release (see the global model-usage rule).
  */
-import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -160,9 +159,7 @@ describe.skipIf(!LIVE)("learning-to-rank training and serving, live stack", () =
 		}
 		store.close();
 
-		// 3. Train through the CLI with the real trainer (uv -> xgboost). Not enabled yet: searches must be unchanged.
-		const uv = spawnSync("uv", ["--version"], { encoding: "utf-8" });
-		expect(uv.status, "uv is required for the live LTR training test").toBe(0);
+		// 3. Train through the CLI with the real trainer (XGBoost WASM, in process). Not enabled yet: searches must be unchanged.
 		const trainOut: string[] = [];
 		const trainCode = await runLtr(ctx(configPath, ["train"], trainOut));
 		console.log(`train exit ${trainCode}: ${trainOut.join("\n").slice(0, 1200)}`);

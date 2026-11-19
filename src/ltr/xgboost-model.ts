@@ -1,8 +1,9 @@
 /**
  * Pure-TypeScript scorer for XGBoost ranking models saved as JSON (`Booster.save_model("x.json")`).
  *
- * Training needs the Python xgboost library; serving does not. A trained model is a few hundred small decision trees
- * that this file walks directly, so the search path stays in-process: no Python, no native addon, no network.
+ * Training runs XGBoost compiled to WebAssembly (`wasm-trainer.ts`); serving does not need it. A trained model is a few
+ * hundred small decision trees that this file walks directly, so the search path stays in-process: no WASM, no native
+ * addon, no network.
  *
  * Only what AutoRAG trains is accepted: the `gbtree` booster with a `rank:*` objective (the margin is the ranking
  * score, there is no link function) and numerical splits. Anything else is rejected at load time with the reason,

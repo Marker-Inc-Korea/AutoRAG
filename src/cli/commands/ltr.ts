@@ -6,7 +6,7 @@ import { renderError } from "../output.ts";
 import type { CommandContext } from "./types.ts";
 
 const USAGE =
-	"Usage: autorag ltr <status|list|train|enable|disable|use <model|latest>|auto-train <on|off> [--min-new-runs <n>]|delete <model>> [--python <cmd>]";
+	"Usage: autorag ltr <status|list|train|enable|disable|use <model|latest>|auto-train <on|off> [--min-new-runs <n>]|delete <model>>";
 
 /**
  * `autorag ltr` — manage the opt-in learning-to-rank reorder of search results: train a model from the ranking log,
@@ -32,12 +32,7 @@ export async function runLtr(ctx: CommandContext): Promise<number> {
 				return 0;
 			}
 			case "train": {
-				const python =
-					typeof ctx.flags.python === "string" ? ctx.flags.python.split(/\s+/u).filter(Boolean) : undefined;
-				const result = await trainLtrModel({
-					memoryPath: config.memoryPath,
-					...(python !== undefined ? { python } : {}),
-				});
+				const result = await trainLtrModel({ memoryPath: config.memoryPath });
 				const summary = {
 					status: result.status,
 					...(result.reason !== undefined ? { reason: result.reason } : {}),

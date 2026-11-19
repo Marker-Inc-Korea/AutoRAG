@@ -35,7 +35,12 @@ export interface LtrModelMeta {
 	readonly holdout: LtrHoldoutMetrics;
 	/** True when the model beat the baseline on the holdout by the training gate; only these are picked by `latest`. */
 	readonly passedGate: boolean;
+	/** xgboost version compiled into the WASM trainer that fitted it. */
 	readonly trainer?: { readonly xgboost: string };
+	/** Number of seeds averaged into the stored model (one XGBoost model per seed, merged into one). */
+	readonly seeds?: number;
+	/** Holdout MRR of each seed's own model, to see how much the verdict depends on the seed. */
+	readonly seedMrr?: readonly number[];
 }
 
 export interface LtrState {

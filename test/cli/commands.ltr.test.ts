@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -147,10 +147,7 @@ describe("autorag ltr", () => {
 			store.append(recordedRun(`r-${String(i).padStart(3, "0")}`, 1_000 + i, { gold: 0 }).finish(true));
 		}
 		store.close();
-		const python = join(root, "fake-python.sh");
-		writeFileSync(python, `#!/bin/sh\ncat > "$4" <<'JSON'\n${MODEL}\nJSON\necho '{"xgboost":"fake"}'\n`);
-		chmodSync(python, 0o755);
-		const trained = await run(["train"], { python });
+		const trained = await run(["train"]);
 		expect(trained.code).toBe(0);
 		expect(JSON.parse(trained.out)).toMatchObject({ status: "trained" });
 		await run(["enable"]);

@@ -39,7 +39,6 @@ const VALUE_FLAGS = new Set([
 	"memory-path",
 	"output",
 	"valid-fraction",
-	"python",
 	"min-new-runs",
 	"model-provider",
 	"model-id",
