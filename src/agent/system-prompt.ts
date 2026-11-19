@@ -83,6 +83,11 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 		),
 		toolLine(
 			config,
+			"manage_ltr",
+			"check, train, and configure the learning-to-rank reordering of search results (on/off, which trained model, automatic retraining)",
+		),
+		toolLine(
+			config,
 			"web_search",
 			"search the public internet for current information beyond the local corpus and knowledge cutoff",
 		),
@@ -125,6 +130,7 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 						"convert_files",
 						"list_file_conversions",
 						"manage_automations",
+						"manage_ltr",
 						"web_search",
 						"web_fetch",
 						"jev",
@@ -203,6 +209,17 @@ When the user asks for something to happen whenever files change — "when a PDF
 `
 		: "";
 
+	const learningToRank = toolAvailable(config, "manage_ltr")
+		? `## Learning-to-Rank
+
+AutoRAG logs every search's candidates and outcome and can train a ranking model from that log. When it is switched on, the model reorders the candidates the reranker already returned; it never adds or drops evidence, and any failure keeps the reranker's own order. Manage it with \`manage_ltr\`: \`status\` shows whether it is on, which model would serve, the trained models with how each did on searches it never saw, and whether retraining is due; \`train\` trains a new model now (needs enough logged searches and Python with xgboost, or uv); \`set\` changes \`enabled\`, the \`model\` (an id from \`status\`, or \`latest\`), \`auto_train\`, and \`min_new_runs\`.
+
+- It is opt-in and changes what every later search shows the user, so never turn it on, switch the model, or train without being asked. Answer questions about it from \`status\`.
+- A model marked rejected did not beat the reranker on held-out searches; do not recommend serving it. Say so plainly when the user asks to.
+- Report what you changed and what \`status\` says afterwards. If \`set\` reports that settings cannot be saved, tell the user to run \`autorag ltr enable\` (or \`use\`, \`auto-train\`) themselves.
+`
+		: "";
+
 	const fileOrganization = `## Local File Organization
 
 In local sessions you may organize, create, and modify local files with \`bash\` when the user asks: rename, move, copy, create folders, write new files (for example a draft or a summary the user requested), edit or replace existing files, and move files to the OS trash. Do not treat \`bash\` as read-only here.
@@ -259,6 +276,7 @@ ${fileOrganization}
 ${duplicateManagement}
 ${fileConversion}
 ${automations}
+${learningToRank}
 ${webResearch}
 ## External Datasource Skills
 

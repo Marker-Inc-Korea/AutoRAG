@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { z } from "zod";
@@ -106,6 +106,8 @@ const runSchema = z.object({
 	datasources: z.array(z.string()),
 	web: z.boolean(),
 	reranker: z.object({ provider: z.string(), model: z.string() }).optional(),
+	/** The learning-to-rank model whose order the model was shown for this run; absent when the reranker's own order stood. */
+	ltr: z.object({ modelId: z.string() }).optional(),
 	judgments: z.object({ citationRelevance: judgmentStateSchema, support: judgmentStateSchema }),
 	candidates: z.array(candidateSchema),
 });
@@ -248,6 +250,22 @@ export class RankingRunRecorder {
 		this.support = support;
 	}
 
+	private ltrModelId: string | undefined;
+
+	/** Record that a learning-to-rank model reordered what the model was shown. */
+	servedBy(modelId: string): void {
+		this.ltrModelId = modelId;
+	}
+
+	/**
+	 * The run as it stands, with no outcome labels: what a serving model can see right after the baseline rerank.
+	 * Serving features use prefetch observations and the rerank only, so this is the same view training reads from
+	 * the finished record. Cheap to call; it does not change the recorder.
+	 */
+	snapshot(options: { readonly finishedAt: number }): RankingRunRecord {
+		return this.finish({ finalCitationKeys: [], finishedAt: options.finishedAt });
+	}
+
 	finish(finish: RankingRunFinish): RankingRunRecord {
 		const final = new Set(finish.finalCitationKeys);
 		const pending = [...this.candidates.values()];
@@ -283,7 +301,7 @@ export class RankingRunRecorder {
 				method: candidate.observations[0]?.method ?? candidate.exposures[0]?.surface ?? "",
 			});
 			return {
-				chunkId: createHash("sha256").update(candidate.key).digest("hex").slice(0, 24),
+				chunkId: chunkIdOf(candidate.source, candidate.content),
 				source: candidate.source,
 				...(origin !== undefined ? { origin } : {}),
 				contentChars: candidate.contentChars,
@@ -318,6 +336,7 @@ export class RankingRunRecorder {
 			datasources: [...this.datasources],
 			web: this.web,
 			...(this.reranker !== undefined ? { reranker: this.reranker } : {}),
+			...(this.ltrModelId !== undefined ? { ltr: { modelId: this.ltrModelId } } : {}),
 			judgments: { citationRelevance: this.relevanceState, support: this.supportState },
 			candidates,
 		};
@@ -428,7 +447,29 @@ CREATE TABLE IF NOT EXISTS runs (run_id TEXT PRIMARY KEY, started_at INTEGER NOT
 		return { runs, skipped };
 	}
 
+	/** Number of stored runs of any schema version. */
+	count(): number {
+		const row = this.db.prepare("SELECT COUNT(*) AS n FROM runs").get() as { n: number };
+		return row.n;
+	}
+
 	close(): void {
 		this.db.close();
+	}
+}
+
+/** Stable id of one chunk in the log: the hash the export and the serving path both key candidates by. */
+export function chunkIdOf(source: string, content: string): string {
+	return createHash("sha256").update(evidenceChunkKey(source, content)).digest("hex").slice(0, 24);
+}
+
+/** Run count of the log at `path`; 0 when it does not exist (a count never creates the file). */
+export function countLoggedRuns(path: string): number {
+	if (!existsSync(path)) return 0;
+	const store = new RankingLogStore(path);
+	try {
+		return store.count();
+	} finally {
+		store.close();
 	}
 }

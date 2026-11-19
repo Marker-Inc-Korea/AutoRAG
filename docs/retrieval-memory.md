@@ -163,8 +163,9 @@ ranker needs and memory does not: each search run's whole candidate pool
 the model was shown each candidate, and graded outcome labels (cited by the
 final answer, Jev's citation relevance and support probabilities). Chunk text is
 not stored. `autorag memory export-ltr --output <dir>` writes it as LightGBM
-LambdaRank files; `"rankingLog": false` turns it off. Like memory, it never
-reorders search results. See [learning-to-rank.md](learning-to-rank.md).
+LambdaRank files; `"rankingLog": false` turns it off. Logging never reorders
+search results; only an opt-in trained model (`ltr.enabled`) does. See
+[learning-to-rank.md](learning-to-rank.md).
 
 ## What was removed
 

@@ -446,3 +446,146 @@ export function writeLtrDataset(dataset: LtrDataset, directory: string): { reado
 		],
 	};
 }
+
+/**
+ * Serving view: the features a learning-to-rank model can have at the moment the reranker returns, and the dataset
+ * built from them.
+ *
+ * The full export above describes a finished run. Serving happens earlier, right after the baseline rerank, so a
+ * serving model may only use what exists then: the prefetch observations (not the tool calls that come later), the
+ * reranker's rank and score, and per-chunk text signals. Features that depend on the rest of the run (BM25 over the
+ * run's final pool, pool size, memory and origin priors, merger counts) are left out, and a candidate the reranker
+ * did not return is never re-scored. Training and serving both go through {@link servingRows}, so a column cannot
+ * mean one thing offline and another in production.
+ */
+export const LTR_SERVING_FEATURE_NAMES = [
+	"primary_rank",
+	"primary_raw_score",
+	"primary_norm_score",
+	"primary_reciprocal_rank_sum",
+	"dense_best_rank",
+	"dense_max_score",
+	"dense_reciprocal_rank_sum",
+	"dense_hits",
+	"channel_count",
+	"query_hit_count",
+	"observation_count",
+	"rerank_rank",
+	"rerank_score",
+	"text_question_coverage",
+	"content_chars_log",
+] as const;
+
+const SERVING_FEATURE_INDICES = LTR_SERVING_FEATURE_NAMES.map((name) => LTR_FEATURE_NAMES.indexOf(name));
+
+export interface ServingRow {
+	readonly runId: string;
+	readonly chunkId: string;
+	readonly source: string;
+	readonly label: number;
+	/** Follows {@link LTR_SERVING_FEATURE_NAMES}; NaN = missing. */
+	readonly features: readonly number[];
+}
+
+const NO_VOCABULARY: LtrVocabularies = { origin: {}, method: {} };
+
+/**
+ * One row per candidate the baseline reranker returned, in the log's candidate order. Features use prefetch
+ * observations only, so the rows of a run snapshotted at rerank time equal the rows of its finished record.
+ */
+export function servingRows(run: RankingRunRecord): ServingRow[] {
+	const candidates = run.candidates
+		.filter((candidate) => candidate.rerank !== undefined)
+		.map((candidate) => ({
+			...candidate,
+			observations: candidate.observations.filter((observation) => observation.stage === "prefetch"),
+		}));
+	const view: RankingRunRecord = { ...run, candidates };
+	const bounds = computeRunListBounds(view);
+	return candidates.map((candidate) => {
+		const full = candidateFeatures(candidate, view, bounds, NO_VOCABULARY, new Map());
+		return {
+			runId: run.runId,
+			chunkId: candidate.chunkId,
+			source: candidate.source,
+			label: ltrLabel(candidate.labels),
+			features: SERVING_FEATURE_INDICES.map((index) => full[index] as number),
+		};
+	});
+}
+
+export interface ServingSplit {
+	readonly rows: readonly ServingRow[];
+	/** Rows per query group, in row order. */
+	readonly groups: readonly number[];
+}
+
+export interface ServingDataset {
+	readonly featureNames: readonly string[];
+	readonly train: ServingSplit;
+	readonly valid: ServingSplit;
+	readonly holdout: ServingSplit;
+	readonly skipped: {
+		readonly noRerank: number;
+		readonly singleCandidate: number;
+		readonly noLabelVariance: number;
+	};
+	/** Labelled runs that went into the dataset (before the split). */
+	readonly runs: number;
+	readonly firstRunAt?: number;
+	readonly lastRunAt?: number;
+}
+
+export interface BuildServingDatasetOptions {
+	/** Share of the newest eligible runs used for early stopping, in [0, 1). */
+	readonly validFraction: number;
+	/** Share of the newest eligible runs kept back to judge the finished model, in [0, 1). */
+	readonly holdoutFraction: number;
+}
+
+function toSplit(groups: readonly (readonly ServingRow[])[]): ServingSplit {
+	return { rows: groups.flat(), groups: groups.map((group) => group.length) };
+}
+
+/**
+ * Build the train/validation/holdout sets for a serving model. Whole runs are split in time order (oldest to train,
+ * then validation, newest to holdout) so no query has rows on both sides and the holdout looks like the traffic the
+ * model would serve next. Runs that cannot teach a ranker are counted and dropped.
+ */
+export function buildServingDataset(
+	runs: readonly RankingRunRecord[],
+	options: BuildServingDatasetOptions,
+): ServingDataset {
+	const { validFraction, holdoutFraction } = options;
+	if (!(validFraction >= 0 && validFraction < 1) || !(holdoutFraction >= 0 && holdoutFraction < 1)) {
+		throw new Error("validFraction and holdoutFraction must be in [0, 1)");
+	}
+	if (validFraction + holdoutFraction >= 1) throw new Error("validFraction + holdoutFraction must be below 1");
+	const ordered = [...runs].sort((a, b) => a.startedAt - b.startedAt || a.runId.localeCompare(b.runId));
+	let noRerank = 0;
+	let singleCandidate = 0;
+	let noLabelVariance = 0;
+	const eligible: ServingRow[][] = [];
+	for (const run of ordered) {
+		const rows = servingRows(run);
+		if (rows.length === 0) noRerank += 1;
+		else if (rows.length < 2) singleCandidate += 1;
+		else if (new Set(rows.map((row) => row.label)).size < 2) noLabelVariance += 1;
+		else eligible.push(rows);
+	}
+	const holdoutCount = eligible.length < 3 ? 0 : Math.round(eligible.length * holdoutFraction);
+	const validCount = eligible.length - holdoutCount < 2 ? 0 : Math.round(eligible.length * validFraction);
+	const trainEnd = eligible.length - holdoutCount - validCount;
+	const first = ordered[0];
+	const last = ordered.at(-1);
+	return {
+		featureNames: [...LTR_SERVING_FEATURE_NAMES],
+		train: toSplit(eligible.slice(0, trainEnd)),
+		valid: toSplit(eligible.slice(trainEnd, trainEnd + validCount)),
+		holdout: toSplit(eligible.slice(trainEnd + validCount)),
+		skipped: { noRerank, singleCandidate, noLabelVariance },
+		runs: eligible.length,
+		...(first !== undefined ? { firstRunAt: first.startedAt } : {}),
+		...(last !== undefined ? { lastRunAt: last.startedAt } : {}),
+	};
+}

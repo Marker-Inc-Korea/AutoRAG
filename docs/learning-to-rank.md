@@ -1,4 +1,4 @@
-# Learning-to-rank training data
+# Learning-to-rank: training log, training, and opt-in serving
 
 AutoRAG fuses candidates from several retrieval channels: MinSync dense vectors and SPLADE sparse terms over local
 files, every Jev-selected datasource, the web, and the tools the model calls during verification. Today the fusion is
@@ -7,8 +7,9 @@ which candidates mattered: the final answer cites them, and Jev judges whether a
 really supports the answer. This page describes the log that keeps those signals in a form a learning-to-rank (LTR)
 model such as LightGBM LambdaRank can be trained on.
 
-This PR only collects and exports the data. No model is trained or served, and nothing in the search path changes
-order because of it.
+Collecting and exporting the log changes nothing about search. Training a model and serving it are separate, opt-in
+steps described under [Training](#training) and [Serving](#serving-opt-in): with no `ltr` block in the config, the
+retrieval order is exactly what the merger and reranker produce.
 
 ## Why retrieval memory alone is not training data
 
@@ -119,5 +120,62 @@ model = lgb.train({"objective": "lambdarank", "metric": "ndcg", "eval_at": [1, 3
 - Local files the model opened with `bash` and Jikji path hints are not candidates: they carry no channel score.
 - Per-channel features are only as rich as each backend reports. MinSync `hybrid` (used by `search_all_documents`)
   reports one fused score; dense and SPLADE are separate only where they are queried separately.
-- Nothing here trains or serves a model. Serving one would replace the merger/reranker order and needs its own
-  offline evaluation against these exports first.
+- The serving model is trained only on the features that exist right after the baseline rerank (see below), so it
+  cannot use tool-call results, merger counts, or memory priors; the full export keeps those for offline research.
+- Serving only reorders the candidates the reranker returned. A candidate the reranker cut is never promoted.
+- Labels are the model's own citations, so a model trained on them learns what the answering model tends to cite. Treat
+  the holdout verdict as evidence about that, not as proof of better answers.
+
+## Training
+
+```bash
+autorag ltr train            # fits an XGBoost rank:pairwise model on the ranking log
+autorag ltr status           # logged runs, models, whether serving or retraining is due
+autorag ltr list
+```
+
+`train` builds a serving dataset from the log (`buildServingDataset`): only runs where the baseline reranker returned
+candidates, only the serving features (`LTR_SERVING_FEATURE_NAMES`), split by whole run in time order into train
+(oldest), validation (early stopping) and **holdout (newest 20%)**. It needs at least 100 usable runs (runs where
+nothing was cited teach nothing and are skipped). The model is fit by a small embedded Python script
+(`src/ltr/train-script.ts`) that needs `xgboost` and `numpy`: `uv` on PATH is used when present
+(`uv run --with xgboost --with numpy python`), otherwise `python3`; `--python "<cmd>"` overrides.
+
+The finished model is scored in TypeScript, with the same predictor that serves it, on the holdout runs it never saw,
+against the reranker's own order. It carries `passedGate` only when the 95% bootstrap interval of the per-query MRR
+difference lies entirely above zero (a point estimate above baseline is not enough on a few hundred queries) and
+nDCG@10 has not dropped by more than 0.005. The verdict, the holdout query count and the interval are stored in
+`meta.json`. A rejected model is kept so it can be inspected, but `latest` never selects it.
+
+Models live in `<memoryPath>.ltr/models/<id>/{model.json,meta.json}` beside the memory file, with `state.json`
+(retrain bookkeeping) and `train.lock`. Nothing is created until a train runs.
+
+## Serving (opt-in)
+
+```jsonc
+// config.json
+"ltr": { "enabled": true, "model": "latest", "autoTrain": { "enabled": true, "minNewRuns": 200 } }
+```
+
+| Field | Meaning |
+|-------|---------|
+| `enabled` | Reorder the baseline with a trained model. Default `false`; with no `ltr` block nothing changes. |
+| `model` | A model id from `autorag ltr list`, or `latest` (default): the newest model that passed its holdout gate. An explicit id is served even if it was rejected, because the operator chose it. |
+| `autoTrain.enabled` | Retrain in the background after a logged search once the log has grown. Default off. |
+| `autoTrain.minNewRuns` | New logged runs since the last attempt before the next one. Default 200. |
+
+When enabled, right after the baseline reranker the model scores each returned candidate from the run's prefetch
+observations and rerank rank/score, and the baseline the answering model reads is ordered by that score. Guarantees:
+
+- Evidence is never added or dropped; unscored candidates follow the scored ones in reranker order.
+- The log still records the reranker's own rank and score (training's baseline) and the position the model was shown, so
+  future training sees both. The run is marked with the model id that served it (`ltr.modelId`).
+- If no model passed the gate, the selected one is gone, its features no longer match this build, or scoring throws,
+  the reranker's order is kept and a warning diagnostic says why (`ltr-unavailable`, `ltr-failed`).
+
+Manage it from the CLI (`autorag ltr enable|disable|use <id|latest>|auto-train on|off [--min-new-runs n]|delete <id>`) or
+let the agent do it: the `manage_ltr` tool offers `status`, `train` and `set`, and the system prompt tells the agent
+never to turn it on, switch models or train unasked. A change the agent makes is saved to the `ltr` block of the config
+file this run started from (and only there); a session with no config file reports that it cannot save. Automatic
+retraining runs detached after the answer, one at a time per process and, through a claim lock, one per memory
+directory; every attempt is recorded in `state.json` so a rejected or failed one is not retried on the next search.

@@ -248,6 +248,12 @@ Never target source documents. `memory inspect` is read-only and path-opaque.
 writes LightGBM LambdaRank files to `--output`; set `"rankingLog": false` to
 stop logging (see `docs/learning-to-rank.md`).
 
+`autorag ltr` trains an XGBoost ranker from that log and, only when enabled,
+reorders the baseline the reranker returned: `ltr status|list|train`,
+`ltr enable|disable`, `ltr use <model|latest>`, `ltr auto-train on|off`. It is
+off by default; a model only serves as `latest` after it beat the reranker on
+searches it never saw. Settings live in the config's `ltr` block.
+
 ## Rules
 
 - Use only configured and approved search paths.

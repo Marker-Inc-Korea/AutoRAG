@@ -77,6 +77,9 @@ import {
 	planJikjiSourceRoots,
 } from "../jikji/index.ts";
 import { DEFAULT_LANGUAGES, type LanguageTag } from "../language.ts";
+import { applyLtrPatch, type LtrSettings, runAutoTrain } from "../ltr/manager.ts";
+import { createLtrScorer } from "../ltr/scorer.ts";
+import { trainLtrModel } from "../ltr/trainer.ts";
 import { createCheckMemoryTool } from "../memory/check-memory-tool.ts";
 import { loadMemoryContext, type MemoryContext, type MemoryContextOptions } from "../memory/context.ts";
 import { EVIDENCE_SUPPORT_THRESHOLD, type JudgedEvidenceRecord } from "../memory/judged-evidence.ts";
@@ -192,6 +195,7 @@ import {
 	type MergedJikjiPolicy,
 } from "./jikji-find-tool.ts";
 import { loadLocalAutoRAGModel } from "./local-model.ts";
+import { createManageLtrTool, MANAGE_LTR_TOOL_NAME } from "./ltr-tool.ts";
 import { loadPackagedSkill, ORGANIZE_SKILL_NAME, type PackagedAgentSkill, SETUP_SKILL_NAME } from "./packaged-skill.ts";
 import { createPermissionGate, PermissionController, type PermissionMode } from "./permission-gate.ts";
 import {
@@ -787,6 +791,24 @@ export interface AutoRAGAgentOptions {
 	 */
 	rankingLog?: boolean;
 	/**
+	 * Opt-in learning-to-rank reorder of the baseline: after the baseline reranker, a trained XGBoost model picks the
+	 * order the model reads the candidates in. `enabled` defaults to false; `model` is a model id or `latest` (the
+	 * newest model that passed its holdout gate). Needs the ranking log. See docs/learning-to-rank.md.
+	 */
+	ltr?: {
+		readonly enabled?: boolean;
+		readonly model?: string;
+		/** Retrain by itself once the log has grown; see `autorag ltr auto-train`. */
+		readonly autoTrain?: { readonly enabled?: boolean; readonly minNewRuns?: number };
+		/**
+		 * Saves a settings change made through the `manage_ltr` tool (the CLI writes the `ltr` block of the config
+		 * file). Without it the tool can train and report but cannot change settings.
+		 */
+		readonly persist?: (settings: LtrSettings) => void;
+		/** Python command that has xgboost and numpy, overriding the default (`uv run`, else `python3`). */
+		readonly python?: readonly string[];
+	};
+	/**
 	 * Agent self-configuration. When set, Jev gains a `config` branch for
 	 * questions about AutoRAG's own settings: the turn skips the fast answer,
 	 * receives the full `autorag-setup` skill, edits `configPath` with the pi
@@ -1106,6 +1128,12 @@ export class AutoRAGAgent {
 	private readonly memoryVectorPath: string;
 	/** Where finished runs are logged for learning to rank; undefined when `rankingLog: false`. */
 	private readonly rankingLogPath: string | undefined;
+	/** The learning-to-rank settings in effect; `manage_ltr` replaces them in place so the next search sees the change. */
+	private ltrSettings: LtrSettings;
+	private readonly ltrPersist: ((settings: LtrSettings) => void) | undefined;
+	private readonly ltrPython: readonly string[] | undefined;
+	private ltrTraining: Promise<unknown> | undefined;
+	private readonly memoryFilePath: string;
 	/** Collects the in-flight run's ranking candidates and labels; undefined between runs. */
 	private rankingRun: RankingRunRecorder | undefined;
 	/** Every retrieval result of the in-flight run with the query/method that surfaced it. */
@@ -1264,6 +1292,14 @@ export class AutoRAGAgent {
 		this.memory.load();
 		this.memoryVectorPath = memoryVectorStorePath(memPath);
 		this.rankingLogPath = options.rankingLog === false ? undefined : rankingLogPath(memPath);
+		this.memoryFilePath = memPath;
+		this.ltrSettings = {
+			enabled: options.ltr?.enabled === true,
+			...(options.ltr?.model !== undefined ? { model: options.ltr.model } : {}),
+			...(options.ltr?.autoTrain !== undefined ? { autoTrain: options.ltr.autoTrain } : {}),
+		};
+		this.ltrPersist = options.ltr?.persist;
+		this.ltrPython = options.ltr?.python;
 		// Every retrieval tool funnels its ranked list through the ledger, so this one hook sees what the model was shown.
 		this.evidenceLedger.observeResults((tool, query, results) =>
 			this.rankingRun?.tool({ surface: tool, query, results }),
@@ -1300,6 +1336,19 @@ export class AutoRAGAgent {
 		const convertFilesTool = this.fileeOptions === false ? undefined : createConvertFilesTool(this);
 		const listFileConversionsTool = this.fileeOptions === false ? undefined : createListFileConversionsTool(this);
 		const manageAutomationsTool = createManageAutomationsTool();
+		const manageLtrTool = createManageLtrTool({
+			memoryPath: memPath,
+			settings: () => this.ltrSettings,
+			update: (patch) => {
+				if (this.ltrPersist === undefined) throw new Error("this session has no config file to save settings to");
+				const next = applyLtrPatch(this.ltrSettings, patch);
+				this.ltrPersist(next);
+				this.ltrSettings = next;
+				return next;
+			},
+			train: () =>
+				trainLtrModel({ memoryPath: memPath, ...(this.ltrPython !== undefined ? { python: this.ltrPython } : {}) }),
+		});
 		this.decisionModels = createDecisionModels({ ...options.jev, agentDir: options.piAgentDir });
 		this.jevJudge = this.decisionModels.judge;
 		this.jevExtension = createJevExtension(this.jevJudge);
@@ -1361,6 +1410,7 @@ export class AutoRAGAgent {
 			CONVERT_FILES_TOOL_NAME,
 			LIST_FILE_CONVERSIONS_TOOL_NAME,
 			MANAGE_AUTOMATIONS_TOOL_NAME,
+			MANAGE_LTR_TOOL_NAME,
 			JEV_TOOL_NAME,
 			WEB_SEARCH_TOOL_NAME,
 			WEB_FETCH_TOOL_NAME,
@@ -1389,6 +1439,7 @@ export class AutoRAGAgent {
 			...(convertFilesTool !== undefined ? [convertFilesTool] : []),
 			...(listFileConversionsTool !== undefined ? [listFileConversionsTool] : []),
 			manageAutomationsTool,
+			manageLtrTool,
 			...(jikjiFindTool !== undefined ? [jikjiFindTool] : []),
 			...(everythingSearchTool !== undefined ? [everythingSearchTool] : []),
 			...(fsearchSearchTool !== undefined ? [fsearchSearchTool] : []),
@@ -1694,6 +1745,24 @@ export class AutoRAGAgent {
 	}
 
 	/**
+	 * Start a background retrain when the settings ask for one and the log has grown enough. Fire and forget: the
+	 * answer never waits on it, one runs at a time per process (and one per memory directory, through the claim lock),
+	 * and a failure is dropped here because every attempt is recorded where `autorag ltr status` shows it.
+	 */
+	private maybeAutoTrainLtr(): void {
+		if (this.ltrSettings.autoTrain?.enabled !== true || this.ltrTraining !== undefined) return;
+		this.ltrTraining = runAutoTrain({
+			memoryPath: this.memoryFilePath,
+			settings: this.ltrSettings,
+			...(this.ltrPython !== undefined ? { python: this.ltrPython } : {}),
+		})
+			.catch(() => undefined)
+			.finally(() => {
+				this.ltrTraining = undefined;
+			});
+	}
+
+	/**
 	 * Freeze the run's ranking candidates and labels and append them to the learning-to-rank log. Features are taken
 	 * as they are now, at serve time: the memory prior counts only evidence judged before the run started, and the
 	 * similar-question prior is the one this run's memory context actually found (missing when it was never loaded,
@@ -1723,6 +1792,7 @@ export class AutoRAGAgent {
 			} finally {
 				store.close();
 			}
+			this.maybeAutoTrainLtr();
 			return undefined;
 		} catch (error) {
 			return {
@@ -3477,7 +3547,10 @@ export class AutoRAGAgent {
 				model: descriptor?.model ?? "unknown",
 				results: reranked,
 			});
-			this.rankingRun?.exposed({ surface: "baseline", query, results: reranked });
+			// The log keeps the reranker's own rank and score (training's baseline); only the order shown changes.
+			const shown = this.applyLtr(reranked);
+			this.rankingRun?.exposed({ surface: "baseline", query, results: shown });
+			reranked = shown;
 			const baseline = formatRerankedBaseline(
 				reranked,
 				reranked.map((result) => this.evidenceLedger.registerResult("baseline", result)),
@@ -3616,6 +3689,43 @@ export class AutoRAGAgent {
 		const reranked = await reranker.rerank(query, candidates, { topN: this.rerankTopN, signal });
 		if (reranked.length === 0) throw new Error("reranker returned no results for a non-empty candidate pool");
 		return reranked;
+	}
+
+	/**
+	 * Opt-in learning-to-rank step: reorder the reranked baseline with the configured model. A disabled setting does
+	 * nothing at all. An enabled setting that cannot serve (no model passed its gate, the model is gone or no longer
+	 * matches this build's features, or scoring throws) leaves the reranker's order untouched and says why in a
+	 * diagnostic; evidence is never added or dropped.
+	 */
+	private applyLtr(reranked: readonly RetrievalResult[]): RetrievalResult[] {
+		if (this.ltrSettings.enabled !== true || this.rankingRun === undefined) return [...reranked];
+		const scorer = createLtrScorer({
+			enabled: true,
+			...(this.ltrSettings.model !== undefined ? { model: this.ltrSettings.model } : {}),
+			memoryPath: this.memoryFilePath,
+		});
+		if (scorer.status === "disabled") return [...reranked];
+		if (scorer.status !== "active") {
+			this.routingDiagnostics.push({
+				code: "ltr-unavailable",
+				severity: "warning",
+				message: `Learning-to-rank is enabled but not used: ${scorer.reason}. The reranker's order was kept.`,
+				source: "ltr",
+			});
+			return [...reranked];
+		}
+		const outcome = scorer.rank(this.rankingRun.snapshot({ finishedAt: Date.now() }), reranked);
+		if (outcome.error !== undefined) {
+			this.routingDiagnostics.push({
+				code: "ltr-failed",
+				severity: "warning",
+				message: `Learning-to-rank model ${scorer.modelId} failed and the reranker's order was kept: ${outcome.error}`,
+				source: "ltr",
+			});
+			return outcome.results;
+		}
+		this.rankingRun.servedBy(scorer.modelId);
+		return outcome.results;
 	}
 
 	/**
