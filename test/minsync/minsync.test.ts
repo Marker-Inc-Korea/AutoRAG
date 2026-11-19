@@ -1515,6 +1515,33 @@ process.exit(2);
 		again?.end();
 	});
 
+	it("opens no first-build session while a sync from another caller is still preparing", async () => {
+		writeFirstSyncFake({ prepMs: 500, syncMs: 300 });
+		const other = new MinSyncVectorMethod({ binaryPath: minsyncBinary, root, workspacePath: minsyncWorkspace });
+		const foreign = other.sync();
+		await untilSyncProcessStarted();
+		// The workspace still looks clean (no transaction yet), but that sync is about to write it.
+		expect(existsSync(join(minsyncWorkspace, ".minsync", "txn.json"))).toBe(false);
+		expect(other.beginFirstBuild()).toBeUndefined();
+		await foreign;
+	});
+
+	it("treats a session sync as ordinary when the session ended before the sync started", async () => {
+		writeFirstSyncFake({ syncMs: 700 });
+		const method = new MinSyncVectorMethod({ binaryPath: minsyncBinary, root, workspacePath: minsyncWorkspace });
+		const session = method.beginFirstBuild();
+		const first = method.sync(false, undefined, undefined, session);
+		await untilFirstSyncOpened();
+		// Registered behind the running sync, then the refresh ends before it gets to start.
+		const second = method.sync(false, undefined, undefined, session);
+		session?.end();
+		await first;
+		rmSync(join(root, "sync-started"), { force: true });
+		await untilSyncProcessStarted();
+		await expect(method.retrieve("renewal cancellation", { topK: 1 })).rejects.toThrow("another sync is in progress");
+		await second;
+	});
+
 	it("refuses a queued query when a normal sync took over before its turn came", async () => {
 		const fake = writeFirstSyncFake({ syncMs: 250, queryMs: 700 });
 		const method = new MinSyncVectorMethod({ binaryPath: minsyncBinary, root, workspacePath: minsyncWorkspace });

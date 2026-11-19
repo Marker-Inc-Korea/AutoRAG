@@ -69,12 +69,14 @@ export interface FirstBuildSession {
 
 /**
  * Open a session when `workspacePath` holds nothing a refresh could be resuming: no `cursor.json`, and none of what an interrupted
- * first sync leaves behind. `undefined` when the workspace already holds an index (or an interrupted build left rows), which a query is
- * never allowed to read while it is being rewritten, or when another session is open (two refreshes could be building with different
- * embedders).
+ * first sync leaves behind, and no sync of any caller registered or running (one that is still preparing leaves the files looking
+ * clean while it is about to write them). `undefined` when the workspace already holds an index (or an interrupted build left rows),
+ * which a query is never allowed to read while it is being rewritten, or when another session is open (two refreshes could be
+ * building with different embedders).
  */
 export function beginFirstBuild(workspacePath: string): FirstBuildSession | undefined {
-	if (workspaceOpenSession.has(workspacePath) || !startsAsCleanFirstSync(workspacePath)) return undefined;
+	if (workspaceOpenSession.has(workspacePath) || (workspaceSyncInFlight.get(workspacePath) ?? 0) > 0) return undefined;
+	if (!startsAsCleanFirstSync(workspacePath)) return undefined;
 	let open = true;
 	const session: FirstBuildSession = {
 		workspacePath,
