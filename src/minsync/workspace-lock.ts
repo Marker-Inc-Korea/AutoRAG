@@ -46,12 +46,19 @@ function bump(counts: Map<string, number>, workspacePath: string, by: 1 | -1): v
 
 /** Syncs in flight that belong to a first-build session (counted when registered, so one that has not started yet counts too). */
 const workspaceSessionSyncs = new Map<string, number>();
+/** How many syncs without a session have started on a workspace; a session notes it when it opens. */
+const workspaceForeignStarts = new Map<string, number>();
+/** The one first-build session open on a workspace, if any. */
+const workspaceOpenSession = new Map<string, FirstBuildSession>();
+/** What each session saw when it opened, for telling whether a sync from outside it has run since. */
+const sessionMarks = new WeakMap<FirstBuildSession, number>();
 
 /**
  * One refresh that builds a workspace's index from nothing. Only the syncs that carry it (`runWorkspaceSync`'s `session` option)
  * count as the refresh's own: each runs with the embedder that wrote the earlier ones, over rows it wrote itself, so a query may read
  * beside every one of them and not only the first. A sync from anywhere else (a second instance, a forced or embedder-switching
- * refresh) carries no session and keeps the refusal, whatever else is running.
+ * refresh) carries no session and keeps the refusal, whatever else is running. And once such a sync has started, the session is over:
+ * the rows are no longer only the refresh's own, so its later syncs are ordinary ones.
  */
 export interface FirstBuildSession {
 	readonly workspacePath: string;
@@ -63,18 +70,24 @@ export interface FirstBuildSession {
 /**
  * Open a session when `workspacePath` holds nothing a refresh could be resuming: no `cursor.json`, and none of what an interrupted
  * first sync leaves behind. `undefined` when the workspace already holds an index (or an interrupted build left rows), which a query is
- * never allowed to read while it is being rewritten.
+ * never allowed to read while it is being rewritten, or when another session is open (two refreshes could be building with different
+ * embedders).
  */
 export function beginFirstBuild(workspacePath: string): FirstBuildSession | undefined {
-	if (!startsAsCleanFirstSync(workspacePath)) return undefined;
+	if (workspaceOpenSession.has(workspacePath) || !startsAsCleanFirstSync(workspacePath)) return undefined;
 	let open = true;
-	return {
+	const session: FirstBuildSession = {
 		workspacePath,
 		isOpen: () => open,
 		end: () => {
+			if (!open) return;
 			open = false;
+			if (workspaceOpenSession.get(workspacePath) === session) workspaceOpenSession.delete(workspacePath);
 		},
 	};
+	workspaceOpenSession.set(workspacePath, session);
+	sessionMarks.set(session, workspaceForeignStarts.get(workspacePath) ?? 0);
+	return session;
 }
 
 /**
@@ -114,12 +127,24 @@ export function runWorkspaceSync<T>(
 	run: () => Promise<T>,
 	options: { readonly session?: FirstBuildSession } = {},
 ): Promise<T> {
-	const owned =
-		options.session !== undefined && options.session.workspacePath === workspacePath && options.session.isOpen();
+	const session = options.session;
+	// Registered as the session's own now, so a query between two syncs of the refresh is not refused; settled again at the start.
+	let owned = session !== undefined && session.workspacePath === workspacePath && session.isOpen();
 	bump(workspaceSyncInFlight, workspacePath, 1);
 	if (owned) bump(workspaceSessionSyncs, workspacePath, 1);
 	return withWorkspaceLock(workspacePath, async () => {
 		await (workspaceQueryTails.get(workspacePath) ?? Promise.resolve());
+		if (owned && session !== undefined) {
+			// A sync from outside the session has started since it opened (or the refresh ended): this one cannot rely on rows
+			// being the refresh's own, so it is decided like any other sync.
+			const foreign = (workspaceForeignStarts.get(workspacePath) ?? 0) !== (sessionMarks.get(session) ?? 0);
+			if (foreign || !session.isOpen()) {
+				session.end();
+				owned = false;
+				bump(workspaceSessionSyncs, workspacePath, -1);
+			}
+		}
+		if (!owned) workspaceForeignStarts.set(workspacePath, (workspaceForeignStarts.get(workspacePath) ?? 0) + 1);
 		// Decided when this sync really starts, after the ones queued ahead of it have finished. A session's sync is counted already.
 		const clean = !owned && startsAsCleanFirstSync(workspacePath);
 		if (clean) bump(workspaceFirstSyncInFlight, workspacePath, 1);

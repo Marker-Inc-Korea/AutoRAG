@@ -1442,6 +1442,79 @@ process.exit(2);
 		expect(method.beginFirstBuild()).toBeUndefined();
 	});
 
+	it("lets a query read beside the first sync of a first build", async () => {
+		writeFirstSyncFake({ syncMs: 600 });
+		const method = new MinSyncVectorMethod({ binaryPath: minsyncBinary, root, workspacePath: minsyncWorkspace });
+		const session = method.beginFirstBuild();
+		const first = method.sync(false, undefined, undefined, session);
+		await untilFirstSyncOpened();
+		await expect(method.retrieve("renewal cancellation", { topK: 1 })).resolves.toEqual([]);
+		await first;
+		session?.end();
+	});
+
+	it("refuses a query when a sync from another caller is queued behind a running session sync", async () => {
+		writeFirstSyncFake({ syncMs: 700 });
+		const method = new MinSyncVectorMethod({ binaryPath: minsyncBinary, root, workspacePath: minsyncWorkspace });
+		const session = method.beginFirstBuild();
+		const first = method.sync(false, undefined, undefined, session);
+		await untilFirstSyncOpened();
+		// Not started yet: it waits behind the session's sync, but it is registered, and it may rebuild the index.
+		const other = new MinSyncVectorMethod({ binaryPath: minsyncBinary, root, workspacePath: minsyncWorkspace });
+		const foreign = other.sync(true);
+		await expect(method.retrieve("renewal cancellation", { topK: 1 })).rejects.toThrow("another sync is in progress");
+		await Promise.all([first, foreign]);
+		session?.end();
+	});
+
+	it("refuses a query once a session sync starts over rows a sync from another caller wrote", async () => {
+		writeFirstSyncFake({ syncMs: 500 });
+		const method = new MinSyncVectorMethod({ binaryPath: minsyncBinary, root, workspacePath: minsyncWorkspace });
+		const session = method.beginFirstBuild();
+		const other = new MinSyncVectorMethod({ binaryPath: minsyncBinary, root, workspacePath: minsyncWorkspace });
+		// A sync without the session runs first on the clean workspace; the refresh's own sync queues behind it.
+		const foreign = other.sync();
+		await untilSyncProcessStarted();
+		const own = method.sync(false, undefined, undefined, session);
+		// While the foreign sync is the first sync of a clean index, a query beside it is the ordinary, allowed case.
+		await untilFirstSyncOpened();
+		await expect(method.retrieve("renewal cancellation", { topK: 1 })).resolves.toEqual([]);
+		await foreign;
+		// The session's sync now starts on an index another caller built: it is an ordinary sync, and the session is over.
+		rmSync(join(root, "sync-started"), { force: true });
+		await untilSyncProcessStarted();
+		await expect(method.retrieve("renewal cancellation", { topK: 1 })).rejects.toThrow("another sync is in progress");
+		expect(session?.isOpen()).toBe(false);
+		await own;
+	});
+
+	it("ends the session when a sync from another caller has run since it opened, so its later syncs are ordinary", async () => {
+		writeFirstSyncFake({ syncMs: 400 });
+		const method = new MinSyncVectorMethod({ binaryPath: minsyncBinary, root, workspacePath: minsyncWorkspace });
+		const session = method.beginFirstBuild();
+		// Another instance (another embedder, say) builds the clean workspace before the refresh's first sync starts.
+		const other = new MinSyncVectorMethod({ binaryPath: minsyncBinary, root, workspacePath: minsyncWorkspace });
+		await other.sync();
+		rmSync(join(root, "sync-started"), { force: true });
+		const own = method.sync(false, undefined, undefined, session);
+		await untilSyncProcessStarted();
+		// The session's sync would now rebuild rows another caller wrote: no query beside it.
+		await expect(method.retrieve("renewal cancellation", { topK: 1 })).rejects.toThrow("another sync is in progress");
+		expect(session?.isOpen()).toBe(false);
+		await own;
+	});
+
+	it("opens one first-build session per workspace at a time", async () => {
+		const method = new MinSyncVectorMethod({ binaryPath: minsyncBinary, root, workspacePath: minsyncWorkspace });
+		const first = method.beginFirstBuild();
+		expect(first).toBeDefined();
+		expect(method.beginFirstBuild()).toBeUndefined();
+		first?.end();
+		const again = method.beginFirstBuild();
+		expect(again).toBeDefined();
+		again?.end();
+	});
+
 	it("refuses a queued query when a normal sync took over before its turn came", async () => {
 		const fake = writeFirstSyncFake({ syncMs: 250, queryMs: 700 });
 		const method = new MinSyncVectorMethod({ binaryPath: minsyncBinary, root, workspacePath: minsyncWorkspace });
