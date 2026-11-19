@@ -3,10 +3,11 @@ import { statSync } from "node:fs";
 
 /**
  * Oldest `minsync` AutoRAG will run. 0.6.0 replaced the BM25 full-text index with SPLADE sparse retrieval: AutoRAG
- * queries `--mode sparse` and no longer passes `init --language`, which older builds reject. 0.7.1 answers queries
- * from every committed batch, also while the first sync is still running or was interrupted.
+ * queries `--mode sparse` and no longer passes `init --language`, which older builds reject. 0.7.4 refuses a query
+ * whose embedder differs from the one that built the index (the `cursor.json` records it); the workspace lock lets
+ * queries run beside a sync of a built index only because of that check, which 0.7.3 and older do not make.
  */
-export const MINSYNC_MIN_VERSION = "0.7.1";
+export const MINSYNC_MIN_VERSION = "0.7.4";
 
 /** `minsync --version` answers instantly; a binary that does not within this is treated as unprobeable. */
 const VERSION_PROBE_TIMEOUT_MS = 5_000;

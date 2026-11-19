@@ -2,17 +2,23 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 
 /**
- * MinSync allows one operation per workspace: a second concurrent operation fails
- * with "another sync is in progress" while the first holds its lock. Everything
- * AutoRAG runs against one workspace (the local-file vector and hybrid methods,
- * or one Obsidian vault) goes through here, so operations for one workspace queue
- * instead of colliding, and a query never reads an index a sync is rewriting.
+ * One workspace, two kinds of operation.
  *
- * One exception: the first sync of a workspace. MinSync's `query` takes no lock and reads a
- * snapshot of the store, and every batch the first sync commits is final (its dense rows and
- * their sparse vectors), so the batches committed so far answer queries while the rest are still
- * being read. That is what lets a first index be searched, and a question be proven against it,
- * before it ends.
+ * A sync rewrites the index and the staged files, so syncs for one workspace queue behind each other
+ * instead of colliding on MinSync's lock ("another sync is in progress"). Everything AutoRAG runs against
+ * one workspace (the local-file vector and hybrid methods, or one Obsidian vault) goes through here.
+ *
+ * A query does not wait for a sync. MinSync's `query` takes no lock: it reads the store at the table version
+ * that is current when it opens, and a sync prunes only versions older than ten minutes. So a query beside a
+ * sync of an index that already has a `cursor.json` answers from what is committed (MinSync 0.7.4 checks every
+ * such query against the embedder the cursor records), and so do the committed batches of a clean first sync
+ * or of a first-build session (final: dense rows and their sparse vectors). That keeps search available while
+ * an index is built or refreshed, and lets a question be proven against a first index before it ends. Queries
+ * of one workspace run one at a time.
+ *
+ * Refused: a query while the index has nothing to read yet, and while a sync is pending that follows an
+ * interrupted first sync (no cursor to check against, rows that may be another embedder's) or has not started
+ * yet and so is not known to be safe; see {@link runWorkspaceQuery}.
  */
 const workspaceOperationTails = new Map<string, Promise<unknown>>();
 /** Queries of one workspace queue behind each other (one `minsync query` process, hence one set of loaded models, at a time) but not behind a first sync. */
@@ -20,6 +26,8 @@ const workspaceQueryTails = new Map<string, Promise<unknown>>();
 const workspaceSyncInFlight = new Map<string, number>();
 /** Syncs in flight that began as the first sync of an index nothing was ever built for, and that keep what they stored. */
 const workspaceFirstSyncInFlight = new Map<string, number>();
+/** Syncs in flight that began on an index that already had a `cursor.json`: MinSync checks its embedder against that cursor on every query. */
+const workspaceBuiltSyncInFlight = new Map<string, number>();
 
 function chain<T>(tails: Map<string, Promise<unknown>>, workspacePath: string, run: () => Promise<T>): Promise<T> {
 	const previous = tails.get(workspacePath) ?? Promise.resolve();
@@ -104,15 +112,20 @@ function startsAsCleanFirstSync(workspacePath: string): boolean {
 }
 
 /**
- * Whether MinSync itself would answer a query now from a first sync's committed batches: its transaction is open and no
- * sync has completed. Before that (the librarian is still installing, staging, initializing, or MinSync is scanning) `minsync query`
+ * Whether MinSync would answer a query now from what is committed, given that every sync in flight is a kind a query may read beside.
+ * With a `cursor.json` it does, from the last completed sync. Without one only a first sync's open transaction (`txn.json`) is
+ * readable (every committed batch is final), and a caller that cannot use that (`firstSyncReadable: false`) is refused. With neither
+ * file (the librarian is still installing, staging, or initializing, or a forced rebuild has moved the store aside) `minsync query`
  * answers "never synced", which the caller would misreport, so the query is refused as before.
  */
-function firstSyncIsReadable(workspacePath: string): boolean {
+function indexIsReadable(workspacePath: string, firstSyncReadable: boolean): boolean {
 	const state = join(workspacePath, ".minsync");
-	// A later sync of a first-build session answers from the cursor the earlier one wrote.
-	if (existsSync(join(state, "cursor.json"))) return (workspaceSessionSyncs.get(workspacePath) ?? 0) > 0;
-	return existsSync(join(state, "txn.json"));
+	if (existsSync(join(state, "cursor.json"))) return true;
+	return firstSyncReadable && existsSync(join(state, "txn.json"));
+}
+
+function hasCursor(workspacePath: string): boolean {
+	return existsSync(join(workspacePath, ".minsync", "cursor.json"));
 }
 
 function refusal(workspacePath: string): Error {
@@ -132,8 +145,12 @@ export function runWorkspaceSync<T>(
 	const session = options.session;
 	// Registered as the session's own now, so a query between two syncs of the refresh is not refused; settled again at the start.
 	let owned = session !== undefined && session.workspacePath === workspacePath && session.isOpen();
+	// A sync that finds a `cursor.json` at registration is a sync of a built index at its start too (the cursor only goes when a sync
+	// re-initializes the store, which the start checks again), so a query issued before it starts need not be refused.
+	let built = !owned && hasCursor(workspacePath);
 	bump(workspaceSyncInFlight, workspacePath, 1);
 	if (owned) bump(workspaceSessionSyncs, workspacePath, 1);
+	if (built) bump(workspaceBuiltSyncInFlight, workspacePath, 1);
 	return withWorkspaceLock(workspacePath, async () => {
 		await (workspaceQueryTails.get(workspacePath) ?? Promise.resolve());
 		if (owned && session !== undefined) {
@@ -149,6 +166,10 @@ export function runWorkspaceSync<T>(
 		if (!owned) workspaceForeignStarts.set(workspacePath, (workspaceForeignStarts.get(workspacePath) ?? 0) + 1);
 		// Decided when this sync really starts, after the ones queued ahead of it have finished. A session's sync is counted already.
 		const clean = !owned && startsAsCleanFirstSync(workspacePath);
+		// An index that was already built: its sync rewrites it in place, but every query is checked against the cursor's embedder.
+		const builtNow = !owned && !clean && hasCursor(workspacePath);
+		if (built !== builtNow) bump(workspaceBuiltSyncInFlight, workspacePath, builtNow ? 1 : -1);
+		built = builtNow;
 		if (clean) bump(workspaceFirstSyncInFlight, workspacePath, 1);
 		try {
 			return await run();
@@ -156,31 +177,42 @@ export function runWorkspaceSync<T>(
 			if (clean) bump(workspaceFirstSyncInFlight, workspacePath, -1);
 		}
 	}).finally(() => {
+		if (built) bump(workspaceBuiltSyncInFlight, workspacePath, -1);
 		bump(workspaceSyncInFlight, workspacePath, -1);
 		if (owned) bump(workspaceSessionSyncs, workspacePath, -1);
 	});
 }
 
-/** Whether every sync in flight for `workspacePath` is a clean first sync or one of a first-build session, whose committed batches a query may read. */
-function onlyCleanFirstSyncsInFlight(workspacePath: string): boolean {
+/**
+ * Whether every sync in flight for `workspacePath` is one whose committed state a query may read: a clean first sync, a
+ * sync of a first-build session, or a sync that started on an index that already had a `cursor.json`. A sync that is queued
+ * and has not started yet is none of these (it is classified when it really starts), and neither is one that follows an
+ * interrupted first sync, whose rows may be another embedder's.
+ */
+function onlyReadableSyncsInFlight(workspacePath: string): boolean {
 	const all = workspaceSyncInFlight.get(workspacePath) ?? 0;
-	const own = (workspaceFirstSyncInFlight.get(workspacePath) ?? 0) + (workspaceSessionSyncs.get(workspacePath) ?? 0);
+	const own =
+		(workspaceFirstSyncInFlight.get(workspacePath) ?? 0) +
+		(workspaceSessionSyncs.get(workspacePath) ?? 0) +
+		(workspaceBuiltSyncInFlight.get(workspacePath) ?? 0);
 	return all > 0 && all === own;
 }
 
 export interface WorkspaceQueryOptions {
 	/**
-	 * Allow the query beside a clean first sync (the default). A caller whose own state is not readable until a sync
-	 * completes (the Obsidian vault checks `cursor.json`) turns this off, so it keeps the accurate "another sync is in
-	 * progress" instead of a misleading "not indexed yet".
+	 * Allow the query beside a first sync, before any sync has completed (the default). A caller whose own state is not
+	 * readable until a sync completes (the Obsidian vault checks `cursor.json`) turns this off, so during a first sync it
+	 * keeps the accurate "another sync is in progress" instead of a misleading "not indexed yet". It still answers beside
+	 * a sync of an index that already has its `cursor.json`.
 	 */
 	readonly duringFirstSync?: boolean;
 }
 
 /**
- * Run a query. During the first sync of an index it does not wait for the sync: it runs beside it and sees the
- * batches committed so far, one query at a time. Any later sync rewrites an index that already answers, and a first
- * sync that follows an interrupted one may be changing the embedder, so a query is refused while one is pending.
+ * Run a query. It does not wait for a sync: beside a clean first sync, a first-build session, or a sync of an index that
+ * already has a `cursor.json`, it runs beside the sync and answers from what is committed, one query at a time. It is refused
+ * while another kind of sync is pending (one that follows an interrupted first sync may be changing the embedder, and one
+ * that has not started yet is not known to be safe), or while the index has nothing to read yet.
  * The answer is decided again when the query's turn comes, since the sync it was queued beside may have ended meanwhile.
  */
 export async function runWorkspaceQuery<T>(
@@ -189,9 +221,7 @@ export async function runWorkspaceQuery<T>(
 	options: WorkspaceQueryOptions = {},
 ): Promise<T> {
 	const allowedBesideSync = (): boolean =>
-		options.duringFirstSync !== false &&
-		onlyCleanFirstSyncsInFlight(workspacePath) &&
-		firstSyncIsReadable(workspacePath);
+		onlyReadableSyncsInFlight(workspacePath) && indexIsReadable(workspacePath, options.duringFirstSync !== false);
 	if ((workspaceSyncInFlight.get(workspacePath) ?? 0) > 0) {
 		if (!allowedBesideSync()) throw refusal(workspacePath);
 		return chain(workspaceQueryTails, workspacePath, () => {

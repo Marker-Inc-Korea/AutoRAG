@@ -453,7 +453,7 @@ describe("batched refresh", () => {
 		expect(results.length).toBeGreaterThan(0);
 	});
 
-	it("answers a query while the refresh's second sync runs, and refuses it again once the refresh is over", async () => {
+	it("answers a query while the refresh's second sync runs, and still answers beside a later sync of the built index", async () => {
 		const total = DEFAULT_MIRROR_BATCH_SIZE + 5;
 		writeSources(total);
 		const binary = join(root, "batched-minsync.mjs");
@@ -475,11 +475,11 @@ describe("batched refresh", () => {
 		writeFileSync(holdTwo, "");
 		await refresh;
 
-		// Over: a later sync of the built index is refused again, as it always was.
+		// Over: a later sync of the built index is an ordinary sync, and a query still reads beside it.
 		writeFileSync(join(docs, "late.txt"), "late content\n");
 		rmSync(holdTwo, { force: true });
 		const later = agent.syncMinSync(false);
-		await expect(method.retrieve("content", { topK: 5 })).rejects.toThrow("another sync is in progress");
+		await expect(method.retrieve("content", { topK: 5 })).resolves.not.toHaveLength(0);
 		writeFileSync(holdTwo, "");
 		await later;
 	});

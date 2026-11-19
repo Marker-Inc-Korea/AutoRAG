@@ -97,11 +97,15 @@ function loggedEnv(): { command: string; openaiKey: string | null }[] {
 		: [];
 }
 
-function writeFakeMinSync(queryJson: string, strictQuery = false, syncDelayMs = 0): void {
+/**
+ * `syncHoldPath`: while a file exists there, the fake `sync` does not finish. The wait lives in the child process,
+ * where no fake clock reaches; removing the file (or the whole temp root, if a test fails) frees it.
+ */
+function writeFakeMinSync(queryJson: string, strictQuery = false, syncDelayMs = 0, syncHoldPath?: string): void {
 	writeFileSync(
 		minsyncBinary,
 		`#!/usr/bin/env node
-import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { createRequire } from "node:module";
 
@@ -128,6 +132,7 @@ if (args[0] === "check") {
 
 if (args[0] === "sync") {
   ${syncDelayMs > 0 ? `await new Promise((resolve) => setTimeout(resolve, ${syncDelayMs}));` : ""}
+  ${syncHoldPath === undefined ? "" : `while (existsSync(${JSON.stringify(syncHoldPath)})) await new Promise((resolve) => setTimeout(resolve, 10));`}
   mkdirSync(dirname(cursor), { recursive: true });
   writeFileSync(cursor, JSON.stringify({ ready: true }));
   console.log(JSON.stringify({ files_processed: 1, files_processed_paths: ["files/docs/policy.txt.md"] }));
@@ -1189,7 +1194,7 @@ console.log(JSON.stringify({ results: [{ path: ${JSON.stringify(parsedOutput)}, 
 		expect(events[0]?.reason).toContain("embedder unreachable at http://127.0.0.1:9");
 	});
 
-	it("fails fast instead of waiting behind a refresh sync", async () => {
+	it("refuses a query, rather than queueing it, while a first sync has nothing readable yet", async () => {
 		writeFakeMinSync(JSON.stringify({ results: [] }), false, 200);
 		const method = new MinSyncVectorMethod({
 			binaryPath: minsyncBinary,
@@ -1408,30 +1413,30 @@ process.exit(2);
 		session?.end();
 	});
 
-	it("refuses a query beside a sync from another caller while a first build is running", async () => {
+	it("answers beside a sync from another caller once the first build has written its cursor, which MinSync checks the embedder against", async () => {
 		writeFirstSyncFake({ syncMs: 600 });
 		const method = new MinSyncVectorMethod({ binaryPath: minsyncBinary, root, workspacePath: minsyncWorkspace });
 		const session = method.beginFirstBuild();
 		await method.sync(false, undefined, undefined, session);
-		// A second instance on the same workspace, with no session: it may rebuild the index (a forced sync, another embedder).
+		// A second instance on the same workspace, with no session: it may rewrite the index (a forced sync). The index has a cursor now.
 		const other = new MinSyncVectorMethod({ binaryPath: minsyncBinary, root, workspacePath: minsyncWorkspace });
 		rmSync(join(root, "sync-started"), { force: true });
 		const foreign = other.sync(true);
 		await untilSyncProcessStarted();
-		await expect(method.retrieve("renewal cancellation", { topK: 1 })).rejects.toThrow("another sync is in progress");
+		await expect(method.retrieve("renewal cancellation", { topK: 1 })).resolves.toEqual([]);
 		await foreign;
 		session?.end();
 	});
 
-	it("refuses the same query once the first build is over", async () => {
+	it("answers beside a sync that still carries the ended first-build session, since the index has a cursor", async () => {
 		writeFirstSyncFake({ syncMs: 400 });
 		const method = new MinSyncVectorMethod({ binaryPath: minsyncBinary, root, workspacePath: minsyncWorkspace });
 		const session = method.beginFirstBuild();
 		await method.sync(false, undefined, undefined, session);
 		session?.end();
-		// A sync that still carries the ended session is no longer one of the refresh's own.
+		// A sync that still carries the ended session is an ordinary sync of a built index.
 		const later = method.sync(false, undefined, undefined, session);
-		await expect(method.retrieve("renewal cancellation", { topK: 1 })).rejects.toThrow("another sync is in progress");
+		await expect(method.retrieve("renewal cancellation", { topK: 1 })).resolves.toEqual([]);
 		await later;
 	});
 
@@ -1467,7 +1472,7 @@ process.exit(2);
 		session?.end();
 	});
 
-	it("refuses a query once a session sync starts over rows a sync from another caller wrote", async () => {
+	it("answers beside a session sync that starts over rows a sync from another caller wrote, now an ordinary sync of a built index", async () => {
 		writeFirstSyncFake({ syncMs: 500 });
 		const method = new MinSyncVectorMethod({ binaryPath: minsyncBinary, root, workspacePath: minsyncWorkspace });
 		const session = method.beginFirstBuild();
@@ -1483,12 +1488,12 @@ process.exit(2);
 		// The session's sync now starts on an index another caller built: it is an ordinary sync, and the session is over.
 		rmSync(join(root, "sync-started"), { force: true });
 		await untilSyncProcessStarted();
-		await expect(method.retrieve("renewal cancellation", { topK: 1 })).rejects.toThrow("another sync is in progress");
+		await expect(method.retrieve("renewal cancellation", { topK: 1 })).resolves.toEqual([]);
 		expect(session?.isOpen()).toBe(false);
 		await own;
 	});
 
-	it("ends the session when a sync from another caller has run since it opened, so its later syncs are ordinary", async () => {
+	it("ends the session when a sync from another caller has run since it opened, so its later syncs are ordinary syncs of a built index", async () => {
 		writeFirstSyncFake({ syncMs: 400 });
 		const method = new MinSyncVectorMethod({ binaryPath: minsyncBinary, root, workspacePath: minsyncWorkspace });
 		const session = method.beginFirstBuild();
@@ -1498,8 +1503,8 @@ process.exit(2);
 		rmSync(join(root, "sync-started"), { force: true });
 		const own = method.sync(false, undefined, undefined, session);
 		await untilSyncProcessStarted();
-		// The session's sync would now rebuild rows another caller wrote: no query beside it.
-		await expect(method.retrieve("renewal cancellation", { topK: 1 })).rejects.toThrow("another sync is in progress");
+		// The session's sync now starts on an index another caller built: an ordinary sync of a built index, which a query may read beside.
+		await expect(method.retrieve("renewal cancellation", { topK: 1 })).resolves.toEqual([]);
 		expect(session?.isOpen()).toBe(false);
 		await own;
 	});
@@ -1526,7 +1531,7 @@ process.exit(2);
 		await foreign;
 	});
 
-	it("treats a session sync as ordinary when the session ended before the sync started", async () => {
+	it("treats a session sync as ordinary when the session ended before the sync started, and still reads beside it", async () => {
 		writeFirstSyncFake({ syncMs: 700 });
 		const method = new MinSyncVectorMethod({ binaryPath: minsyncBinary, root, workspacePath: minsyncWorkspace });
 		const session = method.beginFirstBuild();
@@ -1538,11 +1543,11 @@ process.exit(2);
 		await first;
 		rmSync(join(root, "sync-started"), { force: true });
 		await untilSyncProcessStarted();
-		await expect(method.retrieve("renewal cancellation", { topK: 1 })).rejects.toThrow("another sync is in progress");
+		await expect(method.retrieve("renewal cancellation", { topK: 1 })).resolves.toEqual([]);
 		await second;
 	});
 
-	it("refuses a queued query when a normal sync took over before its turn came", async () => {
+	it("lets a queued query run beside a normal sync of a built index, which still waits for the query before it starts", async () => {
 		const fake = writeFirstSyncFake({ syncMs: 250, queryMs: 700 });
 		const method = new MinSyncVectorMethod({ binaryPath: minsyncBinary, root, workspacePath: minsyncWorkspace });
 		const first = method.sync();
@@ -1552,29 +1557,41 @@ process.exit(2);
 		const two = method.retrieve("renewal two", { topK: 1 });
 		const settledTwo = Promise.allSettled([two]);
 		await first;
-		// The normal sync is registered while query two is still queued, and it holds its turn behind query one.
+		// The normal sync is registered while query two is still queued. It is a sync of a built index, so query two may run beside it,
+		// but the sync itself holds its turn until every queued query is done and never starts under one.
 		const later = method.sync();
 		await one;
 		const [outcomeTwo] = await settledTwo;
 		await later;
-		// Query two's turn came with a normal sync pending, so it must not run beside it.
-		expect(outcomeTwo?.status).toBe("rejected");
-		expect(String((outcomeTwo as PromiseRejectedResult).reason)).toContain("another sync is in progress");
+		expect(outcomeTwo?.status).toBe("fulfilled");
 		expect(fake.queriesAliveAtSyncStart()).toEqual([0, 0]);
 	});
 
-	it("still refuses a query behind a sync of an index that was already built", async () => {
-		writeFakeMinSync(JSON.stringify({ results: [] }), false, 200);
-		mkdirSync(join(minsyncWorkspace, ".minsync"), { recursive: true });
-		writeFileSync(join(minsyncWorkspace, ".minsync", "cursor.json"), JSON.stringify({ ready: true }));
-		const method = new MinSyncVectorMethod({ binaryPath: minsyncBinary, root, workspacePath: minsyncWorkspace });
-		const refresh = method.sync();
+	it.each([
+		["with its transaction open", ["cursor.json", "txn.json"]],
+		["before it has opened its transaction", ["cursor.json"]],
+	] as const)(
+		"answers from the index a refresh is updating, %s, without waiting for the refresh",
+		async (_phase, state) => {
+			const hit = { path: parsedOutput, score: 0.9, text: "Parsed renewal policy with cancellation terms." };
+			const hold = join(root, "hold-sync");
+			writeFileSync(hold, "");
+			writeFakeMinSync(JSON.stringify({ results: [hit] }), false, 0, hold);
+			mkdirSync(join(minsyncWorkspace, ".minsync"), { recursive: true });
+			for (const file of state) {
+				writeFileSync(join(minsyncWorkspace, ".minsync", file), JSON.stringify({ ready: true }));
+			}
+			const method = new MinSyncVectorMethod({ binaryPath: minsyncBinary, root, workspacePath: minsyncWorkspace });
+			const refresh = method.sync();
 
-		await expect(method.retrieve("renewal cancellation", { topK: 1 })).rejects.toThrow(
-			`another sync is in progress (${minsyncWorkspace})`,
-		);
-		await refresh;
-	});
+			// The refresh is held inside MinSync, so an answer can only have come from beside it.
+			const results = await method.retrieve("renewal cancellation", { topK: 1 });
+
+			expect(results.map((result) => result.content)).toEqual(["Parsed renewal policy with cancellation terms."]);
+			rmSync(hold);
+			await refresh;
+		},
+	);
 
 	it("routes lexical retrieval through MinSync sparse mode", async () => {
 		writeFakeMinSync(

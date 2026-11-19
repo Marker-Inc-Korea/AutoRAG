@@ -53,7 +53,7 @@ Prerequisites:
 
 - Node.js 24+, Bun, and repository dependencies (`bun install --frozen-lockfile`).
 - A bootstrapped corpus root. Bootstrap is explicit; live targets never create one implicitly.
-- MinSync 0.7.1 or newer on `PATH` (the floor is `MINSYNC_MIN_VERSION` in `src/minsync/version.ts`; the pinned install is 0.7.3). The runner starts a loopback `minsync serve` daemon for the run, checks its `/health` endpoint, and stops it afterward. The Docker QA image ships the pinned, sha256-verified `minsync`, so `make e2e-live*` needs nothing on the host. MinSync publishes a Linux x86_64 build only, so that image is `linux/amd64` (the default `QA_PLATFORM`); on an Apple Silicon host it runs under emulation, and building it for arm64 fails for that reason. Keep `MINSYNC_VERSION`/`MINSYNC_SHA256` in `scripts/ci/qa.Dockerfile` in step with `MINSYNC_VERSION` in `src/minsync/installer.ts`.
+- MinSync 0.7.4 or newer on `PATH` (the floor and the pinned install are both 0.7.4: `MINSYNC_MIN_VERSION` in `src/minsync/version.ts`, `MINSYNC_VERSION` in `src/minsync/installer.ts`). The runner starts a loopback `minsync serve` daemon for the run, checks its `/health` endpoint, and stops it afterward. The Docker QA image ships the pinned, sha256-verified `minsync`, so `make e2e-live*` needs nothing on the host. MinSync publishes a Linux x86_64 build only, so that image is `linux/amd64` (the default `QA_PLATFORM`); on an Apple Silicon host it runs under emulation, and building it for arm64 fails for that reason. Keep `MINSYNC_VERSION`/`MINSYNC_SHA256` in `scripts/ci/qa.Dockerfile` in step with `MINSYNC_VERSION` in `src/minsync/installer.ts`.
 - `OPENAI_API_KEY` and `AUTORAG_OPENAI_API_KEY` unset. Embeddings stay local during live E2E; do not configure a remote `minSync.embedder` endpoint or send corpus text off the machine.
 
 ### Bootstrap
@@ -153,6 +153,7 @@ Each harness uses its CLI's native launch surface; AutoRAG supplies only explici
 | `bun scripts/manual-qa/run-qa.ts` | Protocol-accurate local mocks of GitHub APIs, a real Obsidian-vault filesystem fixture, and a local RSS feed |
 | `bun scripts/manual-qa/run-qa-live.ts` | The public GitHub REST API (this repo's issues) and a real RSS feed (hnrss.org), credential-free |
 | `bun scripts/manual-qa/run-qa-obsidian-live.ts` | A real local vault through MinSync sparse + semantic + folder scope + incremental re-index |
+| `bun scripts/manual-qa/run-qa-refresh-search-live.ts` | Real `minsync` and the shared embedder: an incremental `agent.refresh` (edit, add, delete) with searches issued the whole time it runs; no search refused, untouched documents always found, edits/additions/deletions correct afterwards; fails if no search overlapped the refresh |
 | `bun scripts/manual-qa/run-qa-discrawl-live.ts` | A real Discord archive through the `discrawl` CLI (FTS + semantic + hybrid, incremental re-sync) |
 | `bun scripts/manual-qa/run-qa-lazykatok-live.ts` | A real KakaoTalk archive through the `lazykatok` CLI (source-native `/kakao/<instance>/chunks/<chunk>` identity, keyword/BM25 retrieval) |
 | `bun scripts/manual-qa/run-qa-mailcrawl.ts` | The deterministic mailcrawl process boundary, missing-binary diagnostics, and the agent datasource loop |

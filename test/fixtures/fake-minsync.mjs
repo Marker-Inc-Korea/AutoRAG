@@ -3,8 +3,8 @@
 // answers `query` by substring-matching the files staged under `<cwd>/files`, so a test exercises the whole
 // stage -> sync -> query -> hit-mapping path without an embedding model.
 //
-// Sibling files of this binary control it: `calls.jsonl` is the call log, and a `fail-sync` file makes `sync`
-// exit 1 with "boom".
+// Sibling files of this binary control it: `calls.jsonl` is the call log, a `fail-sync` file makes `sync`
+// exit 1 with "boom", and a `hold-sync` file keeps `sync` from finishing for as long as it exists.
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { dirname, join, relative, sep } from "node:path";
@@ -41,6 +41,9 @@ if (args[0] === "sync") {
 		console.error("boom");
 		process.exit(1);
 	}
+	// Polling happens here, in the child process, where no test clock reaches; deleting the file (or the
+	// whole temp root when a test fails) frees it.
+	while (existsSync(join(home, "hold-sync"))) await new Promise((resolve) => setTimeout(resolve, 10));
 	mkdirSync(dirname(cursor), { recursive: true });
 	writeFileSync(cursor, JSON.stringify({ ready: true }));
 	console.log(JSON.stringify({ files_processed: stagedFiles(join(cwd, "files")).length }));
