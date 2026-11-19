@@ -22,7 +22,7 @@ import type { EnsureMinSyncBinaryOptions } from "./installer.ts";
 import { minSyncWorkspaceRoot } from "./paths.ts";
 import type { MinSyncEmbedderConfig, MinSyncQueryHit, MinSyncSyncProgress, MinSyncSyncResult } from "./types.ts";
 import { buildMinSyncPathMap, syncMinSyncWorkspace } from "./workspace.ts";
-import { runWorkspaceQuery, runWorkspaceSync } from "./workspace-lock.ts";
+import { beginFirstBuild, type FirstBuildSession, runWorkspaceQuery, runWorkspaceSync } from "./workspace-lock.ts";
 
 export interface MinSyncVectorMethodOptions {
 	readonly root: string;
@@ -100,12 +100,24 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 		};
 	}
 
+	/**
+	 * Mark the start of a refresh that builds this workspace's index from nothing. Syncs run with the returned session (`sync`'s
+	 * `session` option) may be read by queries while they run; end it when the refresh is over. `undefined` when an index already
+	 * exists (or an interrupted build left rows), which a query is never allowed to read while it is being rewritten.
+	 */
+	beginFirstBuild(): FirstBuildSession | undefined {
+		return beginFirstBuild(this.workspacePath);
+	}
+
 	async sync(
 		force = false,
 		signal?: AbortSignal,
 		onProgress?: (progress: MinSyncSyncProgress) => void,
+		session?: FirstBuildSession,
 	): Promise<MinSyncSyncResult> {
-		return runWorkspaceSync(this.workspacePath, () => this.syncUnlocked(force, signal, onProgress));
+		return runWorkspaceSync(this.workspacePath, () => this.syncUnlocked(force, signal, onProgress), {
+			...(session === undefined ? {} : { session }),
+		});
 	}
 
 	private async syncUnlocked(

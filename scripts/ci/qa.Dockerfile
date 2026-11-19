@@ -16,8 +16,8 @@ ARG TARGETARCH
 # with MINSYNC_VERSION in src/minsync/installer.ts; the sha256 is the release asset digest. MinSync 0.6.0 and later
 # link glibc 2.43 (the release job runs on ubuntu-latest), so the base image must carry at least that: on Ubuntu 24.04
 # (glibc 2.39) `minsync` fails to start with "version `GLIBC_2.43' not found".
-ARG MINSYNC_VERSION=0.7.3
-ARG MINSYNC_SHA256=12c3876b97b5b6633dc8f14a6989a37acf77ea6ddfc2867f197729f466117373
+ARG MINSYNC_VERSION=0.7.4
+ARG MINSYNC_SHA256=8e69ddcc09f5fe700b02f473eacafffae41621ba6261c4133d179b37720d3547
 RUN set -eu; \
 	if [ "${TARGETARCH:-amd64}" != "amd64" ]; then \
 		echo "MinSync ${MINSYNC_VERSION} publishes no Linux ${TARGETARCH} build; build this image with QA_PLATFORM=linux/amd64" >&2; \

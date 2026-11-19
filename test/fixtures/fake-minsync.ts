@@ -9,6 +9,9 @@ export interface FakeMinSync {
 	/** Make every `minsync sync` exit 1 with "boom" until {@link FakeMinSync.healSync}. */
 	readonly breakSync: () => void;
 	readonly healSync: () => void;
+	/** Make `minsync sync` wait until {@link FakeMinSync.releaseSync}; queries are unaffected. */
+	readonly holdSync: () => void;
+	readonly releaseSync: () => void;
 	/** Make `minsync query --mode hybrid` fail (a down embedder) while vector and bm25 queries keep working. */
 	readonly breakHybrid: () => void;
 }
@@ -24,6 +27,8 @@ export function installFakeMinSync(directory: string): FakeMinSync {
 		binaryPath,
 		breakSync: () => writeFileSync(flag("fail-sync"), ""),
 		healSync: () => rmSync(flag("fail-sync"), { force: true }),
+		holdSync: () => writeFileSync(flag("hold-sync"), ""),
+		releaseSync: () => rmSync(flag("hold-sync"), { force: true }),
 		breakHybrid: () => writeFileSync(flag("fail-hybrid"), ""),
 	};
 }
