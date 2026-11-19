@@ -122,6 +122,11 @@ function renderConvertReport(details: ConvertFilesDetails): string {
 
 function describeRelation(link: ConvertedCopyLink): string {
 	const relation = link.dupey;
+	if (relation.relation === "unsupported") {
+		return "dupey: unsupported — dupey cannot compare this pair (an unreadable format, or an image against a document), so it will never be grouped with the source";
+	}
+	if (relation.relation === "unavailable") return `dupey: unavailable (${relation.reason})`;
+	if ("similarity" in relation) return describeImageRelation(relation);
 	switch (relation.relation) {
 		case "exact":
 			return "dupey: exact — same canonical text as the source; an exact duplicate family";
@@ -131,9 +136,25 @@ function describeRelation(link: ConvertedCopyLink): string {
 			return `dupey: contains (jaccard=${relation.jaccard}) — one holds most of the other`;
 		case "different":
 			return `dupey: different (near=${relation.nearScore}) — not grouped with the source; extracted text differs (layout-only formats such as PDF often do)`;
-		case "unsupported":
-			return "dupey: unsupported — dupey cannot read this format, so it will never be grouped with the source";
-		case "unavailable":
-			return `dupey: unavailable (${relation.reason})`;
+	}
+}
+
+/** Two pictures are judged by their decoded pixels and a perceptual hash, never by text. */
+function describeImageRelation(relation: {
+	readonly relation: string;
+	readonly similarity: number;
+	readonly hamming?: number;
+}): string {
+	const scores =
+		relation.hamming === undefined
+			? `similarity=${relation.similarity}`
+			: `similarity=${relation.similarity}, hamming=${relation.hamming}`;
+	switch (relation.relation) {
+		case "exact":
+			return "dupey: exact — identical pixels; an exact duplicate family";
+		case "near":
+			return `dupey: near (${scores}) — looks the same after a resize or re-encode; near family, review before treating as duplicate`;
+		default:
+			return `dupey: different (${scores}) — not grouped with the source; the pictures differ (a flat colour has no perceptual hash, so only identical pixels match)`;
 	}
 }

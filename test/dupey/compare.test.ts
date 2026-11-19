@@ -68,3 +68,50 @@ describe("compareWithDupey", () => {
 		await expect(compareWithDupey("a", "b", { run: async () => "garbage" })).rejects.toBeInstanceOf(DupeyCliError);
 	});
 });
+
+describe("compareWithDupey on images", () => {
+	// Measured on dupey 0.3.1: `compare` of two images prints `exact_equal`, `hamming` (or `-`) and `similarity`
+	// instead of the text scores, and an image against a document is refused with a non-zero exit.
+	it("classifies pixel-identical images as exact", async () => {
+		const result = await compareWithDupey("a.png", "b.bmp", {
+			run: async () => table({ a: "a.png", b: "b.bmp", exact_equal: "true", hamming: "0", similarity: "1.0000" }),
+		});
+		expect(result).toEqual({ relation: "exact", similarity: 1, hamming: 0 });
+	});
+
+	it("classifies a close perceptual match as near at dupey's default 0.90 similarity", async () => {
+		const near = await compareWithDupey("a.png", "a.jpg", {
+			run: async () => table({ exact_equal: "false", hamming: "4", similarity: "0.9688" }),
+		});
+		expect(near).toEqual({ relation: "near", similarity: 0.9688, hamming: 4 });
+		const edge = await compareWithDupey("a.png", "b.png", {
+			run: async () => table({ exact_equal: "false", hamming: "12", similarity: "0.9063" }),
+		});
+		expect(edge.relation).toBe("near");
+	});
+
+	it("classifies distant images as different", async () => {
+		const result = await compareWithDupey("a.png", "b.png", {
+			run: async () => table({ exact_equal: "false", hamming: "16", similarity: "0.8750" }),
+		});
+		expect(result).toEqual({ relation: "different", similarity: 0.875, hamming: 16 });
+	});
+
+	it("reads an image with no perceptual hash (a flat picture) as different, not as an error", async () => {
+		const result = await compareWithDupey("black.png", "white.png", {
+			run: async () => table({ exact_equal: "false", hamming: "-", similarity: "0.0000" }),
+		});
+		expect(result).toEqual({ relation: "different", similarity: 0 });
+	});
+
+	it("reports an image against a document as unsupported: they can never form one family", async () => {
+		const result = await compareWithDupey("a.png", "a.txt", {
+			run: async () => {
+				throw new DupeyCliError(
+					"dupey failed with exit code 1: Error: cannot compare an image with a document: a.png vs a.txt",
+				);
+			},
+		});
+		expect(result).toEqual({ relation: "unsupported" });
+	});
+});

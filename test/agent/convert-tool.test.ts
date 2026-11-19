@@ -100,6 +100,53 @@ describe("convert_files tool", () => {
 		expect(result.isError).toBeUndefined();
 	});
 
+	it("renders the image verdicts dupey gives two pictures, not the text scores they do not have", async () => {
+		const tool = createConvertFilesTool({
+			async convertFiles() {
+				return details({
+					result: {
+						preset: "WEBP",
+						target: "webp",
+						converted: 4,
+						skipped: 0,
+						failed: 0,
+						files: [
+							{ source: "/p/a.png", state: "done", outputs: ["/p/a.bmp"] },
+							{ source: "/p/b.png", state: "done", outputs: ["/p/b.webp"] },
+							{ source: "/p/c.png", state: "done", outputs: ["/p/c.jpg"] },
+							{ source: "/p/d.png", state: "done", outputs: ["/p/d.webp"] },
+						],
+					},
+					links: [
+						{ source: "/p/a.png", output: "/p/a.bmp", dupey: { relation: "exact", similarity: 1, hamming: 0 } },
+						{
+							source: "/p/b.png",
+							output: "/p/b.webp",
+							dupey: { relation: "near", similarity: 0.9688, hamming: 4 },
+						},
+						{
+							source: "/p/c.png",
+							output: "/p/c.jpg",
+							dupey: { relation: "different", similarity: 0.875, hamming: 16 },
+						},
+						{ source: "/p/d.png", output: "/p/d.webp", dupey: { relation: "different", similarity: 0 } },
+					],
+				});
+			},
+			async listFileConversions() {
+				return "";
+			},
+		});
+		const result = await tool.execute("c1", { inputs: ["/p"], to: "webp" });
+		const text = result.content.map((part) => (part.type === "text" ? part.text : "")).join("\n");
+		expect(text).toContain("/p/a.png -> /p/a.bmp [dupey: exact — identical pixels");
+		expect(text).toContain("/p/b.png -> /p/b.webp [dupey: near (similarity=0.9688, hamming=4)");
+		expect(text).toContain("/p/c.png -> /p/c.jpg [dupey: different (similarity=0.875, hamming=16)");
+		expect(text).toContain("/p/d.png -> /p/d.webp [dupey: different (similarity=0)");
+		expect(text).not.toContain("undefined");
+		expect(text).not.toContain("NaN");
+	});
+
 	it("flags the result as an error only when nothing was converted", async () => {
 		const failed = details({
 			result: {
