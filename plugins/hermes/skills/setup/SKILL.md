@@ -123,7 +123,7 @@ Probe each one (all read-only):
 | Slack | `slacrawl` | `~/.slacrawl/slacrawl.db`; id: `sqlite3 -readonly ~/.slacrawl/slacrawl.db "select id from workspaces"` | `"slack": {"instanceId": "default", "connector": {"syncSource": "wiretap", "workspace": "<id>"}}` |
 | Discord | `discrawl` | `discrawl status` shows `guilds` > 0; id: `discrawl --json sql "select id,name from guilds"` | `"discord": {"type": "discord", "instanceId": "<name>", "connector": {"guildId": "<id>"}}` |
 | WhatsApp | `wacrawl` | `~/.wacrawl/wacrawl.db` | `"whatsapp": {"instanceId": "default", "connector": {}}` |
-| KakaoTalk, email, others | `lazykatok`, `mailcrawl`, ... | run `CLI setup --format json`; connect only entries whose state is not `skipped` | entry shape in `docs/datasource-skills.md` |
+| KakaoTalk, email, others | `lazykatok`, `mailcrawl`, ... | run `CLI setup --format json`; connect only entries whose state is not `skipped` | entry shape in `docs/datasources/overview.md` |
 
 `CLI setup --format json` also reports `skipped` with a reason (`missing <cli>
 binary`, `native store is not present`); trust it over your own guess.

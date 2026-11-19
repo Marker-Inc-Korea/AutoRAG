@@ -201,6 +201,12 @@ describe("single-model CLI config", () => {
 		expect(opts.excludeExactDuplicates).toBe(false);
 	});
 
+	it("passes rankingLog: false to the agent and leaves the log on by default", () => {
+		const base = { searchPaths: ["."], workspacePath: root, memoryPath: join(root, "memory.json") };
+		expect(buildAgentOptions({ ...base }).rankingLog).toBeUndefined();
+		expect(buildAgentOptions({ ...base, rankingLog: false }).rankingLog).toBe(false);
+	});
+
 	it("maps the filee config to agent options, and disables conversion with enabled:false", () => {
 		const base = { searchPaths: ["."], workspacePath: root, memoryPath: join(root, "memory.json") };
 		expect(buildAgentOptions({ ...base }).filee).toEqual({});
@@ -715,5 +721,68 @@ describe("single-model CLI config", () => {
 		mkdirSync(root, { recursive: true });
 		writeFileSync(path, "{");
 		expect(() => resolveConfig({ flags: { config: path }, cwd: root })).toThrow(ConfigError);
+	});
+});
+
+describe("ltr config", () => {
+	const write = (ltr: unknown): string => {
+		const path = join(root, "ltr-config.json");
+		writeFileSync(
+			path,
+			JSON.stringify({ searchPaths: ["."], workspacePath: root, memoryPath: join(root, "memory.json"), ltr }),
+		);
+		return path;
+	};
+	const read = (ltr: unknown) => resolveConfig({ flags: { config: write(ltr) }, env: { HOME: root }, cwd: root });
+
+	it("is off with no ltr block: serving stays disabled and nothing is pinned", () => {
+		const config = resolveConfig({ flags: { config: write(undefined) }, env: { HOME: root }, cwd: root });
+		expect(config.ltr).toBeUndefined();
+		expect(buildAgentOptions(config).ltr).toMatchObject({ enabled: false });
+		expect(buildAgentOptions(config).ltr?.model).toBeUndefined();
+		expect(buildAgentOptions(config).ltr?.autoTrain).toBeUndefined();
+	});
+
+	it("reads enabled, model and autoTrain", () => {
+		const config = read({ enabled: true, model: "xgb-1", autoTrain: { enabled: true, minNewRuns: 200 } });
+		expect(config.ltr).toEqual({ enabled: true, model: "xgb-1", autoTrain: { enabled: true, minNewRuns: 200 } });
+		expect(buildAgentOptions(config).ltr).toMatchObject({
+			enabled: true,
+			model: "xgb-1",
+			autoTrain: { enabled: true, minNewRuns: 200 },
+		});
+	});
+
+	it("defaults to disabled, `latest` and no auto-training for a bare block", () => {
+		const config = read({});
+		expect(buildAgentOptions(config).ltr).toMatchObject({ enabled: false });
+		expect(config.ltr?.autoTrain).toBeUndefined();
+	});
+
+	it("saves a change made by the agent into the ltr block only, and only when the config file exists", () => {
+		const path = write({ enabled: false });
+		const raw = JSON.parse(readFileSync(path, "utf-8")) as Record<string, unknown>;
+		writeFileSync(path, JSON.stringify({ ...raw, rerank: { model: "keep-me" } }));
+		const config = resolveConfig({ flags: { config: path }, env: { HOME: root }, cwd: root });
+		const persist = buildAgentOptions(config).ltr?.persist;
+		expect(persist).toBeDefined();
+		persist?.({ enabled: true, model: "xgb-2" });
+		const after = JSON.parse(readFileSync(path, "utf-8")) as Record<string, unknown>;
+		expect(after.ltr).toEqual({ enabled: true, model: "xgb-2" });
+		expect(after.rerank).toEqual({ model: "keep-me" });
+
+		const missing = buildAgentOptions({ ...config, configPath: join(root, "absent.json") }).ltr?.persist;
+		expect(missing).toBeUndefined();
+	});
+
+	it("rejects unknown fields and wrong types with the field path", () => {
+		expect(() => read({ enabled: "yes" })).toThrow(/ltr\.enabled must be a boolean/u);
+		expect(() => read({ model: "" })).toThrow(/ltr\.model must be a non-empty string/u);
+		expect(() => read({ model: "../escape" })).toThrow(/ltr\.model/u);
+		expect(() => read({ autoTrain: { minNewRuns: 0 } })).toThrow(
+			/ltr\.autoTrain\.minNewRuns must be a positive integer/u,
+		);
+		expect(() => read({ nope: 1 })).toThrow(/ltr\.nope is not a recognized field/u);
+		expect(() => read(true)).toThrow(/ltr must be an object/u);
 	});
 });

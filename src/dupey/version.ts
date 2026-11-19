@@ -6,12 +6,21 @@
  */
 
 /**
- * Oldest `dupey` AutoRAG will run. Measured against 0.1.2: 0.1.2 misreads HWP 5.x record lengths, so an HWP
- * hashes incomplete or empty text (11,199 extracted characters with 0.2.0 came out as 45 with 0.1.2, and other
- * files as 0), and its `fingerprint` hashes empty text where `scan` hashes the file bytes. From 0.2.0 an HWP
- * hashes its full body text, and a file with no extracted text hashes its bytes in both `scan` and `fingerprint`.
+ * Oldest `dupey` AutoRAG will run.
+ *
+ * 0.2.0 over 0.1.2: 0.1.2 misreads HWP 5.x record lengths, so an HWP hashes incomplete or empty text (11,199
+ * extracted characters came out as 45), and its `fingerprint` hashes empty text where `scan` hashes the file bytes.
+ *
+ * 0.3.1 over 0.2.0 and 0.3.0, measured on this machine's Documents, Downloads and Desktop:
+ * - `scan` discarded every directory it could not read, so a root with a folder it was denied looked free of
+ *   duplicates. From 0.3.1 that folder is reported in `errors`.
+ * - A UTF-16 text file (Notepad's "Unicode") was an extraction error, and a text file with a UTF-8 byte-order
+ *   mark hashed the BOM as content, so it never matched an identical copy saved without one (3 of 8,914 `.txt`
+ *   files here). From 0.3.1 both hash their text.
+ * 0.3.0 added images (decoded pixels plus a perceptual hash) and skipping cloud placeholders; those are the
+ * reason `scan` output now also lists image files and image families.
  */
-export const DUPEY_MIN_VERSION = "0.2.0";
+export const DUPEY_MIN_VERSION = "0.3.1";
 
 const VERSION_LINE = /^dupey\s+(\d+\.\d+\.\d+)(?:[-+][^\s]*)?\s*$/mu;
 

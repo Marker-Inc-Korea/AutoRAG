@@ -228,6 +228,7 @@ autorag refresh --force --json
 autorag index rebuild --yes --json
 autorag index reset --method parsed --yes --json
 autorag memory inspect --json
+autorag memory export-ltr --output ./ltr --json
 autorag tui
 autorag automate status --json
 autorag automate install --json
@@ -278,6 +279,15 @@ maintenance should use non-daemon `autorag watch --once`, typically every
 
 Reset and rebuild commands remove only selected workspace `.autorag` indexes.
 Never target source documents. `memory inspect` is read-only and path-opaque.
+`memory export-ltr` reads the learning-to-rank log beside the memory file and
+writes LightGBM LambdaRank files to `--output`; set `"rankingLog": false` to
+stop logging (see `docs/retrieval/learning-to-rank.md`).
+
+`autorag ltr` trains an XGBoost ranker from that log and, only when enabled,
+reorders the baseline the reranker returned: `ltr status|list|train`,
+`ltr enable|disable`, `ltr use <model|latest>`, `ltr auto-train on|off`. It is
+off by default; a model only serves as `latest` after it beat the reranker on
+searches it never saw. Settings live in the config's `ltr` block.
 
 ## Rules
 
@@ -291,4 +301,4 @@ Never target source documents. `memory inspect` is read-only and path-opaque.
   including the shipped `setup`, `models`, `tui`, and `lite`
   commands. `autorag <command> --help` prints that command's own flags, and
   `autorag --version` prints the installed version. See
-  `docs/minsync-setup.md#embedding-backends` for MinSync setup and embedding-backend selection.
+  `docs/indexing/embedding-backends.md#backend-resolution-order` for MinSync setup and embedding-backend selection.

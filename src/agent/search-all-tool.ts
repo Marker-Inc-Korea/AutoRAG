@@ -96,6 +96,7 @@ export function createSearchAllDocumentsTool(
 			const { text } = registerAndRender(
 				ledger,
 				SEARCH_ALL_DOCUMENTS_TOOL_NAME,
+				query,
 				results,
 				(result) => `${result.source} score=${result.score.toFixed(4)}${resultContextSuffix(result.metadata)}`,
 				options.recordCut,

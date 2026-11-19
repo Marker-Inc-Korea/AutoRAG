@@ -218,7 +218,7 @@ run. Native lanes are expected to remain `SKIP` only when no native store is
 configured.
 Native stores, profiles, and keychains remain owned by their CLIs: the runner
 does not copy datasource data or force an AutoRAG workspace. Native datasource
-references and setup details are in `docs/manual-qa-datasources.md` and the
+references and setup details are in `docs/contributing/manual-qa.md` and the
 individual scripts under `scripts/manual-qa/`, including the real lazykatok harness
 at `scripts/manual-qa/run-qa-lazykatok-live.ts`.
 
@@ -252,7 +252,7 @@ raw). Vectors come from a loopback
 `minsync serve` daemon when one answers, otherwise from MinSync's in-process
 engine through the optional `@nomadamas/minsync-native` addon. AutoRAG never
 starts or stops the daemon: the operator runs `minsync serve --idle-timeout 0`
-(launchd/systemd, see `docs/minsync-setup.md`) or presses Ctrl+Shift+E in the
+(launchd/systemd, see `docs/indexing/embedding-backends.md`) or presses Ctrl+Shift+E in the
 TUI. `autorag setup` and `autorag status` only report the resolved
 `embedding.backend` (`daemon`, `in-process`, or `remote`) with the provider,
 model, and dimension, or why none is alive.
@@ -370,7 +370,7 @@ with any of them should be rejected or reshaped:
    search is optimized for low latency across several model turns.
 
 Rationale for value 1 comes from the competitive landscape study
-(see `docs/competitive-landscape-2026-09.md`): MCP-native, local-first, and
+(see `docs/contributing/design-notes.md`): MCP-native, local-first, and
 hybrid retrieval are commoditized, while harness-free federation with
 source-native provenance is the durable differentiator.
 
@@ -478,7 +478,7 @@ The librarian agent owns the full workflow:
 | `jikji_find` | Runs `jikji find ROOT "query"` and returns a policy-aware answer pack | Optional local discovery |
 | `everything_search` | Windows only: instant file/folder name, extension, path, size, and date search over the configured search roots through the bundled voidtools Everything + ES | Locating files by name before reading them |
 | `fsearch_search` | macOS/Linux only: instant file/folder name, extension, path, size, and date search over the configured search roots through the user's fsearch-cli (FSearch) database + watch daemon; degrades to a slow filesystem walk when fsearch-cli is not installed | Locating files by name before reading them |
-| `search_all_documents` | Fan-out across configured retrieval methods and merge/rank candidates. Takes `{ query, topK?, scope?, since?, until? }`; `since`/`until` are an ISO-8601 time window `[since, until)` (see "Time windows" in `docs/datasource-skills.md`) | Combined retrieval |
+| `search_all_documents` | Fan-out across configured retrieval methods and merge/rank candidates. Takes `{ query, topK?, scope?, since?, until? }`; `since`/`until` are an ISO-8601 time window `[since, until)` (see "Time windows" in `docs/datasources/search-semantics.md`) | Combined retrieval |
 | `semantic_search_local_docs` | MinSync semantic/vector retrieval over parsed mirrors | Semantic retrieval |
 | `search_datasource_<name>` | Search one datasource connection only; one tool is generated per configured connection (e.g. `search_datasource_discord`, `search_datasource_kakao_work`) and spawns no other datasource CLIs. Takes `{ query, topK?, scope?, since?, until? }`. This is the only datasource search surface — use it instead of any fan-out datasource tool | Targeted single-datasource retrieval |
 | `check_memory` | Look up judged evidence from this conversation, similar past questions (hybrid BM25 + vector), and long-term insights | Advisory reference before searching |
@@ -525,7 +525,7 @@ Datasource skills are retrieval-method factories plus indexing hooks for externa
 
 CLI-backed datasources own their archive, lexical index, and vectors: KakaoTalk through the external `lazykatok` CLI, and **Discord** through the external [`discrawl`](https://github.com/openclaw/discrawl) CLI. AutoRAG only spawns them and maps results. AutoRAG never reads KakaoTalk databases directly; failures surface as diagnostics, and remote embedding egress settings are rejected before the CLI is spawned.
 
-External crawler-backed skills cover **WhatsApp** (wacrawl), **Telegram** (telecrawl), **Slack** (slacrawl), and **Notion** (notcrawl); each crawler owns its archive, sync, credentials, and FTS search while AutoRAG provides bounded process execution, diagnostics, and retrieval mapping. The remaining connector-backed datasource skills use the shared framework (`src/datasource/connector.ts`, `chunk-store.ts`, `connector-skill.ts`): **GitHub**, **Google Drive**, **Obsidian** (vault indexed by MinSync in its own workspace: incremental + BM25 + semantic), and **RSS/news**. Gmail, IMAP, Maildir, and static `.eml`/`.mbox` mailbox retrieval is provided by **mailcrawl**. Results remain traceable. Manual QA harnesses live in `scripts/manual-qa/` (see `docs/manual-qa-datasources.md`).
+External crawler-backed skills cover **WhatsApp** (wacrawl), **Telegram** (telecrawl), **Slack** (slacrawl), and **Notion** (notcrawl); each crawler owns its archive, sync, credentials, and FTS search while AutoRAG provides bounded process execution, diagnostics, and retrieval mapping. The remaining connector-backed datasource skills use the shared framework (`src/datasource/connector.ts`, `chunk-store.ts`, `connector-skill.ts`): **GitHub**, **Google Drive**, **Obsidian** (vault indexed by MinSync in its own workspace: incremental + BM25 + semantic), and **RSS/news**. Gmail, IMAP, Maildir, and static `.eml`/`.mbox` mailbox retrieval is provided by **mailcrawl**. Results remain traceable. Manual QA harnesses live in `scripts/manual-qa/` (see `docs/contributing/manual-qa.md`).
 
 ## Directory Access
 
@@ -589,7 +589,14 @@ their judged evidence, and (3) matching long-term insights — injected as a
 Jev's datasource-selection step also receives up to 5 similar past questions as
 hints. Memory never reorders search results. Evidence from datasources not
 configured for the run is never shown. See
-[docs/retrieval-memory.md](docs/retrieval-memory.md).
+[docs/retrieval/memory.md](docs/retrieval/memory.md).
+
+Every finished search run is also appended to a learning-to-rank log beside the
+memory file (`memory.json.ranking.db`): the whole candidate pool with serve-time
+per-channel ranks and scores, exposures, and graded labels (final citation, Jev
+relevance and support). No chunk text is stored; `"rankingLog": false` turns it
+off; `autorag memory export-ltr --output <dir>` writes LightGBM LambdaRank files.
+See [docs/retrieval/learning-to-rank.md](docs/retrieval/learning-to-rank.md).
 
 ## Files
 
@@ -626,6 +633,8 @@ configured for the run is never shown. See
 | `src/memory/context.ts` | Assembles current-conversation evidence, similar past questions, and insights into the advisory memory context |
 | `src/memory/renderer.ts` | Renders retrieval memory as JSON-quoted advisory markdown |
 | `src/memory/check-memory-tool.ts` | `check_memory` tool (pi-agent-core AgentTool) |
+| `src/memory/ranking-log.ts` | Learning-to-rank log: `RankingRunRecorder` (per-run candidates, channel observations, exposures, labels, point-in-time memory priors) and the append-only SQLite `RankingLogStore` |
+| `src/memory/ltr-export.ts` | Ranking log → LightGBM LambdaRank files: graded 0–3 labels, feature columns, `.query`/`.position` sidecars, time-ordered run split |
 | `src/agent/evidence-judgment.ts` | Post-answer Jev step: one batched evidence-support call, the 0.7 threshold, and fallback |
 | `src/agent/evidence-origins.ts` | Maps a cited evidence ref back to the search query and method that surfaced it |
 | `src/retrieval/types.ts` | Core retrieval type definitions |

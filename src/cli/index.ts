@@ -37,6 +37,9 @@ const VALUE_FLAGS = new Set([
 	"languages",
 	"workspace",
 	"memory-path",
+	"output",
+	"valid-fraction",
+	"min-new-runs",
 	"model-provider",
 	"model-id",
 	"top-k",
@@ -82,6 +85,7 @@ const COMMANDS = [
 	"search",
 	"evidence",
 	"memory",
+	"ltr",
 	"index",
 	"watch",
 	"health",
@@ -117,6 +121,9 @@ Commands:
   search <query>       Search and curate documents (requires a configured model)
   evidence <session>   Show persisted source/chunk evidence (--result N)
   memory inspect       Inspect the retrieval memory snapshot
+  memory export-ltr    Export the learning-to-rank log as LightGBM files (--output)
+  ltr status|list|train  Learning-to-rank: train a ranking model from the search log
+  ltr enable|disable|use Serve a trained model after the reranker (opt-in); auto-train on|off
   index reset          Remove parsed/minsync indexes (--method)
   index rebuild        Reset then re-run a refresh (--method minsync|all)
   health               Check model/provider auth and completion access (no index check)
@@ -251,6 +258,10 @@ async function dispatch(command: CommandName, ctx: CommandContext): Promise<numb
 		case "memory": {
 			const { runMemory } = await import("./commands/memory.ts");
 			return runMemory(ctx);
+		}
+		case "ltr": {
+			const { runLtr } = await import("./commands/ltr.ts");
+			return runLtr(ctx);
 		}
 		case "index": {
 			const { runIndex } = await import("./commands/index.ts");

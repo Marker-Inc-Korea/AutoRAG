@@ -357,3 +357,99 @@ describe("formatDatasourceResults", () => {
 		expect(text).toContain(`at: ${new Date(1_722_345_678_123).toISOString()}`);
 	});
 });
+
+describe("search filters on a datasource tool", () => {
+	const specs = [
+		{
+			name: "agents",
+			description: "Only search sessions of these coding agents.",
+			values: [
+				{ id: "claude-code", detail: "20 sessions" },
+				{ id: "omp", detail: "1014 sessions" },
+			],
+		},
+	] as const;
+	const spec = {
+		datasourceId: "wombat",
+		description: "AI sessions",
+		instanceScopes: [],
+		filterNames: ["agents"],
+	} as const;
+
+	function provider(
+		seen: { filters?: unknown }[],
+		listed: () => Promise<typeof specs | []> = async () => specs,
+	): SingleDatasourceSearchProvider {
+		return {
+			searchSingleDatasourceDocuments: async (_id, _query, options) => {
+				seen.push({ filters: options?.filters });
+				return { results: [], diagnostics: [] };
+			},
+			searchFilterSpecs: async () => listed(),
+		};
+	}
+
+	it("offers an `agents` argument only on a datasource whose skill declares it, and nothing extra elsewhere", () => {
+		const [withFilter] = createSingleDatasourceSearchTools(provider([]), [spec]);
+		expect(Object.keys(withFilter?.parameters.properties ?? {}).sort()).toEqual([
+			"agents",
+			"query",
+			"scope",
+			"since",
+			"topK",
+			"until",
+		]);
+		const [without] = createSingleDatasourceSearchTools(provider([]), [
+			{ datasourceId: "slack", description: "Slack", instanceScopes: [] },
+		]);
+		expect(Object.keys(without?.parameters.properties ?? {})).not.toContain("agents");
+	});
+
+	it("passes the chosen agents to the provider as `filters.agents`, and nothing when none were chosen", async () => {
+		const seen: { filters?: unknown }[] = [];
+		const [tool] = createSingleDatasourceSearchTools(provider(seen), [spec]);
+		await tool?.execute("c1", { query: "release", agents: ["omp"] } as never);
+		await tool?.execute("c2", { query: "release" });
+		expect(seen).toEqual([{ filters: { agents: ["omp"] } }, { filters: undefined }]);
+	});
+
+	it("accepts an id in any letter case, and keeps each id once", async () => {
+		const seen: { filters?: unknown }[] = [];
+		const [tool] = createSingleDatasourceSearchTools(provider(seen), [spec]);
+		await tool?.execute("c1", { query: "q", agents: [" OMP ", "omp", "Claude-Code"] } as never);
+		expect(seen[0]).toEqual({ filters: { agents: ["omp", "claude-code"] } });
+	});
+
+	it("rejects an agent that is not indexed and lists the real ids, instead of searching and answering empty", async () => {
+		const seen: { filters?: unknown }[] = [];
+		const [tool] = createSingleDatasourceSearchTools(provider(seen), [spec]);
+		const outcome = await tool?.execute("c1", { query: "q", agents: ["claude", "omp"] } as never);
+		expect(seen).toEqual([]);
+		expect(outcome?.isError).toBe(true);
+		const text = outcome?.content.map((part) => (part.type === "text" ? part.text : "")).join("") ?? "";
+		expect(text).toContain('"claude"');
+		expect(text).toContain("claude-code");
+		expect(text).toContain("omp");
+		expect(outcome?.details.resultCount).toBe(0);
+	});
+
+	it("names the exact ids in the tool description, with their session counts, once they are known", async () => {
+		const [tool] = createSingleDatasourceSearchTools(provider([]), [{ ...spec, searchFilters: () => specs }]);
+		expect(tool?.description).toContain("agents");
+		expect(tool?.description).toContain("claude-code (20 sessions)");
+		expect(tool?.description).toContain("omp (1014 sessions)");
+		const props = (tool?.parameters.properties ?? {}) as Record<string, { description?: string }>;
+		expect(props.agents?.description).toContain("claude-code");
+	});
+
+	it("does not reject when the ids cannot be listed right now: the datasource itself decides", async () => {
+		const seen: { filters?: unknown }[] = [];
+		const [tool] = createSingleDatasourceSearchTools(
+			provider(seen, async () => []),
+			[spec],
+		);
+		const outcome = await tool?.execute("c1", { query: "q", agents: ["whatever"] } as never);
+		expect(outcome?.isError).not.toBe(true);
+		expect(seen[0]).toEqual({ filters: { agents: ["whatever"] } });
+	});
+});

@@ -201,4 +201,34 @@ describe("exact duplicate filter", () => {
 		expect(result.keepers).toEqual(new Set([cloudNewer]));
 		expect(result.excluded).toEqual(new Set([older]));
 	});
+
+	it("keeps the newest copy and excludes the rest when the files have Japanese and Chinese names", async () => {
+		const root = mkdtempSync(join(tmpdir(), "dupey-filter-cjk-"));
+		roots.push(root);
+		mkdirSync(join(root, "画像"));
+		mkdirSync(join(root, "图片"));
+		const paths = {
+			ja: [join(root, "画像", "東京タワー.png"), join(root, "画像", "東京タワー_コピー.png")],
+			zh: [join(root, "图片", "简体中文图片_北京.png"), join(root, "图片", "简体中文图片_副本.png")],
+		};
+		for (const [index, [older, newer]] of Object.values(paths).entries()) {
+			writeFileSync(older as string, "same");
+			writeFileSync(newer as string, "same");
+			utimesSync(older as string, 1 + index, 1 + index);
+			utimesSync(newer as string, 10 + index, 10 + index);
+		}
+		const result = await selectExactDuplicateExclusions(root, {
+			dir: root,
+			files: [
+				{ path: "画像/東京タワー.png", content_hash: "ja-hash" },
+				{ path: "画像/東京タワー_コピー.png", content_hash: "ja-hash" },
+				{ path: "图片/简体中文图片_北京.png", content_hash: "zh-hash" },
+				{ path: "图片/简体中文图片_副本.png", content_hash: "zh-hash" },
+			],
+			families: [],
+			errors: [],
+		});
+		expect(result.keepers).toEqual(new Set([paths.ja[1], paths.zh[1]]));
+		expect(result.excluded).toEqual(new Set([paths.ja[0], paths.zh[0]]));
+	});
 });

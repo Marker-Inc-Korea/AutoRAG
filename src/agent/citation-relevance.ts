@@ -45,6 +45,8 @@ export interface CitationRelevanceInput {
 export interface CitationRelevance {
 	/** {@link CitedChunk.key} of every chunk Jev found unrelated. */
 	readonly rejected: ReadonlySet<string>;
+	/** Jev's P(relevant) per {@link CitedChunk.key}, for every chunk Jev answered. */
+	readonly probabilities: ReadonlyMap<string, number>;
 	/** Set when Jev gave no usable verdict for ANY chunk; nothing was rejected. Absent when Jev decided. */
 	readonly fallbackReason?: string;
 }
@@ -80,7 +82,7 @@ export async function judgeCitationRelevance(
 			].join("\n"),
 		});
 	}
-	if (questions.length === 0) return { rejected: new Set() };
+	if (questions.length === 0) return { rejected: new Set(), probabilities: new Map() };
 
 	let verdicts: readonly Verdict[];
 	try {
@@ -95,13 +97,17 @@ export async function judgeCitationRelevance(
 			)
 		).verdicts;
 	} catch (error) {
-		return { rejected: new Set(), fallbackReason: error instanceof Error ? error.message : String(error) };
+		return {
+			rejected: new Set(),
+			probabilities: new Map(),
+			fallbackReason: error instanceof Error ? error.message : String(error),
+		};
 	}
 
 	const byId: Record<string, Verdict> = {};
 	for (const verdict of verdicts) byId[verdict.id] = verdict;
 	const rejected = new Set<string>();
-	let decided = 0;
+	const probabilities = new Map<string, number>();
 	let firstHint: string | undefined;
 	for (const [id, key] of keyById) {
 		const verdict = byId[id];
@@ -109,9 +115,9 @@ export async function judgeCitationRelevance(
 			firstHint ??= verdict?.hint;
 			continue;
 		}
-		decided += 1;
+		probabilities.set(key, verdict.answer);
 		if (verdict.answer < CITATION_RELEVANCE_FLOOR) rejected.add(key);
 	}
-	if (decided === 0) return { rejected, fallbackReason: firstHint ?? NO_VERDICT_FALLBACK };
-	return { rejected };
+	if (probabilities.size === 0) return { rejected, probabilities, fallbackReason: firstHint ?? NO_VERDICT_FALLBACK };
+	return { rejected, probabilities };
 }

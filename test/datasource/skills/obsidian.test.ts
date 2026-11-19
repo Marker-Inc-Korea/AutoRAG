@@ -333,14 +333,16 @@ describe("ObsidianSkill retrieval", () => {
 		);
 	});
 
-	it("rejects while a sync is rewriting the index instead of returning a partial view", async () => {
+	it("answers from the existing index while a refresh of the vault is running", async () => {
 		const skill = makeSkill();
 		await skill.index();
-		note("Projects/Another.md", "# Another\nmobile");
+		fake.holdSync();
 		const syncing = skill.index();
-		await expect(method(skill, "obsidian-sparse").retrieve("mobile", { topK: 3 })).rejects.toThrow(
-			/sync is in progress/u,
-		);
+
+		const hits = await method(skill, "obsidian-sparse").retrieve("mobile", { topK: 5 });
+
+		expect(hits.map((hit) => hit.source)).toContain("/obsidian/vault-1/Projects/Roadmap.md");
+		fake.releaseSync();
 		await syncing;
 	});
 

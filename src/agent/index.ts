@@ -1,5 +1,6 @@
 export type { AutoRAGAgentOptions, AutoRefreshOptions } from "./agent.ts";
 export { AutoRAGAgent } from "./agent.ts";
+export type { Revision, RevisionOp } from "./answer-revision.ts";
 export {
 	CALCULATOR_FAST_PHASE_RULE,
 	CALCULATOR_PROMPT_RULE,
