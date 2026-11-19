@@ -15,6 +15,15 @@ autorag refresh --method parsed,minsync --json
 
 `--force` re-indexes even when the mirror looks unchanged, and also lets the mass-deletion valve delete what it would otherwise suppress. `--retry-failed` retries files whose parse or read failed earlier, once, even if they are unchanged. The command is model-free and exits 0 on success, 2 on a config error, and 1 on a runtime error. `SIGINT`/`SIGTERM` exit 130/143.
 
+## Searching while a refresh runs
+
+Search is not blocked by a refresh. `minsync query` takes no lock and reads the index as of the moment it opens, so a search issued while `AutoRAGAgent.refresh` is updating an index that already exists answers from what is committed, and AutoRAG runs it beside the refresh instead of refusing it. The first index works the same way: the batches it has committed so far answer while the rest are still being read. Searches run one at a time per workspace, and a sync never starts under a running search.
+
+Two things are worth knowing:
+
+- A search is refused (`another sync is in progress`, reported as a `retrieval-method-failed` diagnostic) only while the index has nothing to read yet (no `cursor.json` and no `txn.json`), for example the first moments of a first sync or a forced rebuild, or while a sync follows an interrupted first sync, whose rows may belong to another embedder. This is why AutoRAG requires MinSync 0.7.4: from that version every query is checked against the embedder recorded in the index's `cursor.json`, so a search that reads beside a rewrite of a built index cannot score against another model's vectors.
+- During an incremental refresh an **edited** document can briefly miss the lexical half of a search while its batch is being swapped. MinSync replaces an edited batch's dense rows first and encodes the new sparse vectors a moment later; MinSync 0.7.4 sweeps the old rows only after the new ones are sparse-encoded, so an edited document answers throughout. `scripts/manual-qa/run-qa-refresh-search-live.ts` runs this against a real index and fails if a search is refused or an edited document is never found during the refresh.
+
 ## Refresh diagnostics
 
 Every diagnostic carries a stable code, a severity (`info`, `warning`, or `error`), a message, and a `source`. Human output prints diagnostics when the run did not fully succeed, or always with `--debug`; the JSON envelope always carries them.

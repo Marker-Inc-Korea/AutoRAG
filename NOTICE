@@ -6,6 +6,9 @@ legacy/ package license: Apache-2.0
 
 Third-party production dependencies:
 
+@bubblyworld/xgboost-ts@1.0.0
+License: Apache-2.0
+
 @earendil-works/pi-agent-core@1.4.0
 License: MIT
 

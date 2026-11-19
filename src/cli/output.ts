@@ -1,4 +1,5 @@
 import type { AutoRAGRefreshResult, AutoRAGRefreshStatus } from "../agent/agent.ts";
+import type { Revision } from "../agent/answer-revision.ts";
 import { DecisionModelUnavailableError } from "../agent/decision-model-check.ts";
 import type { SearchDocumentsResponse } from "../agent/search-documents.ts";
 import type { MemorySchema } from "../memory/memory.ts";
@@ -321,6 +322,21 @@ export function renderPreliminary(resp: SearchDocumentsResponse, opts: RenderOpt
 		return JSON.stringify({ type: "preliminary", response: searchEnvelope(resp, opts.debug ?? false) }, null, 2);
 	}
 	return `fast answer (still verifying):\n${renderSearchHuman(resp, opts.debug ?? false)}`;
+}
+
+/**
+ * Render one correction of the first answer the caller already holds. JSON carries the revision as is; the human form
+ * is a headline with the reason, the original as `− ` lines (U+2212: a claim that is a bullet starts with `- ` itself), and the replacement as `+ ` lines.
+ */
+export function renderRevision(revision: Revision, opts: RenderOptions): string {
+	if (opts.json) return JSON.stringify({ type: "revision", revision }, null, 2);
+	const subject = revision.claimId === undefined ? "" : ` ${revision.claimId}`;
+	if (revision.op === "confirm") return `Checked${subject} — ${revision.reason}`;
+	const headline = { replace: "Corrected", retract: "Retracted", add: "Added" }[revision.op];
+	const lines = [`${headline}${subject} — ${revision.reason}`];
+	if (revision.original !== undefined) lines.push(...revision.original.split("\n").map((line) => `− ${line}`));
+	if (revision.replacement !== undefined) lines.push(...revision.replacement.split("\n").map((line) => `+ ${line}`));
+	return lines.join("\n");
 }
 
 function renderMemoryHuman(schema: MemorySchema, debug: boolean): string {

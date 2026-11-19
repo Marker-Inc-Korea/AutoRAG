@@ -233,6 +233,7 @@ function createTool(
 			const { text } = registerAndRender(
 				ledger,
 				`search_datasource_${spec.datasourceId}`,
+				query,
 				results,
 				(result) => `${result.source} score=${result.score.toFixed(4)}`,
 				options.recordCut,

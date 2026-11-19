@@ -1,5 +1,6 @@
 import { normalizeSessionEvidenceRef, type RetrievalMemory, type SessionEvidenceRef } from "../memory/memory.ts";
 import type { RetrievalResult } from "../retrieval/types.ts";
+import type { Revision } from "./answer-revision.ts";
 import { assertResultsMappingOneToOne, formatCitationList, stripUnresolvedCitations } from "./citations.ts";
 import type { AutoRAGMappingEntry, AutoRAGResultsDetails } from "./results.ts";
 
@@ -88,6 +89,9 @@ export type SearchDocumentDiagnosticCode =
 	| "evidence-judged"
 	| "evidence-judgment-fallback"
 	| "memory-search-fallback"
+	| "ranking-log-failed"
+	| "ltr-unavailable"
+	| "ltr-failed"
 	| "self-config-unavailable"
 	| "self-config-rolled-back"
 	| "organize-skill-unavailable"
@@ -195,6 +199,16 @@ export type SearchDocumentsStreamEvent =
 			 */
 			readonly type: "preliminary";
 			readonly response: SearchDocumentsResponse;
+	  }
+	| {
+			/**
+			 * The verification phase corrected the preliminary answer the caller already holds. Yielded once per
+			 * correction, after `preliminary` and before `complete`. `revision.original` is the claim as the
+			 * caller read it in the preliminary answer; citations use the `[n]` numbers of `response.results`.
+			 * The `complete` event's answer is the preliminary answer with every revision applied.
+			 */
+			readonly type: "revision";
+			readonly revision: Revision;
 	  }
 	| {
 			readonly type: "complete";

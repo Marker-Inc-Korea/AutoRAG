@@ -339,6 +339,84 @@ describe("runSearch", () => {
 		expect(stdout[1]).toContain("[1] answer");
 	});
 
+	it("emits each revision between the preliminary and the final response as its own JSON event", async () => {
+		const { ctx, stdout } = context(["query"]);
+		await runSearch(ctx, {
+			agentFactory: () => ({
+				async *searchDocumentsStream() {
+					yield { type: "preliminary" as const, response: { ...response, answer: "Lyon [1]" } };
+					yield {
+						type: "revision" as const,
+						revision: {
+							op: "replace" as const,
+							claimId: "c1",
+							original: "Lyon [1]",
+							replacement: "Paris [2]",
+							reason: "Lyon is not the capital",
+						},
+					};
+					yield { type: "complete" as const, response };
+				},
+			}),
+		});
+		expect(stdout).toHaveLength(3);
+		expect(JSON.parse(stdout[1])).toEqual({
+			type: "revision",
+			revision: {
+				op: "replace",
+				claimId: "c1",
+				original: "Lyon [1]",
+				replacement: "Paris [2]",
+				reason: "Lyon is not the capital",
+			},
+		});
+	});
+
+	it("keeps the change marks distinct from a claim's own bullet in human output", async () => {
+		const { ctx, stdout } = context(["query"]);
+		ctx.json = false;
+		await runSearch(ctx, {
+			agentFactory: () => ({
+				async *searchDocumentsStream() {
+					yield {
+						type: "revision" as const,
+						revision: {
+							op: "retract" as const,
+							claimId: "c2",
+							original: "- Paid monthly [3]",
+							reason: "no source",
+						},
+					};
+					yield { type: "complete" as const, response };
+				},
+			}),
+		});
+		expect(stdout[0]).toBe(["Retracted c2 — no source", "− - Paid monthly [3]"].join("\n"));
+	});
+
+	it("shows a revision in human output as the struck-out original, its replacement and the reason", async () => {
+		const { ctx, stdout } = context(["query"]);
+		ctx.json = false;
+		await runSearch(ctx, {
+			agentFactory: () => ({
+				async *searchDocumentsStream() {
+					yield {
+						type: "revision" as const,
+						revision: {
+							op: "replace" as const,
+							claimId: "c1",
+							original: "Lyon [1]",
+							replacement: "Paris [2]",
+							reason: "Lyon is not the capital",
+						},
+					};
+					yield { type: "complete" as const, response };
+				},
+			}),
+		});
+		expect(stdout[0]).toBe(["Corrected c1 — Lyon is not the capital", "− Lyon [1]", "+ Paris [2]"].join("\n"));
+	});
+
 	it("forwards thinking-level flags to the agent", async () => {
 		let received: unknown;
 		const { ctx } = context(["query"], { "fast-thinking": "low", "final-thinking": "max" });

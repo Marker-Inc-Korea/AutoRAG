@@ -87,16 +87,18 @@ export interface RecordCutToolOptions {
 
 /**
  * Register `results` in the ledger and render them. With a record cut, a chunk an earlier search of this run
- * already showed is not resent, and only chunks whose text reached the model are marked as shown.
+ * already showed is not resent, and only chunks whose text reached the model are marked as shown. `query` is what
+ * the search asked; the ledger's results observer (the learning-to-rank log) sees the list under it.
  */
 export function registerAndRender(
 	ledger: EvidenceLedger,
 	tool: string,
+	query: string,
 	results: readonly RetrievalResult[],
 	header: (result: RetrievalResult) => string,
 	recordCut: RecordCut | undefined,
 ): { readonly evidenceIds: string[]; readonly text: string } {
-	const evidenceIds = results.map((result) => ledger.registerResult(tool, result));
+	const evidenceIds = ledger.registerResults(tool, query, results);
 	const rendered = renderEvidenceRows(
 		results.map((result, index) => ({
 			id: evidenceIds[index]!,

@@ -151,6 +151,15 @@ describe("buildSystemPrompt single-agent contract", () => {
 		expect(text).toContain("actively use `jikji_find` rather than running exploratory `bash` commands");
 	});
 
+	it("teaches learning-to-rank management only when manage_ltr is registered", () => {
+		expect(prompt()).not.toContain("## Learning-to-Rank");
+		const text = prompt(["bash", "search_all_documents", "manage_ltr"]);
+		expect(text).toContain("## Learning-to-Rank");
+		expect(text).toContain("`manage_ltr`");
+		expect(text).toContain("never turn it on, switch the model, or train without being asked");
+		expect(text).not.toContain("- **manage_ltr**: caller-provided tool");
+	});
+
 	it("teaches file-triggered automations only when manage_automations is registered", () => {
 		const without = prompt();
 		expect(without).not.toContain("## File Automations");
@@ -160,5 +169,14 @@ describe("buildSystemPrompt single-agent contract", () => {
 		expect(text).toContain("`manage_automations`");
 		expect(text).toContain("install_service");
 		expect(text).not.toContain("- **manage_automations**: caller-provided tool");
+	});
+});
+
+describe("revise_answer in the system prompt", () => {
+	it("lists the tool with what it is for, only when the session has it, and not as a caller tool", () => {
+		const prompt = buildSystemPrompt({ toolNames: ["bash", "revise_answer"], modelId: "test-model" });
+		expect(prompt).toMatch(/\*\*revise_answer\*\*: correct/);
+		expect(prompt).not.toContain("**revise_answer**: caller-provided tool");
+		expect(buildSystemPrompt({ toolNames: ["bash"], modelId: "test-model" })).not.toContain("revise_answer");
 	});
 });

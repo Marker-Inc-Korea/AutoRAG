@@ -1,6 +1,6 @@
 {
   "name": "@autorag/librarian",
-  "version": "2.13.13",
+  "version": "2.14.0",
   "description": "Personal librarian agent for office work on the Pi framework, with pluggable retrieval methods",
   "license": "Apache-2.0",
   "repository": {
@@ -55,6 +55,7 @@
     "node": ">=24.0.0"
   },
   "dependencies": {
+    "@bubblyworld/xgboost-ts": "1.0.0",
     "@earendil-works/pi-agent-core": "^1.4.0",
     "@earendil-works/pi-ai": "^1.4.0",
     "@earendil-works/pi-coding-agent": "1.4.0",

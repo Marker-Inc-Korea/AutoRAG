@@ -18,6 +18,17 @@ export function normalizeEvidenceText(text: string): string {
 	return text.replace(/\r\n?/gu, "\n").trim().normalize("NFC");
 }
 
+/** Characters of a chunk the evidence ledger stores, and so the characters a citation can be matched on. */
+export const EVIDENCE_CONTENT_CHARS = 2_000;
+
+/**
+ * Identity of one retrieved chunk as a citation names it: the source plus the chunk text the ledger stored.
+ * A source can back several chunks, so each is judged, excluded, and labelled on its own.
+ */
+export function evidenceChunkKey(source: string, content: string): string {
+	return `${source}\0${content.slice(0, EVIDENCE_CONTENT_CHARS)}`;
+}
+
 export function isPathOpaqueIdentifier(value: string): boolean {
 	if (value.length === 0) return false;
 	if (value.includes("/") || value.includes("\\")) return false;

@@ -38,6 +38,7 @@ import { createEmbedderFromConfig } from "../embedding/index.ts";
 import { acquireFileLock, type FileLockHandle } from "../filesystem/file-lock.ts";
 import { isGlobExclusion } from "../filesystem/path-exclusions.ts";
 import { LanguageError, type LanguageTag, normalizeLanguages } from "../language.ts";
+import type { LtrSettings } from "../ltr/manager.ts";
 import type { EnsureMinSyncBinaryOptions, MinSyncEmbedderConfig } from "../minsync/index.ts";
 import { renameWithRetry } from "../mirror/atomic-write.ts";
 import { MAX_FUSION_DEPTH, MAX_PER_RECORD, type RecordCutOptions } from "../retrieval/record-cut.ts";
@@ -154,6 +155,20 @@ export interface QueryDecompositionConfig {
 	model?: AgentModelConfig;
 }
 
+/** Opt-in learning-to-rank serving and retraining. See docs/retrieval/learning-to-rank.md. */
+export interface LtrConfig {
+	/** Reorder the baseline with a trained model. Default false. */
+	enabled?: boolean;
+	/** A model id from `autorag ltr list`, or `latest` (default): the newest model that passed its holdout gate. */
+	model?: string;
+	/** Let the agent retrain by itself once enough new searches were logged. Default off. */
+	autoTrain?: {
+		enabled?: boolean;
+		/** New logged runs since the last training attempt before the next one. @default 200 */
+		minNewRuns?: number;
+	};
+}
+
 /**
  * Post-merge reranking config. Opt-in: reranking runs only when a `model` is named, and a block without one is treated
  * as off (reported once at startup). `provider` is `openrouter` (default) or the hosted Dazzi Models plan (`dazzi`).
@@ -260,6 +275,14 @@ export interface CliConfig {
 		timeoutMs?: number;
 	};
 	excludeExactDuplicates?: boolean;
+	/** Learning-to-rank training log beside the memory file. Default on; `false` stops logging. */
+	rankingLog?: boolean;
+	/**
+	 * Opt-in learning-to-rank serving. Absent or `enabled: false` leaves the retrieval order exactly as before.
+	 * `model` is a trained model id (`autorag ltr list`) or `latest` (the default: the newest model that passed
+	 * its holdout gate). `autoTrain` lets the agent retrain on its own once the log has grown.
+	 */
+	ltr?: LtrConfig;
 	/** Filee command line behind the `convert_files` tool. `enabled: false` removes the conversion tools. */
 	filee?: {
 		enabled?: boolean;
@@ -1153,6 +1176,11 @@ export function resolveConfig(input: ResolveConfigInput): CliConfig {
 		throw new ConfigError("Config field 'excludeExactDuplicates' must be a boolean");
 	}
 	config.excludeExactDuplicates = file.excludeExactDuplicates ?? true;
+	if (file.rankingLog !== undefined) {
+		if (typeof file.rankingLog !== "boolean") throw new ConfigError("Config field 'rankingLog' must be a boolean");
+		config.rankingLog = file.rankingLog;
+	}
+	if (file.ltr !== undefined) config.ltr = normalizeLtrConfig(file.ltr, "ltr");
 	if (file.datasources !== undefined) {
 		if (typeof file.datasources !== "object" || file.datasources === null || Array.isArray(file.datasources)) {
 			throw new ConfigError("Config field 'datasources' must be an object mapping skill names to their config");
@@ -1399,6 +1427,54 @@ function buildWebSearchAgentOption(
 	return out as AutoRAGAgentOptions["webSearch"] & object;
 }
 
+const LTR_ALLOWLIST: Readonly<Record<string, true>> = { enabled: true, model: true, autoTrain: true };
+const LTR_AUTO_TRAIN_ALLOWLIST: Readonly<Record<string, true>> = { enabled: true, minNewRuns: true };
+const LTR_MODEL_ID_PATTERN = /^(latest|[A-Za-z0-9][A-Za-z0-9._-]{0,63})$/u;
+
+function plainRecord(raw: unknown, path: string, allowed: Readonly<Record<string, true>>): Record<string, unknown> {
+	if (typeof raw !== "object" || raw === null || Array.isArray(raw))
+		throw new ConfigError(`${path} must be an object`);
+	const record = raw as Record<string, unknown>;
+	for (const key of Object.keys(record)) {
+		if (!Object.hasOwn(allowed, key)) throw new ConfigError(`${path}.${key} is not a recognized field`);
+	}
+	return record;
+}
+
+/** Validate the `ltr` config section. Nothing is defaulted on: serving and auto-training are both explicit opt-ins. */
+export function normalizeLtrConfig(raw: unknown, path: string): LtrConfig {
+	const record = plainRecord(raw, path, LTR_ALLOWLIST);
+	const out: LtrConfig = {};
+	if (record.enabled !== undefined) {
+		if (typeof record.enabled !== "boolean") throw new ConfigError(`${path}.enabled must be a boolean`);
+		out.enabled = record.enabled;
+	}
+	if (record.model !== undefined) {
+		if (typeof record.model !== "string" || !LTR_MODEL_ID_PATTERN.test(record.model)) {
+			throw new ConfigError(
+				`${path}.model must be a non-empty string: \`latest\` or a model id from \`autorag ltr list\``,
+			);
+		}
+		out.model = record.model;
+	}
+	if (record.autoTrain !== undefined) {
+		const auto = plainRecord(record.autoTrain, `${path}.autoTrain`, LTR_AUTO_TRAIN_ALLOWLIST);
+		const autoTrain: NonNullable<LtrConfig["autoTrain"]> = {};
+		if (auto.enabled !== undefined) {
+			if (typeof auto.enabled !== "boolean") throw new ConfigError(`${path}.autoTrain.enabled must be a boolean`);
+			autoTrain.enabled = auto.enabled;
+		}
+		if (auto.minNewRuns !== undefined) {
+			if (typeof auto.minNewRuns !== "number" || !Number.isInteger(auto.minNewRuns) || auto.minNewRuns < 1) {
+				throw new ConfigError(`${path}.autoTrain.minNewRuns must be a positive integer`);
+			}
+			autoTrain.minNewRuns = auto.minNewRuns;
+		}
+		out.autoTrain = autoTrain;
+	}
+	return out;
+}
+
 const RERANK_ALLOWLIST = new Set<string>(["enabled", "provider", "model", "apiKeyEnv", "baseUrl", "topN", "timeoutMs"]);
 
 /**
@@ -1539,6 +1615,23 @@ export function buildAgentOptions(config: CliConfig, agentDir?: string): Omit<Au
 		};
 	}
 	opts.excludeExactDuplicates = config.excludeExactDuplicates ?? true;
+	if (config.rankingLog === false) opts.rankingLog = false;
+	if (config.ltr !== undefined || config.configPath !== undefined) {
+		const configPath = config.configPath;
+		opts.ltr = {
+			enabled: config.ltr?.enabled === true,
+			...(config.ltr?.model !== undefined ? { model: config.ltr.model } : {}),
+			...(config.ltr?.autoTrain !== undefined ? { autoTrain: config.ltr.autoTrain } : {}),
+			// The agent's manage_ltr tool saves through the config file this run resolved from, and only if it exists:
+			// it never creates a config, and rewrites nothing but the `ltr` block.
+			...(configPath !== undefined && existsSync(configPath)
+				? {
+						persist: (settings: LtrSettings): void =>
+							writeConfigObject(configPath, { ...readRawConfigObject(configPath), ltr: settings }),
+					}
+				: {}),
+		};
+	}
 	const wombatMirrors = wombatMirrorExclusions(config.datasources);
 	if (config.excludePaths !== undefined || wombatMirrors.length > 0) {
 		opts.excludePaths = [...new Set([...(config.excludePaths ?? []), ...wombatMirrors])];

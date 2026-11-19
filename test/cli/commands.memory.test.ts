@@ -1,10 +1,12 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { runMemory } from "../../src/cli/commands/memory.ts";
 import type { CommandContext } from "../../src/cli/commands/types.ts";
 import { normalizeSessionEvidenceRef, RetrievalMemory } from "../../src/memory/memory.ts";
+import { RankingLogStore, RankingRunRecorder, rankingLogPath } from "../../src/memory/ranking-log.ts";
+import { evidenceChunkKey } from "../../src/retrieval/evidence-id.ts";
 
 let root: string;
 let memoryPath: string;
@@ -133,5 +135,79 @@ describe("runMemory inspect (cli)", () => {
 		expect(stdout).toHaveLength(1);
 		// Human mode is not a JSON object literal.
 		expect(stdout[0].trimStart()[0]).not.toBe("{");
+	});
+});
+
+describe("runMemory export-ltr (cli)", () => {
+	function seedRankingLog(count: number): void {
+		const store = new RankingLogStore(rankingLogPath(memoryPath));
+		for (let index = 0; index < count; index++) {
+			const run = new RankingRunRecorder({
+				runId: `run-${index}`,
+				conversationId: "c",
+				question: "who approved the budget?",
+				startedAt: 100 + index,
+			});
+			const cited = {
+				id: "a",
+				source: "/docs/budget.md",
+				content: "Mina approved the budget.",
+				score: 1,
+				metadata: {},
+			};
+			const other = { id: "b", source: "/docs/other.md", content: "Lunch menu.", score: 0.5, metadata: {} };
+			run.retrieved({ surface: "minsync", query: "who approved the budget?", results: [cited, other] });
+			store.append(
+				run.finish({ finalCitationKeys: [evidenceChunkKey(cited.source, cited.content)], finishedAt: 200 }),
+			);
+		}
+		store.close();
+	}
+
+	beforeEach(() => {
+		writeConfig();
+	});
+
+	it("writes LightGBM files for the logged runs into --output and reports the split", async () => {
+		seedRankingLog(5);
+		const output = join(root, "ltr");
+		const stdout: string[] = [];
+		const code = await runMemory(
+			makeCtx({ positionals: ["export-ltr"], flags: { output }, stdout: (line) => stdout.push(line) }),
+		);
+
+		expect(code).toBe(0);
+		const summary = JSON.parse(stdout[0] as string);
+		expect(summary).toMatchObject({ runs: 5, train: { groups: 4, rows: 8 }, valid: { groups: 1, rows: 2 } });
+		expect(readFileSync(join(output, "train.tsv.query"), "utf-8")).toBe("2\n2\n2\n2\n");
+		expect(readFileSync(join(output, "valid.tsv.query"), "utf-8")).toBe("2\n");
+	});
+
+	it("exports an empty, valid manifest when nothing was logged yet, without creating the log", async () => {
+		const output = join(root, "ltr");
+		const stdout: string[] = [];
+		const code = await runMemory(
+			makeCtx({ positionals: ["export-ltr"], flags: { output }, stdout: (line) => stdout.push(line) }),
+		);
+
+		expect(code).toBe(0);
+		expect(JSON.parse(stdout[0] as string)).toMatchObject({ runs: 0, train: { groups: 0 } });
+		expect(existsSync(rankingLogPath(memoryPath))).toBe(false);
+	});
+
+	it("requires --output and rejects a validation fraction outside [0, 1)", async () => {
+		const stderr: string[] = [];
+		expect(await runMemory(makeCtx({ positionals: ["export-ltr"], stderr: (line) => stderr.push(line) }))).toBe(2);
+		expect(
+			await runMemory(
+				makeCtx({
+					positionals: ["export-ltr"],
+					flags: { output: join(root, "x"), "valid-fraction": "1.5" },
+					stderr: (line) => stderr.push(line),
+				}),
+			),
+		).toBe(2);
+		expect(stderr.join("\n")).toMatch(/--output/u);
+		expect(stderr.join("\n")).toMatch(/valid-fraction/u);
 	});
 });
