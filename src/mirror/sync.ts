@@ -224,6 +224,7 @@ export type ParsedMirrorDiagnosticCode =
 	| "source-read-failed"
 	| "mirror-write-failed"
 	| "duplicate-excluded"
+	| "duplicate-scan-failed"
 	| "deleted-mirror"
 	| "stale-index"
 	| "pdf-extract-thin"

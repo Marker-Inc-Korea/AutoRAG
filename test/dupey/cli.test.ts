@@ -34,7 +34,16 @@ describe("dupey CLI adapter", () => {
 	});
 
 	it("rejects malformed output", async () => {
-		await expect(scanWithDupey(".", { run: async () => "not-json" })).rejects.toBeInstanceOf(DupeyCliError);
+		const error = await scanWithDupey(".", { run: async () => "not-json" }).catch((err: unknown) => err);
+		expect(error).toBeInstanceOf(DupeyCliError);
+		expect((error as DupeyCliError).timedOut).toBe(false);
+	});
+
+	it("marks timeout errors with timedOut=true", () => {
+		const timeoutError = new DupeyCliError("dupey timed out.", { timedOut: true });
+		expect(timeoutError.timedOut).toBe(true);
+		const otherError = new DupeyCliError("dupey failed with exit code 23");
+		expect(otherError.timedOut).toBe(false);
 	});
 });
 

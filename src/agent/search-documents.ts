@@ -35,6 +35,7 @@ export type SearchDocumentDiagnosticCode =
 	| "mirror-write-failed"
 	| "parser-warning"
 	| "duplicate-excluded"
+	| "duplicate-scan-failed"
 	| "unsupported-file"
 	| "stale-index"
 	| "deleted-mirror"
