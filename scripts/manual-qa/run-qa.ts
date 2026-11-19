@@ -5,7 +5,7 @@
  * Spins up a local mock of every external API (plus a real filesystem
  * fixture for Obsidian), builds all skills through the
  * trusted config factory, registers them on a real AutoRAGAgent, then walks
- * the checklist in docs/manual-qa-datasources.md: setup -> refresh/index ->
+ * the checklist in docs/contributing/manual-qa.md: setup -> refresh/index ->
  * skill announcement -> load_datasource_skill -> per-connection
  * search_datasource_<id> tools -> optional scope narrowing.
  *

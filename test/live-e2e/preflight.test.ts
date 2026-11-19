@@ -20,6 +20,7 @@ const optionalBinaries = Object.freeze({
 	lazykatok: false,
 	discrawl: false,
 	mailcrawl: false,
+	wombat: false,
 	jikji: false,
 	minsync: false,
 });

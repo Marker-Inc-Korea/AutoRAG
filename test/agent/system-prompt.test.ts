@@ -31,6 +31,17 @@ describe("buildSystemPrompt single-agent contract", () => {
 		expect(text).not.toMatch(/subagent|explorer|delegat|Assignment V1|pi-subagents/i);
 	});
 
+	it("teaches the model to turn a time condition into since/until and to read the window notice (#1958)", () => {
+		const text = prompt();
+		expect(text).toContain("`since`");
+		expect(text).toContain("`until`");
+		expect(text).toMatch(/exclusive/i);
+		expect(text).toContain("<current_date>");
+		expect(text).toMatch(/not proof that nothing exists/i);
+		// File-name search keeps its own date syntax; the window is for content retrieval.
+		expect(text).toMatch(/content retrieval/i);
+	});
+
 	it("fails closed when no tools are provided", () => {
 		expect(prompt([])).toMatch(/blocked\/degraded state/i);
 	});
@@ -158,5 +169,14 @@ describe("buildSystemPrompt single-agent contract", () => {
 		expect(text).toContain("`manage_automations`");
 		expect(text).toContain("install_service");
 		expect(text).not.toContain("- **manage_automations**: caller-provided tool");
+	});
+});
+
+describe("revise_answer in the system prompt", () => {
+	it("lists the tool with what it is for, only when the session has it, and not as a caller tool", () => {
+		const prompt = buildSystemPrompt({ toolNames: ["bash", "revise_answer"], modelId: "test-model" });
+		expect(prompt).toMatch(/\*\*revise_answer\*\*: correct/);
+		expect(prompt).not.toContain("**revise_answer**: caller-provided tool");
+		expect(buildSystemPrompt({ toolNames: ["bash"], modelId: "test-model" })).not.toContain("revise_answer");
 	});
 });

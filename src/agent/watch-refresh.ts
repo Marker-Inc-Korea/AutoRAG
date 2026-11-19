@@ -28,6 +28,8 @@ export interface WatchRefreshDeps {
 }
 
 export interface WatchRefreshHandle {
+	/** Schedule a (debounced) refresh as if a change had been seen, e.g. for a deferred initial refresh. */
+	trigger(): void;
 	stop(): void;
 }
 
@@ -86,6 +88,7 @@ export function createWatchRefresh(deps: WatchRefreshDeps): WatchRefreshHandle {
 	}
 
 	return {
+		trigger: schedule,
 		stop(): void {
 			stopped = true;
 			if (timer !== undefined) {

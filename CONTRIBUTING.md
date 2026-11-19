@@ -174,7 +174,7 @@ Datasource skills federate CLI-owned stores in place. If you add one:
 - Ship a datasource skill that documents native commands plus `<binary> --help`
   guidance, so the agent knows which CLI backs the datasource.
 - Add focused tests, then run the manual QA harness for the source
-  (`scripts/manual-qa/`, indexed in `docs/manual-qa-datasources.md`) before
+  (`scripts/manual-qa/`, indexed in `docs/contributing/manual-qa.md`) before
   registering the datasource. A native store that exists on your machine must be
   exercised, not skipped.
 

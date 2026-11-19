@@ -1,0 +1,14 @@
+{
+  "name": "autorag",
+  "owner": { "name": "Marker Inc. Korea" },
+  "metadata": { "description": "AutoRAG plugins for agent hosts" },
+  "plugins": [
+    {
+      "name": "autorag-remote",
+      "source": "plugins/remote-agents",
+      "description": "Search your own files and archives with AutoRAG from a cloud agent. Skill only; you register your own server URL.",
+      "license": "Apache-2.0",
+      "keywords": ["rag", "search", "retrieval", "local-first", "mcp"]
+    }
+  ]
+}

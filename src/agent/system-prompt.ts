@@ -14,6 +14,7 @@ import {
 	ANSWER_UNCONFIRMED_FAST_RULE,
 	ANSWER_UNCONFIRMED_FINAL_RULE,
 } from "./answer-guidelines.ts";
+import { CALCULATOR_PROMPT_RULE } from "./calculator-tool.ts";
 import type { DatasourceAgentSkill } from "./datasource-skill.ts";
 import { buildDatasourceSkillsPrompt } from "./datasource-skill.ts";
 
@@ -78,6 +79,16 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 		),
 		toolLine(
 			config,
+			"calculator",
+			"exact arithmetic, percentages, statistics, date differences and offsets, weekdays, business days, the current date and time, and time zone conversion — always compute these with this tool, never in your head",
+		),
+		toolLine(
+			config,
+			"revise_answer",
+			"correct the first answer the user has already read, one claim (c1, c2, …) at a time: retract or replace what is wrong, add what is new and verified. Use it instead of rewriting that answer in your reply; each correction is shown to the user struck through next to its reason",
+		),
+		toolLine(
+			config,
 			"manage_automations",
 			"create, list, change, delete, and test file-triggered automations, and start or stop their background daemon",
 		),
@@ -131,6 +142,8 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 						"list_file_conversions",
 						"manage_automations",
 						"manage_ltr",
+						"calculator",
+						"revise_answer",
 						"web_search",
 						"web_fetch",
 						"jev",
@@ -174,6 +187,20 @@ This is the conversion map. Use it to plan any conversion immediately, including
 ${renderConversionGuide()}
 `
 		: "";
+	const calculations = toolAvailable(config, "calculator")
+		? `## Calculations
+
+${CALCULATOR_PROMPT_RULE}
+
+- \`calculator\` operations: \`evaluate\` (arithmetic, percentages, totals, averages, roots, logs, trig; independent results in one list), \`date_diff\` (days between dates, or exact elapsed time between two times), \`date_add\` (a date plus or minus years, months, weeks, days, hours, minutes), \`date_info\` (weekday, day of year, ISO week, leap year), \`business_days_between\` and \`add_business_days\` (weekdays, with a holiday list), \`now\`, and \`convert_timezone\`.
+- Pass dates as the user wrote them when they are clear (2026-11-08, 2026년 11월 8일, today); the tool reads them. Never convert a relative date such as "next Friday" yourself: compute it from \`now\` or \`today\` with \`date_add\`.
+- A time without an offset needs its time zone. Ask the user through the ask tool when it matters and is unknown; never assume one. The tool names the zone it used.
+- A time zone abbreviation is a fixed offset, not a place: PST is UTC-8 all year, PDT is UTC-7, EST is UTC-5, EDT is UTC-4. Pass that offset (for example "-08:00") as the time zone. Never replace an abbreviation with a region such as America/Los_Angeles: the region follows daylight saving, so in summer it is an hour off what the abbreviation says. Use a region only when the user names a place or city. An abbreviation used for several zones (CST, IST, BST) is the user's to settle: ask.
+- Report the result as the tool printed it. When it says \`exact: false\`, the digits were rounded; say so only when that matters to the answer.
+
+`
+		: "";
+
 	const webResearch =
 		toolAvailable(config, "web_search") || toolAvailable(config, "web_fetch")
 			? `## Web Research
@@ -260,6 +287,7 @@ ${noSearchTools}
 - For generic, stable questions answer directly from knowledge or memory without searching. For source-dependent questions, the first question of a conversation gets baseline MinSync and Jikji retrieval that starts before the model's search decision and supplies up to 100 candidates per method; inspect it first and treat it as unverified evidence. Later questions get no baseline: search by tool call.
 - Start with the most specific exact term, identifier, filename glob, or regex that preserves the query intent.
 - Use \`search_all_documents\` when multiple configured retrieval methods can help.
+- When the question carries a time condition ("last month's chat", "the contract from last year", "what came in this week"), pass it to content retrieval as \`since\` and \`until\` (ISO-8601) on \`search_all_documents\` and \`search_datasource_<id>\`, resolving relative phrases against the \`<current_date>\` block. \`since\` is inclusive and \`until\` is exclusive, so "all of September" is since 2026-09-01 and until 2026-10-01; a date-only value is local midnight. Local files are dated by last modification, not authorship. The window only narrows: it does not replace a topical query. Read the window notice in the result: a method that cannot date its results is excluded and named in the diagnostics, and when the over-fetch ceiling was hit, a thin or empty list is not proof that nothing exists in the range, so narrow the query or the range before concluding. The \`dm:\` modifier is for file-name search only.
 - Use MinSync sparse (SPLADE) ranking for terminology, MinSync vector search for semantic similarity, and \`search_all_documents\` when hybrid ranking over the same MinSync chunks can help. Sparse ranking matches exact strings (error codes, hashes, version strings) less reliably than a keyword index: confirm those with a bounded \`grep\` in the directory retrieval already found.
 - Use \`bash\` to read already-retrieved local files with cat/head/sed. find/grep/rg must be small and bounded: one already-known directory from retrieval, a tight pattern, and a cap (head, maxdepth, or file types). Never recursively scan a whole search root (Downloads, Documents, Desktop, or /); those calls miss the bash timeout and stall the search loop. In local sessions, \`bash\` may also carry out user-requested file organization (see File Organization).
 - Files in a cloud or network folder may be placeholders whose bytes live only in the cloud, so prefer retrieval over opening the original there. Open an original only when its indexed text is insufficient, one file at a time, and never bulk-copy, grep, or convert across such a folder: that downloads many files at once.
@@ -277,7 +305,7 @@ ${duplicateManagement}
 ${fileConversion}
 ${automations}
 ${learningToRank}
-${webResearch}
+${calculations}${webResearch}
 ## External Datasource Skills
 
 Datasource connections come from trusted server config, and every configured connection is searchable. Model arguments cannot add or remove connections; a requested \`scope\` only narrows results within a datasource for the current query.

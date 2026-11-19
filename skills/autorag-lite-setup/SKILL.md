@@ -162,7 +162,7 @@ for it, and runs `hister reindex` when needed; it is idempotent, and it refuses 
 remote or in-process backend. Re-run it after restarting the `minsync serve` daemon
 (its port changes). Verify with `hister doctor`: `server.index.embeddings` must be `ok`.
 Install a skip list in Hister's `rules.json` before importing past history, because the
-importer re-downloads URLs without the browser's cookies (docs/datasource-skills.md).
+importer re-downloads URLs without the browser's cookies (docs/datasources/hister.md).
 
 ## Build and refresh indexes
 

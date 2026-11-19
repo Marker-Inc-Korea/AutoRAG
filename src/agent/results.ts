@@ -32,6 +32,12 @@ const evidenceRefSchema = Type.Object({
 	documentArea: Type.Optional(Type.String({ description: "Document collection area, if known", maxLength: 120 })),
 	evidenceType: Type.Optional(Type.String({ description: "Evidence type, if known", maxLength: 120 })),
 	lineEnd: Type.Optional(Type.Integer({ description: "Last line of the chunk, if known" })),
+	pageStart: Type.Optional(
+		Type.Integer({ description: "First page of the chunk, if the parser measured one", minimum: 1 }),
+	),
+	pageEnd: Type.Optional(
+		Type.Integer({ description: "Last page of the chunk, if the parser measured one", minimum: 1 }),
+	),
 	section: Type.Optional(
 		Type.String({ description: "Article or heading the chunk sits in, if known", maxLength: 120 }),
 	),
@@ -55,6 +61,8 @@ const curatedResultFields = {
 			excerpt: Type.String({ description: "Supporting excerpt" }),
 			lineNumber: Type.Optional(Type.Integer({ description: "Line number of the excerpt, if known" })),
 			lineEnd: Type.Optional(Type.Integer({ description: "Last line of the excerpt, if known" })),
+			pageStart: Type.Optional(Type.Integer({ description: "First page of the excerpt, if known", minimum: 1 })),
+			pageEnd: Type.Optional(Type.Integer({ description: "Last page of the excerpt, if known", minimum: 1 })),
 			section: Type.Optional(Type.String({ description: "Article or heading the excerpt sits in, if known" })),
 		}),
 	),
@@ -94,6 +102,10 @@ export interface AutoRAGEmittedEvidence {
 	readonly lineNumber?: number;
 	/** Last line of the chunk; with {@link lineNumber} the exact range in the parsed document. */
 	readonly lineEnd?: number;
+	/** First page of the chunk, measured by the parser for a document with real pages. */
+	readonly pageStart?: number;
+	/** Last page of the chunk; differs from {@link pageStart} when the chunk spans a page break. */
+	readonly pageEnd?: number;
 	/** Article or heading the chunk sits in. */
 	readonly section?: string;
 }
@@ -116,6 +128,8 @@ export interface AutoRAGEvidenceRef {
 	readonly chunkIndex?: number;
 	readonly lineNumber?: number;
 	readonly lineEnd?: number;
+	readonly pageStart?: number;
+	readonly pageEnd?: number;
 	readonly section?: string;
 	readonly stableEvidenceId?: string;
 	readonly retrieverMix?: readonly string[];

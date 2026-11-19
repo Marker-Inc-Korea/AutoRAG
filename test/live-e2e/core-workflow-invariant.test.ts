@@ -16,6 +16,7 @@ import {
 	assertKoreanLexicalHit,
 	assertLiteRetrieveHealthy,
 	assertLiteRetrieveReportsSkippedSurface,
+	assertLiteRetrieveWindowExcludes,
 	assertServiceReady,
 	buildLiveStackOptions,
 	cleanupCloneState,
@@ -90,6 +91,52 @@ describe("live-e2e core workflow invariants", () => {
 		);
 		const empty = { ...degraded, unsearched: [{ ...degraded.unsearched[0], reason: "  " }] };
 		expect(() => assertLiteRetrieveReportsSkippedSurface(empty, "minsync")).toThrow("lite-retrieve-reason-missing");
+	});
+
+	it("requires a time window to exclude the document that would otherwise rank first, and to say so (#1958)", () => {
+		const unwindowed = {
+			ok: true,
+			unsearched: [],
+			results: [{ source: "/c/july.md" }, { source: "/c/august.md" }],
+		};
+		const windowed = {
+			ok: true,
+			unsearched: [],
+			results: [{ source: "/c/august.md" }],
+			window: {
+				since: "2026-08-01T00:00:00.000Z",
+				examined: 2,
+				matched: 1,
+				untimed: 0,
+				ceilingHit: false,
+				fetchDepth: 50,
+			},
+		};
+		expect(assertLiteRetrieveWindowExcludes(unwindowed, windowed, "/c/july.md", "/c/august.md")).toBe(true);
+		// The excluded document must really have ranked first without the window, or the proof proves nothing.
+		expect(() =>
+			assertLiteRetrieveWindowExcludes(
+				{ ...unwindowed, results: [{ source: "/c/august.md" }, { source: "/c/july.md" }] },
+				windowed,
+				"/c/july.md",
+				"/c/august.md",
+			),
+		).toThrow("lite-retrieve-window-excluded-not-first");
+		expect(() =>
+			assertLiteRetrieveWindowExcludes(
+				unwindowed,
+				{ ...windowed, results: [{ source: "/c/july.md" }] },
+				"/c/july.md",
+				"/c/august.md",
+			),
+		).toThrow("lite-retrieve-window-leaked");
+		expect(() =>
+			assertLiteRetrieveWindowExcludes(unwindowed, { ...windowed, results: [] }, "/c/july.md", "/c/august.md"),
+		).toThrow("lite-retrieve-window-kept-missing");
+		const { window: _window, ...noReport } = windowed;
+		expect(() => assertLiteRetrieveWindowExcludes(unwindowed, noReport, "/c/july.md", "/c/august.md")).toThrow(
+			"lite-retrieve-window-report-missing",
+		);
 	});
 
 	it("reports lock contention without allowing a second workflow", () => {

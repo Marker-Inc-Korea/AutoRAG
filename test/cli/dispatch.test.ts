@@ -35,10 +35,10 @@ describe("lite refresh forwarding", () => {
 		};
 
 		expect(await runLiteRefresh(context)).toBe(0);
-		expect(received).toEqual({
-			force: true,
-			options: { methods: ["minsync", "datasources", "jikji"] },
-		});
+		expect(received?.force).toBe(true);
+		expect(received?.options?.methods).toEqual(["minsync", "datasources", "jikji"]);
+		// SIGINT/SIGTERM reach the refresh through this signal; `runLiteRefresh` must always hand one over.
+		expect(received?.options?.signal).toBeInstanceOf(AbortSignal);
 		expect(JSON.parse(output[0] ?? "{}").ok).toBe(true);
 		rmSync(root, { recursive: true, force: true });
 	});

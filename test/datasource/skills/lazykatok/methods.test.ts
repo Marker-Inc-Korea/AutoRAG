@@ -131,6 +131,26 @@ describe("LazykatokBm25Method retrieve", () => {
 		}
 	});
 
+	it("dates a hit by the chat window's start so a time window can place it", async () => {
+		const client = makeClient();
+		client.hits = [
+			{
+				chunkId: "dated",
+				content: "refund",
+				score: 1,
+				source: "/kakao/default/chunks/dated",
+				metadata: { startedAt: "2026-04-13T05:57:50+00:00" },
+			},
+			{ chunkId: "undated", content: "refund", score: 1, source: "/kakao/default/chunks/undated", metadata: {} },
+		];
+		const results = await new LazykatokBm25Method({ client, instanceId: INSTANCE_ID }).retrieve("refund", {
+			topK: 5,
+		});
+
+		expect(results[0]?.metadata.publishedAt).toBe(Date.UTC(2026, 3, 13, 5, 57, 50));
+		expect(results[1]?.metadata).not.toHaveProperty("publishedAt");
+	});
+
 	it("calls client.search in keyword mode with the trimmed query and topK", async () => {
 		const client = makeClient();
 		const method = new LazykatokBm25Method({ client, instanceId: INSTANCE_ID });

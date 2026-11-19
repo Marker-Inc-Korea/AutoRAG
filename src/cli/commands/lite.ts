@@ -30,14 +30,28 @@ Subcommands:
                        reported as "stale": true plus stale-index diagnostics, and
                        the query is still answered; indexes are only rebuilt when
                        asked to.
-                       (--top-k N  --scope SCOPE
+                       (--top-k N  --scope SCOPE  --since ISO  --until ISO
                         --refresh  --strict  --json  --debug)
+                       --since/--until keep only evidence dated in [since, until)
+                       (ISO-8601, date-only = local midnight); results with no date
+                       are excluded and the method is reported in "unsearched".
                        --refresh rebuilds the indexes incrementally first;
                        --strict fails with exit 2 when the index is stale instead
                        of answering from it.
   autorag lite report <query>
                        Persist a structured report from external curation
                        (--input FILE  --json  --debug)
+  autorag lite find <query>
+                       Whole search without a model: the platform file-name
+                       index, local document content, and every connected
+                       datasource. Streams NDJSON (one line per group, in
+                       completion order) with --json: a "groups" line first,
+                       one "group" line per surface, and a final "done" line.
+                       (--top-k N  --groups key,key  --json  --debug)
+                       --query TEXT  searches TEXT as the query (wins over the
+                       positional), so a query beginning with "-" works.
+                       --groups narrows the search to the listed group keys
+                       (files, content, source:<datasourceId>).
 
 Global flags:
   --json               Emit machine-readable JSON
@@ -84,6 +98,10 @@ export async function runLite(ctx: CommandContext): Promise<number> {
 		case "report": {
 			const { runReport } = await import("./report.ts");
 			return runReport(subCtx);
+		}
+		case "find": {
+			const { runLiteFind } = await import("./lite-find.ts");
+			return runLiteFind(subCtx);
 		}
 		default:
 			ctx.stderr(`Unknown lite subcommand: ${sub}\n\n${LITE_USAGE}`);

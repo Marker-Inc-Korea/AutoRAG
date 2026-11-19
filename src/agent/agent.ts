@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, watch as fsWatch, mkdirSync, realpathSync, statSync, writeFileSync } from "node:fs";
-import { basename, dirname, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { Agent, AgentEvent, AgentMessage, AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import type { Api, ImageContent, Model, TextContent } from "@earendil-works/pi-ai";
 import { clampThinkingLevel } from "@earendil-works/pi-ai/compat";
@@ -17,7 +17,7 @@ import {
 import { mapDatasourceDiagnostics } from "../datasource/diagnostics.ts";
 import { type DatasourceRetryOptions, indexWithRetry } from "../datasource/retry.ts";
 import { filterDatasourceScope } from "../datasource/scope.ts";
-import type { DatasourceIndexResult, DatasourceSkill } from "../datasource/types.ts";
+import type { DatasourceIndexResult, DatasourceSkill, SearchFilterSpec } from "../datasource/types.ts";
 import {
 	DupeyCliError,
 	type DupeyCliOptions,
@@ -44,6 +44,7 @@ import {
 	cloudScope,
 	defaultCloudProbe,
 } from "../filesystem/cloud-placeholder.ts";
+import { isGlobExclusion } from "../filesystem/path-exclusions.ts";
 import {
 	FSearchClient,
 	type FSearchClientOptions,
@@ -87,6 +88,7 @@ import { RetrievalMemory } from "../memory/memory.ts";
 import { RankingLogStore, RankingRunRecorder, rankingLogPath } from "../memory/ranking-log.ts";
 import { memoryVectorStorePath } from "../memory/similar-queries.ts";
 import { resolveMinSyncBinary } from "../minsync/binary.ts";
+import { unionChannelResults } from "../minsync/channel-union.ts";
 import { MinSyncRequiredError, minSyncBinaryMissingError } from "../minsync/errors.ts";
 import {
 	isSparseOnlyEmbedder,
@@ -118,6 +120,7 @@ import { type DefaultParserRegistryOptions, resolveParserOptions } from "../pars
 import { locationSuffix } from "../retrieval/chunk-location.ts";
 import { RetrievalEngine } from "../retrieval/engine.ts";
 import { ParallelRetriever, ResultMerger } from "../retrieval/merger.ts";
+import { type RecordCut, type RecordCutOptions, recordCutFromOptions } from "../retrieval/record-cut.ts";
 import { RetrievalMethodRegistry } from "../retrieval/registry.ts";
 import { createReranker, DEFAULT_RERANK_TOP_N, type Reranker } from "../retrieval/rerank.ts";
 import {
@@ -127,7 +130,14 @@ import {
 	resolveRetrievalScope,
 } from "../retrieval/scope.ts";
 import type { DatasourceCatalogEntry } from "../retrieval/selection.ts";
-import type { RetrievalDiagnostic, RetrievalOptions, RetrievalResult } from "../retrieval/types.ts";
+import { describeRetrievalError } from "../retrieval/skip.ts";
+import { parseTimeWindow, type TimeWindow } from "../retrieval/time-window.ts";
+import type {
+	RetrievalDiagnostic,
+	RetrievalOptions,
+	RetrievalResult,
+	RetrievalWindowReport,
+} from "../retrieval/types.ts";
 import { executeWebSearch } from "../web/search/index.ts";
 import { type ModelNativeSearchAuth, modelNativeAuthFromAgentModel } from "../web/search/model-auth.ts";
 import { citedChunkKey, citedChunks, deriveResultsFromAnswer } from "./answer-citations.ts";
@@ -146,11 +156,19 @@ import {
 	ANSWER_UNCONFIRMED_FAST_RULE,
 	ANSWER_UNCONFIRMED_FINAL_RULE,
 } from "./answer-guidelines.ts";
+import { AnswerRevisionSession, type Revision, type RevisionCitations, splitClaims } from "./answer-revision.ts";
 import { ASK_USER_TOOL_NAME, resolveAskUserExtensionPath } from "./ask-user.ts";
 import { createManageAutomationsTool, MANAGE_AUTOMATIONS_TOOL_NAME } from "./automation-tool.ts";
+import {
+	CALCULATOR_FAST_PHASE_RULE,
+	CALCULATOR_PROMPT_RULE,
+	CALCULATOR_TOOL_NAME,
+	createCalculatorTool,
+} from "./calculator-tool.ts";
 import { createCitationLinks } from "./citation-links.ts";
 import { CitationNumbers } from "./citation-numbers.ts";
 import { CITATION_RELEVANCE_FLOOR, judgeCitationRelevance } from "./citation-relevance.ts";
+import { answerMarkers } from "./citations.ts";
 import { createCloudReleaseExtension } from "./cloud-release-extension.ts";
 import { ConversationQueries } from "./conversation-queries.ts";
 import {
@@ -181,10 +199,18 @@ import {
 import { createEmbeddingControls } from "./embedding-controls.ts";
 import { createEverythingSearchTool, EVERYTHING_SEARCH_TOOL_NAME } from "./everything-search-tool.ts";
 import { type EvidenceJudgmentUnit, judgeEvidence } from "./evidence-judgment.ts";
-import { EvidenceLedger } from "./evidence-ledger.ts";
+import { EvidenceLedger, isRegularFile } from "./evidence-ledger.ts";
 import { EvidenceOriginIndex } from "./evidence-origins.ts";
 import { createEvidencePersistence } from "./evidence-persistence.ts";
 import { createFSearchSearchTool, FSEARCH_SEARCH_TOOL_NAME } from "./fsearch-search-tool.ts";
+import {
+	detectPowerSource,
+	evaluateIndexSchedule,
+	type IndexSchedule,
+	type PowerSource,
+	type ScheduleDecision,
+	validateIndexSchedule,
+} from "./index-schedule.ts";
 import { intentOfMessage } from "./intent-tracing.ts";
 import { createJevExtension, JEV_TOOL_NAME, type JevJudge, type JevToolOptions } from "./jev-extension.ts";
 import {
@@ -208,6 +234,7 @@ import {
 	createAutoRAGPiSession,
 	PI_BUILTIN_TOOL_NAMES,
 } from "./pi-session.ts";
+import { PipelinedSync } from "./pipelined-sync.ts";
 import { createModelDecompositionCompleter, type DecompositionModel, decomposeQuery } from "./query-decomposition.ts";
 import {
 	type DatasourceCandidate,
@@ -230,6 +257,7 @@ import {
 	writeRefreshProgress,
 } from "./refresh-progress.ts";
 import type { AutoRAGResultsDetails } from "./results.ts";
+import { createReviseAnswerTool, REVISE_ANSWER_PROMPT_RULE, REVISE_ANSWER_TOOL_NAME } from "./revise-answer-tool.ts";
 import { createSearchAllDocumentsTool, SEARCH_ALL_DOCUMENTS_TOOL_NAME } from "./search-all-tool.ts";
 import {
 	createEmptySearchDocumentsResponse,
@@ -263,6 +291,9 @@ import {
 } from "./watch-refresh.ts";
 import { createWebFetchTool, WEB_FETCH_TOOL_NAME, type WebFetchToolOptions } from "./web-fetch-tool.ts";
 import { createWebSearchTool, WEB_SEARCH_TOOL_NAME, type WebSearchToolOptions } from "./web-search-tool.ts";
+
+const MINSYNC_SYSTEMIC_FAILURE_THRESHOLD = 3;
+const MINSYNC_BATCH_FAILURE_LIMIT = 100;
 
 /**
  * Retrieval datasource tools whose executions count toward the per-search
@@ -338,6 +369,12 @@ export interface AutoRAGRefreshLimits {
 	 * disk and `cloud-evict-failed` is reported. `0` tries once. Default 3.
 	 */
 	readonly cloudEvictRetries?: number;
+	/**
+	 * When background indexing (auto-refresh, fs watch, `autorag watch`) may run: power (`any`/`ac`),
+	 * local-time `windows` (`HH:MM-HH:MM`) and weekdays. Omitted = always.
+	 * An explicit `refresh()` call is never gated. See {@link IndexSchedule}.
+	 */
+	readonly schedule?: IndexSchedule;
 }
 
 /**
@@ -373,6 +410,13 @@ export interface AutoRAGRetrievalLimits {
 		/** Max results rendered per baseline section. Default 100. */
 		readonly sectionLimit?: number;
 	};
+	/**
+	 * Spread each search's hits across documents instead of cutting by chunk, so one long document cannot take
+	 * every slot (PipesHub's FUSION_RECORD_CUT). Off unless `enabled` is true: when on, MinSync and the merger ask
+	 * for `depth` x the requested count, a chunk shown earlier in the run is not resent, and each search result
+	 * is held to `resultChars` with the budget split fairly across its chunks.
+	 */
+	readonly recordCut?: RecordCutOptions;
 }
 
 /** Ship defaults for every {@link AutoRAGRetrievalLimits} field. */
@@ -409,6 +453,7 @@ type ResolvedRetrievalLimits = {
 		readonly jikjiPathLimit: number;
 		readonly sectionLimit: number;
 	};
+	readonly recordCut: RecordCut | undefined;
 };
 
 /** What the local branch searches alongside Jikji and MinSync: Jev's datasource ids and, when selected, the web. */
@@ -449,6 +494,7 @@ function validateRefreshLimits(limits: AutoRAGRefreshLimits | undefined): AutoRA
 		cloudMaxBytes,
 		cloudEvictAfterParse,
 		cloudEvictRetries,
+		schedule,
 	} = limits;
 	if (
 		maxDeleteRatio !== undefined &&
@@ -471,7 +517,9 @@ function validateRefreshLimits(limits: AutoRAGRefreshLimits | undefined): AutoRA
 	if (cloudEvictRetries !== undefined && (!Number.isInteger(cloudEvictRetries) || cloudEvictRetries < 0)) {
 		throw new Error("refresh.cloudEvictRetries must be a non-negative integer");
 	}
+	const validatedSchedule = schedule === undefined ? undefined : validateIndexSchedule(schedule);
 	return {
+		...(validatedSchedule !== undefined ? { schedule: validatedSchedule } : {}),
 		...(maxDeleteRatio !== undefined ? { maxDeleteRatio } : {}),
 		...(maxScannedEntries !== undefined ? { maxScannedEntries } : {}),
 		...(maxDepth !== undefined ? { maxDepth } : {}),
@@ -531,6 +579,7 @@ function resolveRetrievalLimits(
 				"limits.prefetch.sectionLimit",
 			),
 		},
+		recordCut: recordCutFromOptions(limits?.recordCut),
 	};
 }
 
@@ -653,6 +702,10 @@ export interface AutoRAGWatchRefreshOptions {
 	readonly debounceMs?: number;
 	readonly force?: boolean;
 	readonly maxWatchers?: number;
+	/** Replaces the configured `refresh.schedule` for this watcher. */
+	readonly schedule?: IndexSchedule;
+	/** How often a watcher with a closed schedule re-checks it (default 60000). */
+	readonly scheduleRecheckMs?: number;
 	/** Injectable watcher factory (defaults to a recursive fs.watch). Primarily for tests. */
 	readonly watcherFactory?: WatcherFactory;
 }
@@ -787,13 +840,13 @@ export interface AutoRAGAgentOptions {
 	/**
 	 * Learning-to-rank training log beside the memory file (`<memoryPath>.ranking.db`): every finished search run's
 	 * candidate pool, serve-time per-channel ranks and scores, what the model was shown, and the outcome labels.
-	 * Local only; chunk text is never stored. Default on; `false` stops logging. See docs/learning-to-rank.md.
+	 * Local only; chunk text is never stored. Default on; `false` stops logging. See docs/retrieval/learning-to-rank.md.
 	 */
 	rankingLog?: boolean;
 	/**
 	 * Opt-in learning-to-rank reorder of the baseline: after the baseline reranker, a trained XGBoost model picks the
 	 * order the model reads the candidates in. `enabled` defaults to false; `model` is a model id or `latest` (the
-	 * newest model that passed its holdout gate). Needs the ranking log. See docs/learning-to-rank.md.
+	 * newest model that passed its holdout gate). Needs the ranking log. See docs/retrieval/learning-to-rank.md.
 	 */
 	ltr?: {
 		readonly enabled?: boolean;
@@ -1035,6 +1088,10 @@ export class AutoRAGAgent {
 	/** Everything the user typed in this conversation; Jev reads it to judge whether a citation relates to what was asked. */
 	private readonly conversationQueries = new ConversationQueries();
 	private preliminaryCallback: ((response: SearchDocumentsResponse) => void) | undefined;
+	/** Receives each correction the verification phase makes to the preliminary answer the caller already holds. */
+	private revisionCallback: ((revision: Revision) => void) | undefined;
+	/** The claims of the preliminary answer a caller received, while the verification phase may still correct them. */
+	private revisionSession: AnswerRevisionSession | undefined;
 	/** Per-phase thinking levels of the two-phase search. */
 	private readonly fastThinkingLevel: AutoRAGThinkingLevel;
 	private readonly finalThinkingLevel: AutoRAGThinkingLevel;
@@ -1065,12 +1122,16 @@ export class AutoRAGAgent {
 	private readonly rerankTopN: number | undefined;
 
 	private readonly minSyncMethod: MinSyncVectorMethod;
+	/** SPLADE channel of the fast-answer baseline; absent on a sparse-only index, where the one channel already is SPLADE. */
+	private readonly minSyncSparseMethod: MinSyncVectorMethod | undefined;
 	private readonly minSyncEmbedderConfig: MinSyncEmbedderConfig | undefined;
 	private readonly minSyncBinaryPath: string | undefined;
 	private readonly jikjiClient: JikjiClient | undefined;
 	private readonly everythingClient: EverythingClient | undefined;
 	private readonly fsearchClient: FSearchClient | undefined;
 	private readonly datasourceSkills: readonly DatasourceSkill[];
+	/** Filters each connection offered the last time they were read, for the tool descriptions. */
+	private readonly searchFilterCache = new Map<string, readonly SearchFilterSpec[]>();
 	private readonly datasourceRetry: DatasourceRetryOptions;
 	private readonly startupDiagnostics: readonly SearchDocumentDiagnostic[];
 	private readonly datasourceAgentSkills: readonly DatasourceAgentSkill[];
@@ -1145,10 +1206,20 @@ export class AutoRAGAgent {
 	private jikjiDiscovery: Promise<void> = Promise.resolve();
 	/** Search-tool queries by tool call id, read back when the call ends. */
 	private readonly searchToolQueries = new Map<string, string>();
+	/** The window each in-flight search tool call asked for, by tool-call id, so the trace can show it. */
+	private readonly searchToolWindows = new Map<string, { since?: string; until?: string }>();
 	/** Identifies this agent's conversation: everything judged in it is "current" memory. */
 	private readonly conversationId = randomUUID();
 	/** The memory context loaded for the in-flight run; cleared whenever a run starts. */
 	private memoryContextCache: { readonly query: string; readonly context: Promise<MemoryContext> } | undefined;
+	/**
+	 * Each run's `<memory_context>` message with the user message it sits in front of. The message is built once, on
+	 * the run's first model request, and every later request of the conversation replays it in the same place, so a
+	 * request always starts with the previous request's messages and a provider's prompt cache keeps covering them.
+	 */
+	private memoryMessages: MemoryMessageRecord[] = [];
+	/** Set when a run starts; the run's first model request takes it and decides where the run's memory message goes. */
+	private memoryRunStart = false;
 	private readonly discordRemote: boolean;
 	/** Whether the bound interactive session offers `ask_user`; the phase prompts name it only then. */
 	private askUserOffered = false;
@@ -1243,12 +1314,16 @@ export class AutoRAGAgent {
 			root: this.workspaceProjectRoot,
 			defaultTopK: this.limits.minSyncTopK,
 			scopedTopK: this.limits.minSyncScopedQueryTopK,
+			...(this.limits.recordCut === undefined ? {} : { recordCut: this.limits.recordCut }),
 		};
 		// The vector method owns sync, readiness and the dedicated semantic tool, but is not part of the
 		// fan-out: the hybrid method already fuses SPLADE sparse and dense vectors over the same chunks and
 		// degrades to sparse by itself, so registering both would search the workspace twice and let the
 		// merger count one index as two corroborating methods.
 		this.minSyncMethod = new MinSyncVectorMethod(minSyncDefaults);
+		this.minSyncSparseMethod = isSparseOnlyEmbedder(options.minSync?.embedder)
+			? undefined
+			: new MinSyncVectorMethod({ ...minSyncDefaults, mode: "sparse" });
 		this.methodRegistry.register(new MinSyncHybridMethod(minSyncDefaults));
 		const registeredDatasourceIds = new Set<string>();
 		for (const skill of this.datasourceSkills) {
@@ -1317,6 +1392,7 @@ export class AutoRAGAgent {
 			this,
 			this.singleDatasourceToolSpecs(),
 			this.evidenceLedger,
+			{ recordCut: this.limits.recordCut },
 		);
 		this.searchToolNames = new Set([...SEARCH_TOOLS, ...singleDatasourceTools.map((tool) => tool.name)]);
 
@@ -1324,8 +1400,11 @@ export class AutoRAGAgent {
 			() => this.remoteFilteredRetrievalMethod(this.minSyncMethod),
 			(scope) => this.resolveRetrievalScope(scope),
 			this.evidenceLedger,
+			{ recordCut: this.limits.recordCut },
 		);
-		const searchAllTool = createSearchAllDocumentsTool(this, this.evidenceLedger);
+		const searchAllTool = createSearchAllDocumentsTool(this, this.evidenceLedger, {
+			recordCut: this.limits.recordCut,
+		});
 		const loadDatasourceSkillTool = createLoadDatasourceSkillTool(this);
 		const scanDuplicateDocumentsTool =
 			this.dupeyOptions === false ? undefined : createScanDuplicateDocumentsTool(this);
@@ -1343,6 +1422,12 @@ export class AutoRAGAgent {
 				return next;
 			},
 			train: () => trainLtrModel({ memoryPath: memPath }),
+		});
+		const calculatorTool = createCalculatorTool();
+		const reviseAnswerTool = createReviseAnswerTool({
+			session: () => this.revisionSession,
+			announce: (revision) => this.revisionCallback?.(revision),
+			unsupported: (text) => this.unsupportedCitations(text),
 		});
 		this.decisionModels = createDecisionModels({ ...options.jev, agentDir: options.piAgentDir });
 		this.jevJudge = this.decisionModels.judge;
@@ -1404,6 +1489,8 @@ export class AutoRAGAgent {
 			SCAN_DUPLICATE_DOCUMENTS_TOOL_NAME,
 			CONVERT_FILES_TOOL_NAME,
 			LIST_FILE_CONVERSIONS_TOOL_NAME,
+			CALCULATOR_TOOL_NAME,
+			REVISE_ANSWER_TOOL_NAME,
 			MANAGE_AUTOMATIONS_TOOL_NAME,
 			MANAGE_LTR_TOOL_NAME,
 			JEV_TOOL_NAME,
@@ -1433,6 +1520,8 @@ export class AutoRAGAgent {
 			...(scanDuplicateDocumentsTool !== undefined ? [scanDuplicateDocumentsTool] : []),
 			...(convertFilesTool !== undefined ? [convertFilesTool] : []),
 			...(listFileConversionsTool !== undefined ? [listFileConversionsTool] : []),
+			calculatorTool,
+			reviseAnswerTool,
 			manageAutomationsTool,
 			manageLtrTool,
 			...(jikjiFindTool !== undefined ? [jikjiFindTool] : []),
@@ -1550,16 +1639,32 @@ export class AutoRAGAgent {
 
 	private async withMemoryContext(messages: AgentMessage[]): Promise<AgentMessage[]> {
 		if (this.lastQuery === undefined) return messages;
-		const context = await this.loadMemoryContextFor(this.lastQuery);
-		if (context.empty) return messages;
-		return [
-			{
-				role: "user",
-				content: [{ type: "text", text: `<memory_context>\n${context.text}\n</memory_context>` }],
-				timestamp: Date.now(),
-			},
-			...messages,
-		];
+		if (this.memoryRunStart) {
+			const context = await this.loadMemoryContextFor(this.lastQuery);
+			// Requests that overlap each wait on the same load; the first to resume records the message.
+			if (this.memoryRunStart) {
+				this.memoryRunStart = false;
+				let anchor: number | undefined;
+				for (let index = messages.length - 1; index >= 0; index--) {
+					const message = messages[index];
+					if (message?.role === "user") {
+						anchor = message.timestamp;
+						break;
+					}
+				}
+				if (!context.empty && anchor !== undefined) {
+					this.memoryMessages.push({
+						anchor,
+						message: {
+							role: "user",
+							content: [{ type: "text", text: `<memory_context>\n${context.text}\n</memory_context>` }],
+							timestamp: Date.now(),
+						},
+					});
+				}
+			}
+		}
+		return withMemoryMessages(messages, this.memoryMessages);
 	}
 
 	/**
@@ -1842,6 +1947,8 @@ export class AutoRAGAgent {
 				dispose: () => {},
 			};
 		}
+		// The ids a datasource can filter on are part of its tool's description, so read them before the tools are declared.
+		await this.refreshSearchFilters();
 		const piSession = await createAutoRAGPiSession({
 			cwd: this.workspaceProjectRoot,
 			agentDir: this.piAgentDir,
@@ -1894,6 +2001,8 @@ export class AutoRAGAgent {
 		if (event.type === "tool_execution_start" && this.searchToolNames.has(event.toolName)) {
 			const query: unknown = event.args?.query;
 			if (typeof query === "string") this.searchToolQueries.set(event.toolCallId, query);
+			const window = windowForTrace(event.args);
+			if (window !== undefined) this.searchToolWindows.set(event.toolCallId, window);
 			return;
 		}
 		if (event.type !== "tool_execution_end" || !this.lastQuery) return;
@@ -1909,9 +2018,12 @@ export class AutoRAGAgent {
 		if (Array.isArray(details?.results)) {
 			const calledQuery = this.searchToolQueries.get(event.toolCallId);
 			this.searchToolQueries.delete(event.toolCallId);
+			const calledWindow = this.searchToolWindows.get(event.toolCallId);
+			this.searchToolWindows.delete(event.toolCallId);
 			this.retrievalTrace.push({
 				tool: event.toolName,
 				...(calledQuery !== undefined ? { query: calledQuery } : {}),
+				...(calledWindow !== undefined ? { window: calledWindow } : {}),
 				resultCount:
 					typeof details?.resultCount === "number" ? details.resultCount : (details?.results?.length ?? 0),
 				results: details?.results ?? [],
@@ -2160,6 +2272,46 @@ export class AutoRAGAgent {
 		return derived.details;
 	}
 
+	/** How the revision tool reads citations: against this run's evidence, and as the numbers the caller is shown. */
+	private revisionCitations(): RevisionCitations {
+		const options = { allowLocalFiles: true };
+		return {
+			inspect: (text) => {
+				let resolved = 0;
+				const unresolved: string[] = [];
+				for (const marker of answerMarkers(text, isLocalFile)) {
+					if (marker.kind === "number") {
+						unresolved.push(`[${marker.number}]`);
+						continue;
+					}
+					const references = marker.kind === "evidence" ? marker.ids : [marker.path];
+					for (const reference of references) {
+						if (this.evidenceLedger.lookup(reference, options).length > 0) resolved += 1;
+						else unresolved.push(marker.kind === "evidence" ? `[${reference}]` : `[file:${reference}]`);
+					}
+				}
+				return { resolved, unresolved };
+			},
+			display: (text) =>
+				deriveResultsFromAnswer(text, this.evidenceLedger, { ...options, numbers: this.citationNumbers }).details
+					.answer,
+		};
+	}
+
+	/**
+	 * Sources among the text's citations that Jev finds unrelated to the sentences citing them. The same check
+	 * {@link deriveAnswer} applies to a final answer, run when the model proposes a correction so it can fix the
+	 * citation in the same turn instead of losing it silently afterwards.
+	 */
+	private async unsupportedCitations(text: string): Promise<readonly string[]> {
+		const chunks = citedChunks(text, this.evidenceLedger, { allowLocalFiles: true });
+		const relevance = await judgeCitationRelevance(this.jevJudge, {
+			userMessages: this.conversationQueries.all(),
+			chunks,
+		});
+		return [...new Set(chunks.filter((chunk) => relevance.rejected.has(chunk.key)).map((chunk) => chunk.source))];
+	}
+
 	/**
 	 * Routes one TUI input the way pi routes typed input for its own turns. With
 	 * no search running it starts one. During a search, Enter steers it (the
@@ -2359,10 +2511,21 @@ export class AutoRAGAgent {
 		this.autoRefreshTimer = undefined;
 	}
 
+	/**
+	 * Whether the configured index schedule lets a background refresh run now. `override` replaces the
+	 * configured schedule (CLI flags). Probes the power source only when the policy depends on it.
+	 */
+	async indexScheduleDecision(override?: IndexSchedule, now: Date = new Date()): Promise<ScheduleDecision> {
+		const schedule = override ?? this.refreshLimits.schedule;
+		const source: PowerSource = schedule?.power === "ac" ? await detectPowerSource() : "unknown";
+		return evaluateIndexSchedule(schedule, now, source);
+	}
+
 	private async runAutoRefreshTick(): Promise<void> {
 		if (this.refreshing) return;
 		this.refreshing = true;
 		try {
+			if (!(await this.indexScheduleDecision()).allowed) return;
 			await this.refresh(false);
 		} catch {
 			// Background auto-refresh is best-effort; keep the interval alive.
@@ -2432,10 +2595,17 @@ export class AutoRAGAgent {
 			this.citationNumbers.reset();
 			this.conversationQueries.reset();
 		}
+		// "Already shown" is per run: an earlier run's tool output may have been compacted away.
+		this.evidenceLedger.beginRun();
 		if (!conversational) this.evidenceOrigins.clear();
 		this.searchToolQueries.clear();
+		this.searchToolWindows.clear();
 		this.memoryContextCache = undefined;
+		this.memoryRunStart = true;
+		// A run that owns no transcript is its own conversation, so earlier runs' memory messages have nothing to sit in.
+		if (this.boundPiRuntime === undefined) this.memoryMessages = [];
 		this.routingDiagnostics = [];
+		this.revisionSession = undefined;
 		if (decisionModel !== undefined) {
 			this.routingDiagnostics.push({
 				code: "decision-model-checked",
@@ -2711,6 +2881,10 @@ export class AutoRAGAgent {
 				setThinking(this.finalThinkingLevel);
 				// Only a preliminary consumer actually received may turn the final answer into a delta.
 				const fastAnswerDelivered = preliminary !== undefined && this.preliminaryCallback !== undefined;
+				// A caller that holds the first answer is shown the verification phase's corrections of it, claim by claim.
+				if (fastAnswerDelivered && fastText !== undefined) {
+					this.revisionSession = new AnswerRevisionSession(fastText, this.revisionCitations());
+				}
 				// The model gets its own first answer verbatim, with the [eN] ids it
 				// wrote: the caller's copy was renumbered to [n], and the prompt tells
 				// the model its [eN] ids are still valid.
@@ -2729,13 +2903,22 @@ export class AutoRAGAgent {
 				// A steer typed after verification's last model request is still owed an
 				// answer within this search: pi holds it queued, so verify once more.
 				while (!stopped() && !planAbort.signal.aborted && this.interactive.queuedSteers.length > 0) {
-					await activeSession.prompt(buildSteerContinuationPrompt(this.interactive.steers));
+					await activeSession.prompt(buildSteerContinuationPrompt(this.interactive.steers, fastAnswerDelivered));
 				}
 				// Synchronous with the check above: a later steer is refused, not left unanswered.
 				steering.acceptingSteers = false;
 				if (stopped()) return;
 				const finalText = finalAnswerText(transcript());
-				if (finalText !== undefined) captured = await this.deriveAnswer(finalText);
+				const revisions = this.revisionSession;
+				if (revisions === undefined || !revisions.changed()) {
+					// Nothing was corrected through the tool: the model's reply is the answer, as it always was.
+					if (finalText !== undefined) captured = await this.deriveAnswer(finalText);
+				} else {
+					// The answer is the first answer with every correction applied. The model's closing reply is a note on
+					// what changed, unless it cites evidence: then it also wrote something new, and dropping it would lose it.
+					const revised = composeRevisedAnswer(revisions.revisedText(), finalText);
+					if (revised !== "") captured = await this.deriveAnswer(revised);
+				}
 			})().finally(() => {
 				// Every early return decides synchronously after its last steer check.
 				steering.acceptingSteers = false;
@@ -2848,6 +3031,8 @@ export class AutoRAGAgent {
 			this.activeSession = undefined;
 			this.activeRetrievalOptions = undefined;
 			this.preliminaryCallback = undefined;
+			this.revisionCallback = undefined;
+			this.revisionSession = undefined;
 			this.activeRun = false;
 			this.memoryContextCache = undefined;
 		}
@@ -2907,6 +3092,11 @@ export class AutoRAGAgent {
 			wake?.();
 			wake = undefined;
 		};
+		this.revisionCallback = (revision) => {
+			queue.push({ type: "revision", revision });
+			wake?.();
+			wake = undefined;
+		};
 		const run = this.searchDocuments(query, options)
 			.then((response) => {
 				queue.push({ type: "complete", response });
@@ -2956,6 +3146,7 @@ export class AutoRAGAgent {
 	 * first registration.
 	 */
 	private singleDatasourceToolSpecs(): SingleDatasourceToolSpec[] {
+		const agentSelf = this;
 		const seen = new Set<string>();
 		const specs: SingleDatasourceToolSpec[] = [];
 		for (const skill of this.datasourceSkills) {
@@ -2970,10 +3161,16 @@ export class AutoRAGAgent {
 				.map((source) => source.source)
 				.filter((source) => source.split("/").filter((segment) => segment.length > 0).length === 2)
 				.slice(0, this.limits.toolDescriptionInstanceScopes);
+			const datasourceId = descriptor.datasourceId;
 			specs.push({
-				datasourceId: descriptor.datasourceId,
+				datasourceId,
 				description: descriptor.description,
 				instanceScopes,
+				// Read when the tool is declared: after the filters were refreshed, so a first session already names the ids.
+				get filterNames(): readonly string[] {
+					return (agentSelf.searchFilterCache.get(datasourceId) ?? []).map((filter) => filter.name);
+				},
+				searchFilters: () => agentSelf.searchFilterCache.get(datasourceId) ?? [],
 			});
 		}
 		return specs;
@@ -3414,20 +3611,7 @@ export class AutoRAGAgent {
 		const perQuery = await Promise.all(
 			searchQueries.map((searchQuery) =>
 				Promise.all([
-					this.searchProgress
-						.track(
-							"minsync",
-							"MinSync semantic search",
-							this.minSyncMethod.retrieve(searchQuery, retrieveOptions),
-							{
-								count: (found) => found.length,
-							},
-						)
-						.catch((error: unknown) => {
-							// MinSync is required: its absence fails the run, anything else is one empty source.
-							if (error instanceof MinSyncRequiredError) throw error;
-							return [];
-						}),
+					this.prefetchMinSyncCandidates(searchQuery, retrieveOptions),
 					Promise.all(
 						datasources.map((datasourceId) =>
 							this.searchProgress
@@ -3613,6 +3797,40 @@ export class AutoRAGAgent {
 	}
 
 	/**
+	 * MinSync candidates for one baseline query. A reranker decides the final order, so it is shown what either
+	 * MinSync channel found: dense and SPLADE are queried separately (MinSync's own `hybrid` fuses them by RRF
+	 * and cuts the list before the reranker sees it) and the two lists are unioned by rank. Without a reranker the
+	 * baseline is the order itself, so it stays the dense list alone. A failing channel is reported and the other
+	 * channel's candidates still count; MinSync being absent still fails the run.
+	 */
+	private async prefetchMinSyncCandidates(searchQuery: string, options: RetrievalOptions): Promise<RetrievalResult[]> {
+		const sparse = this.reranker === undefined ? undefined : this.minSyncSparseMethod;
+		const run = (id: string, label: string, method: MinSyncVectorMethod): Promise<RetrievalResult[]> =>
+			this.searchProgress
+				.track(id, label, method.retrieve(searchQuery, options), { count: (found) => found.length })
+				.catch((error: unknown) => {
+					// MinSync is required: its absence fails the run, anything else is one empty source.
+					if (error instanceof MinSyncRequiredError) throw error;
+					if (sparse !== undefined) {
+						this.routingDiagnostics.push({
+							code: "retrieval-method-failed",
+							severity: "warning",
+							message: `MinSync ${id === "minsync" ? "dense" : "SPLADE"} search failed and its candidates were skipped; the other channel's were used: ${describeRetrievalError(error)}`,
+							source: id,
+						});
+					}
+					return [];
+				});
+		const dense = run("minsync", "MinSync semantic search", this.minSyncMethod);
+		if (sparse === undefined) return dense;
+		const [vector, splade] = await Promise.all([dense, run("minsync-sparse", "MinSync SPLADE search", sparse)]);
+		return unionChannelResults([
+			{ channel: "vector", results: vector },
+			{ channel: "sparse", results: splade },
+		]);
+	}
+
+	/**
 	 * One web search for the baseline, on the same provider chain, ordering, and
 	 * credentials as the `web_search` tool. Hits carry the URL as their source
 	 * and the title plus snippet as their content, so they merge, rerank, and
@@ -3772,7 +3990,7 @@ export class AutoRAGAgent {
 		return (
 			`Answer this original query immediately: ${query}${limit}${scope}\n\n` +
 			`Baseline retrieval evidence (already gathered for you):\n${baseline}\n\n` +
-			`Produce the best complete, self-contained answer you can RIGHT NOW from this evidence. Do NOT call any local search, retrieval, datasource, or file-reading tool and do NOT wait for more evidence.${this.fastPhaseWebHint()} ${this.askUserException()}` +
+			`Produce the best complete, self-contained answer you can RIGHT NOW from this evidence. Do NOT call any local search, retrieval, datasource, or file-reading tool and do NOT wait for more evidence.${this.fastPhaseWebHint()} ${CALCULATOR_FAST_PHASE_RULE} ${this.askUserException()}` +
 			`If the query is answerable from general knowledge alone, answer directly.\n\n` +
 			`Formatting and content rules for the answer:\n` +
 			`- Unless the user explicitly requests a different format or length, provide the core answer to the user's question in at most 5 bullet points. If additional explanation is necessary, append it after the bullet points.\n` +
@@ -3881,6 +4099,7 @@ export class AutoRAGAgent {
 			`How to handle it:\n` +
 			`- Answer from your own knowledge when that reliably settles the question: stable general knowledge, a definition, simple reasoning, or small talk.\n` +
 			`- Look it up first when the answer depends on the user's own records (their files, chats, mail, notes, calendar, or history) or on facts that may be recent, specific, or changed${lookupHint}.\n` +
+			`- Any arithmetic, date, time, or time zone question: ${CALCULATOR_PROMPT_RULE}\n` +
 			`- Otherwise carry the task out with the tools.\n\n` +
 			`Rules for your reply:\n` +
 			`- ${ANSWER_LEAD_RULE}\n` +
@@ -3962,11 +4181,11 @@ export class AutoRAGAgent {
 		const scope = options.scope ? ` Restrict search to virtual path scope ${options.scope}.` : "";
 		const firstAnswer = formatFirstAnswerContext(fastAnswer, fastAnswerDelivered);
 		const answerRules = fastAnswerDelivered
-			? `Rules for your final answer (DELTA ONLY; the system prompt's answer guidelines still apply):\n` +
-				`- The user already has the first answer above. Your final answer MUST contain only the delta against it: (a) corrections to anything in the first answer that is wrong, unsupported, or outdated, and (b) newly verified findings that were not present in the first answer. Mark each item as a correction or a new finding.\n` +
-				`- NEVER restate first-answer facts that remain correct or repeat its bullet list. If verification changed nothing and found nothing new, the final answer is ONE short line and nothing more (if the first answer said the answer was not confirmed yet, the line says it still could not be confirmed): no mention of what was found instead (no "only X exists" contrast), no account of where or how you searched or what the documents contain.\n` +
+			? `Rules for your reply (CORRECTIONS ARE TOOL CALLS; the system prompt's answer guidelines still apply):\n` +
+				`- ${REVISE_ANSWER_PROMPT_RULE}\n` +
+				`- Correct a claim only with evidence you retrieved or a file you opened: cite it with its [eN] id in the text you pass. A claim you cannot support is retracted, not reworded. Give a short reason in the user's language.\n` +
+				`- Your reply after the last ${REVISE_ANSWER_TOOL_NAME} call is ONE short line, not a new answer: say what changed, or that the first answer held up (if the first answer said the answer was not confirmed yet, say it still could not be confirmed). Do not restate the claims, and give no account of where or how you searched.\n` +
 				`- Do not include specific file paths, datasource descriptions, or retrieval mechanics in the answer text.\n` +
-				`- A correction or new finding that relies on evidence the first answer cited must cite that evidence's id again.\n` +
 				`- ${ANSWER_LANGUAGE_RULE}\n` +
 				`- Leave out unrelated or merely adjacent findings.\n` +
 				`- ${ANSWER_DELIVERABLE_DELTA_RULE}\n` +
@@ -3993,7 +4212,7 @@ export class AutoRAGAgent {
 			(jikjiStartingPoints.length === 0
 				? ""
 				: `Jikji's file discovery found these local files for the query. They are unverified candidates, not evidence: start exploring from them.\n${jikjiStartingPoints.map((path) => `- ${path}`).join("\n")}\n\n`) +
-			`Now verify it rigorously. ${this.discoveryHint((tools) => `Actively use ${tools} when discovering or exploring local files and folders. `)}Check important claims against source files with bash when needed, correct anything wrong or unsupported, fill gaps with retrieval tools, and resolve conflicts and freshness. ${this.webFallbackHint()}\n\n` +
+			`Now verify it rigorously. ${this.discoveryHint((tools) => `Actively use ${tools} when discovering or exploring local files and folders. `)}Check important claims against source files with bash when needed, correct anything wrong or unsupported, fill gaps with retrieval tools, and resolve conflicts and freshness. ${this.webFallbackHint()} ${CALCULATOR_PROMPT_RULE} Recompute every number or date in the first answer with it when you have not already.\n\n` +
 			`${answerRules}\n\n` +
 			`Do not use broad grep/find or recursive filesystem scans: only inspect a path or narrow neighborhood surfaced by retrieval, and only when evidence clearly points there. ` +
 			`Avoid spinning repeated near-identical queries against the same datasource; once additional attempts stop surfacing new evidence, conclude from the evidence available. ` +
@@ -4026,6 +4245,7 @@ export class AutoRAGAgent {
 			`- ${ANSWER_RELEVANCE_RULE}\n` +
 			`- ${ANSWER_UNCONFIRMED_FINAL_RULE}\n` +
 			`- ${ANSWER_UNCERTAINTY_RULE}\n\n` +
+			`${CALCULATOR_PROMPT_RULE}\n` +
 			`${this.discoveryHint((tools) => `When exploring local files and folders, actively use ${tools} rather than exploratory bash commands. `)}Do not use broad grep/find or recursive filesystem scans: only inspect a path or narrow neighborhood surfaced by retrieval, and only when evidence clearly points there. ` +
 			`Avoid spinning repeated near-identical queries against the same datasource; once additional attempts stop surfacing new evidence, conclude from the evidence available. ` +
 			`When finished, reply with the final answer and no tool call: that last reply is what the user receives, so keep progress notes out of it.`
@@ -4065,62 +4285,108 @@ export class AutoRAGAgent {
 			inFlight: true,
 			lastStartedAt: startedAt,
 		};
+		// Syncs run alongside parsing, so a refresh that fails must stop the one in flight rather than leave it
+		// running unattended; a caller's abort reaches it the same way.
+		const syncAbort = new AbortController();
+		const forwardAbort = (): void => syncAbort.abort(signal?.reason);
+		signal?.addEventListener("abort", forwardAbort, { once: true });
+		let minSyncPipeline: PipelinedSync | undefined;
 		try {
 			writeRefreshProgress(this.workspaceProjectRoot, progress);
-			// MinSync indexes the parsed mirrors, so when both run every batch of
-			// sources is parsed, committed, staged and synced before the next one
-			// is read: the first batch is searchable long before the last.
+			// MinSync indexes the parsed mirrors. When both run, the first committed batch starts a sync while
+			// parsing carries on, and each later sync covers every batch committed meanwhile: the first batch is
+			// searchable long before the last, and a large corpus costs a few syncs instead of one per batch.
 			const batchedMinSync = needsParsed && wants("minsync");
 			const minSyncBatches: MinSyncSyncResult[] = [];
 			const minSyncBatchFailures: SearchDocumentDiagnostic[] = [];
+			let minSyncOmittedFailures = 0;
+			let minSyncFailureIdentity: string | undefined;
+			let minSyncFailureStreak = 0;
+			let minSyncSystemicStop = false;
 			// Cumulative offsets keep the persisted MinSync counters monotonic
-			// across batches instead of restarting at zero per sync.
+			// across syncs instead of restarting at zero per sync.
 			let minSyncSyncedBase = 0;
 			let minSyncTotalBase = 0;
-			const minSyncBatch = async (batch: ParsedMirrorBatch): Promise<ParsedMirrorBatchOutcome | undefined> => {
-				signal?.throwIfAborted();
-				progress = updateRefreshProgress(progress, { phase: "minsync" });
-				writeRefreshProgress(this.workspaceProjectRoot, progress);
-				let batchTotal = minSyncTotalBase;
-				const result = await this.syncMinSync(force && batch.index === 1, signal, (minsyncProgress) => {
-					batchTotal = minSyncTotalBase + minsyncProgress.total;
-					progress = updateRefreshProgress(progress, {
-						minsync: { synced: minSyncSyncedBase + minsyncProgress.processed, total: batchTotal },
-					});
-					writeRefreshProgress(this.workspaceProjectRoot, progress);
-					emitProgress({
-						phase: "minsync",
-						processed: minSyncSyncedBase + minsyncProgress.processed,
-						total: batchTotal,
-					});
-				});
-				minSyncBatches.push(result);
-				// Every sync indexes the whole staged mirror, so a successful one also
-				// indexes the files of any earlier failed batch: only failures after
-				// the last success are still real. A failed batch's content stays
-				// staged, so a later sync retries it and the loop moves on.
-				if (result.ok) minSyncBatchFailures.length = 0;
-				else if (result.reason !== "lock-held") {
-					for (const virtualPath of batch.virtualPaths) {
-						minSyncBatchFailures.push({
-							code: "minsync-sync-failed",
-							severity: "warning",
-							message: `This file stayed at its previous index entry: its batch could not be indexed and the next sync retries it. ${sanitizeDiagnosticMessage(result.diagnostic?.message ?? result.reason ?? "MinSync sync failed.")}`,
-							source: virtualPath,
-						});
-					}
-				}
-				minSyncSyncedBase = batchTotal;
-				minSyncTotalBase = batchTotal;
-				// A held lock means another sync owns the index: stop the loop instead
-				// of failing every remaining batch against the same lock.
-				return !result.ok && result.reason === "lock-held" ? { stop: true } : undefined;
-			};
+			minSyncPipeline = batchedMinSync
+				? new PipelinedSync({
+						sync: async ({ index, virtualPaths }) => {
+							syncAbort.signal.throwIfAborted();
+							let syncTotal = minSyncTotalBase;
+							const result = await this.syncMinSync(
+								force && index === 1,
+								syncAbort.signal,
+								(minsyncProgress) => {
+									syncTotal = minSyncTotalBase + minsyncProgress.total;
+									progress = updateRefreshProgress(progress, {
+										minsync: { synced: minSyncSyncedBase + minsyncProgress.processed, total: syncTotal },
+									});
+									writeRefreshProgress(this.workspaceProjectRoot, progress);
+									emitProgress({
+										phase: "minsync",
+										processed: minSyncSyncedBase + minsyncProgress.processed,
+										total: syncTotal,
+									});
+								},
+							);
+							minSyncBatches.push(result);
+							// Every sync indexes the whole staged mirror, so a successful one also
+							// indexes the files of any earlier failed sync: only failures after
+							// the last success are still real. A failed sync's content stays
+							// staged, so a later sync retries it and the pipeline moves on.
+							if (result.ok) {
+								minSyncBatchFailures.length = 0;
+								minSyncOmittedFailures = 0;
+								minSyncFailureIdentity = undefined;
+								minSyncFailureStreak = 0;
+							} else if (result.reason !== "lock-held") {
+								// Keep both structured fields: different causes can share a public code.
+								const identity = JSON.stringify([result.reason ?? null, result.diagnostic?.code ?? null]);
+								minSyncFailureStreak = identity === minSyncFailureIdentity ? minSyncFailureStreak + 1 : 1;
+								minSyncFailureIdentity = identity;
+								minSyncSystemicStop = minSyncFailureStreak >= MINSYNC_SYSTEMIC_FAILURE_THRESHOLD;
+								const retained = Math.min(
+									virtualPaths.length,
+									MINSYNC_BATCH_FAILURE_LIMIT - minSyncBatchFailures.length,
+								);
+								minSyncOmittedFailures += virtualPaths.length - retained;
+								for (let pathIndex = 0; pathIndex < retained; pathIndex += 1) {
+									minSyncBatchFailures.push({
+										code: "minsync-sync-failed",
+										severity: "warning",
+										message: `This file stayed at its previous index entry: the sync that covered it could not index it and the next sync retries it. ${sanitizeDiagnosticMessage(result.diagnostic?.message ?? result.reason ?? "MinSync sync failed.")}`,
+										source: virtualPaths[pathIndex],
+									});
+								}
+							}
+							minSyncSyncedBase = syncTotal;
+							minSyncTotalBase = syncTotal;
+							// A held lock means another sync owns the index: stop the pipeline instead
+							// of failing every remaining sync against the same lock.
+							// Repeated systemic failures stop at the next committed-batch callback;
+							// already in-flight parsing may still commit its current batch.
+							return minSyncSystemicStop || (!result.ok && result.reason === "lock-held")
+								? { stop: true }
+								: undefined;
+						},
+					})
+				: undefined;
+			const pipeline = minSyncPipeline;
 			const summary = needsParsed
 				? await this.syncParsedMirrors(force, {
 						...(opts?.retrySkipped === true ? { retrySkipped: true } : {}),
 						...(signal === undefined ? {} : { signal }),
-						...(batchedMinSync ? { onBatch: minSyncBatch } : {}),
+						...(pipeline === undefined
+							? {}
+							: {
+									onBatch: (batch: ParsedMirrorBatch): Promise<ParsedMirrorBatchOutcome | undefined> => {
+										if (batch.final) {
+											// Parsing is over: what is left is waiting for the last sync.
+											progress = updateRefreshProgress(progress, { phase: "minsync" });
+											writeRefreshProgress(this.workspaceProjectRoot, progress);
+										}
+										return pipeline.batch(batch);
+									},
+								}),
 						onProgress: (parsedProgress) => {
 							progress = updateRefreshProgress(progress, {
 								phase: "parsed",
@@ -4253,7 +4519,25 @@ export class AutoRAGAgent {
 				finishedAt: new Date().toISOString(),
 			});
 			writeRefreshProgress(this.workspaceProjectRoot, progress);
-			const minsyncDiagnostics = [...minSyncRefreshDiagnostics(minsync), ...minSyncBatchFailures];
+			const minsyncDiagnostics = minSyncRefreshDiagnostics(minsync);
+			if (minSyncSystemicStop && minsync !== undefined) {
+				const terminal = minsyncDiagnostics[0] ?? toMinSyncReasonDiagnostic(minsync.reason ?? "unknown failure");
+				minsyncDiagnostics.splice(0, minsyncDiagnostics.length, {
+					...terminal,
+					reason: sanitizeDiagnosticMessage(minsync.reason ?? minsync.diagnostic?.code ?? "unknown failure"),
+					message: `${terminal.message} MinSync refresh stopped after ${MINSYNC_SYSTEMIC_FAILURE_THRESHOLD} consecutive sync failures with the same cause. Committed mirrors are retained; the next refresh resumes the committed work after the cause is fixed.`,
+				});
+			} else {
+				minsyncDiagnostics.push(...minSyncBatchFailures);
+				if (minSyncOmittedFailures > 0) {
+					minsyncDiagnostics.push({
+						code: "minsync-sync-failed",
+						severity: "warning",
+						source: "minsync",
+						message: `${minSyncOmittedFailures} additional per-file MinSync sync failure warnings omitted (limit ${MINSYNC_BATCH_FAILURE_LIMIT}).`,
+					});
+				}
+			}
 			const publicMinsync: AutoRAGMinSyncRefreshResult | undefined = minsync
 				? {
 						ok: minsync.ok,
@@ -4293,6 +4577,7 @@ export class AutoRAGAgent {
 				...(fsearch !== undefined ? { fsearch } : {}),
 			};
 		} catch (error) {
+			syncAbort.abort(error);
 			this.refreshState = {
 				...this.refreshState,
 				lastOutcome: "failed",
@@ -4311,6 +4596,8 @@ export class AutoRAGAgent {
 			writeRefreshProgress(this.workspaceProjectRoot, progress);
 			throw error;
 		} finally {
+			signal?.removeEventListener("abort", forwardAbort);
+			await minSyncPipeline?.settle();
 			this.refreshState = {
 				...this.refreshState,
 				inFlight: false,
@@ -4335,7 +4622,7 @@ export class AutoRAGAgent {
 				message:
 					health.backend === "remote"
 						? `The configured remote embedding endpoint is not answering (${health.detail ?? "no response"}); semantic search is unavailable until it is back.`
-						: "No embedding backend is running, so semantic search is unavailable (keyword search still works). Start `minsync serve --idle-timeout 0` (docs/minsync-setup.md), press Ctrl+Shift+E in the TUI, or set minSync.embedder to a remote endpoint.",
+						: "No embedding backend is running, so semantic search is unavailable (keyword search still works). Start `minsync serve --idle-timeout 0` (docs/indexing/embedding-backends.md), press Ctrl+Shift+E in the TUI, or set minSync.embedder to a remote endpoint.",
 				source: "embedding",
 			},
 		];
@@ -4367,7 +4654,7 @@ export class AutoRAGAgent {
 					source: "minsync",
 					reason: error.code,
 					message:
-						"MinSync lacks the required durable stage protocol. Install the compatible build documented in docs/minsync-setup.md.",
+						"MinSync lacks the required durable stage protocol. Install the compatible build documented in docs/indexing/embedding-backends.md.",
 				};
 			}
 		}
@@ -4518,18 +4805,46 @@ export class AutoRAGAgent {
 		this.refreshState = { ...this.refreshState, watchLimited: false, watchFailed: false };
 		const dirs = this.searchPaths.map((searchPath) => resolve(searchPath));
 		const watcherFactory = options.watcherFactory ?? this.defaultWatcherFactory();
-		return createWatchRefresh({
+		const recheckMs = options.scheduleRecheckMs ?? 60_000;
+		let stopped = false;
+		let recheckTimer: ReturnType<typeof setInterval> | undefined;
+		// Changes seen while the schedule is closed are not lost: one deferred refresh runs when it opens.
+		const runWhenAllowed = async (): Promise<void> => {
+			if (stopped) return;
+			if (!(await this.indexScheduleDecision(options.schedule)).allowed) {
+				if (recheckTimer === undefined) {
+					recheckTimer = setInterval(() => {
+						void runWhenAllowed().catch(() => {});
+					}, recheckMs);
+					recheckTimer.unref();
+				}
+				return;
+			}
+			if (recheckTimer !== undefined) {
+				clearInterval(recheckTimer);
+				recheckTimer = undefined;
+			}
+			await this.refresh(options.force ?? false);
+		};
+		const handle = createWatchRefresh({
 			dirs,
 			debounceMs: options.debounceMs ?? 200,
 			maxWatchers: options.maxWatchers ?? 64,
 			watcherFactory,
-			runRefresh: async () => {
-				await this.refresh(options.force ?? false);
-			},
+			runRefresh: runWhenAllowed,
 			onLimit: () => {
 				this.refreshState = { ...this.refreshState, watchLimited: true };
 			},
 		});
+		return {
+			trigger: () => handle.trigger(),
+			stop(): void {
+				stopped = true;
+				if (recheckTimer !== undefined) clearInterval(recheckTimer);
+				recheckTimer = undefined;
+				handle.stop();
+			},
+		};
 	}
 
 	private defaultWatcherFactory(): WatcherFactory {
@@ -4573,20 +4888,25 @@ export class AutoRAGAgent {
 	}
 
 	/**
-	 * Lightweight stat-only staleness scan used when `refresh` is called with
+	 * Lightweight stat-only staleness scan used by status and when `refresh` is called with
 	 * methods that exclude parsed mirrors (e.g. only `datasources` or `jikji`).
 	 * Returns a zero-count `ParsedMirrorSyncResult` carrying fresh diagnostics
 	 * so the refresh result and status remain consistent.
+	 *
+	 * It never runs a duplicate scan: that reads every file under every root and costs seconds
+	 * on a large corpus. It reuses the exclusions the last refresh recorded instead, so it
+	 * differs from a fresh scan in two narrow ways: an indexed file that has since become an
+	 * older exact duplicate is not reported (the next refresh drops it), and a newly added file
+	 * that is already a duplicate is reported stale until the next refresh excludes it.
 	 */
 	private async scanMirrorStaleness(): Promise<ParsedMirrorSyncResult> {
-		const duplicateFilter = await this.exactDuplicateExclusions();
 		const diagnostics = await detectMirrorStaleness({
 			...this.refreshLimits,
 			root: this.workspaceProjectRoot,
 			searchPaths: this.searchPaths,
 			minSyncBinaryPath: this.minSyncBinaryPath,
 			parserOptions: this.parserOptions,
-			excludeSourcePaths: duplicateFilter.excluded,
+			reuseRecordedDuplicateExclusions: true,
 			userExcludedSourcePaths: new Set(this.excludePaths),
 			cloudProbe: this.cloudProbe,
 		});
@@ -5000,26 +5320,39 @@ export class AutoRAGAgent {
 	async retrieveWithDiagnostics(
 		query: string,
 		options: RetrievalOptions = {},
-	): Promise<{ results: RetrievalResult[]; diagnostics: RetrievalDiagnostic[] }> {
+	): Promise<{ results: RetrievalResult[]; diagnostics: RetrievalDiagnostic[]; window?: RetrievalWindowReport }> {
 		options = this.normalizeRetrievalOptions(options);
 		const methods = this.methodRegistry.list();
-		const { results: byMethod, diagnostics } = await this.retriever.retrieveWithDiagnostics(methods, query, options);
+		const {
+			results: byMethod,
+			diagnostics,
+			window,
+		} = await this.retriever.retrieveWithDiagnostics(methods, query, options);
 		const filteredByMethod = filterDatasourceScope(byMethod, methods, options.scope);
 		const merged = this.merger.merge(filteredByMethod, {
 			topK: options.topK ?? this.limits.mergedEvidenceCeiling,
 			dedup: true,
+			...(this.limits.recordCut === undefined ? {} : { recordCut: this.limits.recordCut }),
 		});
 		const results = await this.applyRerank(query, merged, diagnostics);
-		return { results, diagnostics };
+		return { results, diagnostics, ...(window === undefined ? {} : { window }) };
 	}
 
 	async searchAllDocuments(
 		query: string,
-		options: { readonly topK?: number; readonly scope?: string; readonly signal?: AbortSignal } = {},
-	): Promise<{ results: RetrievalResult[]; diagnostics: RetrievalDiagnostic[] }> {
+		options: {
+			readonly topK?: number;
+			readonly scope?: string;
+			readonly since?: number;
+			readonly until?: number;
+			readonly signal?: AbortSignal;
+		} = {},
+	): Promise<{ results: RetrievalResult[]; diagnostics: RetrievalDiagnostic[]; window?: RetrievalWindowReport }> {
 		return this.retrieveWithDiagnostics(query, {
 			topK: options.topK,
 			scope: options.scope,
+			...(options.since === undefined ? {} : { since: options.since }),
+			...(options.until === undefined ? {} : { until: options.until }),
 			...(options.signal === undefined ? {} : { signal: options.signal }),
 		});
 	}
@@ -5037,12 +5370,22 @@ export class AutoRAGAgent {
 	async searchSingleDatasourceDocuments(
 		datasourceId: string,
 		query: string,
-		options: { readonly topK?: number; readonly scope?: string; readonly signal?: AbortSignal } = {},
-	): Promise<{ results: RetrievalResult[]; diagnostics: RetrievalDiagnostic[] }> {
+		options: {
+			readonly topK?: number;
+			readonly scope?: string;
+			readonly since?: number;
+			readonly until?: number;
+			readonly filters?: Readonly<Record<string, readonly string[]>>;
+			readonly signal?: AbortSignal;
+		} = {},
+	): Promise<{ results: RetrievalResult[]; diagnostics: RetrievalDiagnostic[]; window?: RetrievalWindowReport }> {
 		const retrievalOptions: RetrievalOptions = {
 			...this.activeRetrievalOptions,
 			topK: options.topK,
 			scope: options.scope,
+			...(options.filters === undefined ? {} : { filters: options.filters }),
+			...(options.since === undefined ? {} : { since: options.since }),
+			...(options.until === undefined ? {} : { until: options.until }),
 			...(options.signal === undefined ? {} : { signal: options.signal }),
 		};
 		const methods = this.methodRegistry.list().filter((method) => {
@@ -5050,19 +5393,48 @@ export class AutoRAGAgent {
 			return descriptor.datasourceId === datasourceId;
 		});
 		if (methods.length === 0) return { results: [], diagnostics: [] };
-		const { results: byMethod, diagnostics } = await this.retriever.retrieveWithDiagnostics(
-			methods,
-			query,
-			retrievalOptions,
-		);
+		const {
+			results: byMethod,
+			diagnostics,
+			window,
+		} = await this.retriever.retrieveWithDiagnostics(methods, query, retrievalOptions);
 		const filteredByMethod = filterDatasourceScope(byMethod, methods, options.scope);
 		const merged = this.merger.merge(filteredByMethod, {
 			topK: options.topK ?? this.limits.singleDatasourceTopK,
 			dedup: true,
+			...(this.limits.recordCut === undefined ? {} : { recordCut: this.limits.recordCut }),
 		});
 		// Single-datasource retrieval is intentionally NOT model-reranked: the
 		// caller already narrowed to one connection, so the merged order is kept.
-		return { results: merged, diagnostics };
+		return { results: merged, diagnostics, ...(window === undefined ? {} : { window }) };
+	}
+
+	/**
+	 * The per-search filters one datasource connection offers now, with the exact ids each accepts. Read from the
+	 * datasource itself, so a connection that cannot answer (CLI missing, empty index) offers none and a value is not
+	 * second-guessed here. Also refreshes what the connection's tool description names.
+	 */
+	async searchFilterSpecs(datasourceId: string, signal?: AbortSignal): Promise<readonly SearchFilterSpec[]> {
+		const skill = this.datasourceSkills.find((candidate) => candidate.describe().datasourceId === datasourceId);
+		if (skill?.searchFilters === undefined || signal?.aborted === true) return [];
+		try {
+			const specs = await skill.searchFilters();
+			this.searchFilterCache.set(datasourceId, specs);
+			return specs;
+		} catch {
+			// A filter list is a convenience for the model; a failing datasource still answers searches (or reports why not).
+			return [];
+		}
+	}
+
+	/** Reads every connection's filters once, before a session declares its tools, so the ids appear in the descriptions. */
+	private async refreshSearchFilters(signal?: AbortSignal): Promise<void> {
+		const ids = new Set<string>();
+		for (const skill of this.datasourceSkills) {
+			const id = skill.describe().datasourceId;
+			if (id !== undefined && skill.searchFilters !== undefined) ids.add(id);
+		}
+		await Promise.all([...ids].map((id) => this.searchFilterSpecs(id, signal)));
 	}
 
 	/** The retrieval method registry (posix, MinSync, and datasource methods). */
@@ -5080,6 +5452,7 @@ export class AutoRAGAgent {
 		if (this.retrievalEngine === undefined) {
 			this.retrievalEngine = new RetrievalEngine({
 				defaultTopK: this.limits.mergedEvidenceCeiling,
+				...(this.limits.recordCut === undefined ? {} : { recordCut: this.limits.recordCut }),
 				...(this.reranker !== undefined ? { reranker: this.reranker } : {}),
 				...(this.rerankTopN !== undefined ? { rerankTopN: this.rerankTopN } : {}),
 				datasourceIds: () => this.listDatasources().map((entry) => entry.datasourceId),
@@ -5236,6 +5609,35 @@ function frameSteers(messages: AgentMessage[], steerTexts: ReadonlySet<string>):
 	});
 }
 
+/** One run's `<memory_context>` message and the timestamp of the user message it was first placed in front of. */
+interface MemoryMessageRecord {
+	readonly anchor: number;
+	readonly message: AgentMessage;
+}
+
+/**
+ * Puts each recorded memory message back in front of the user message it was first placed before. A record whose user
+ * message is no longer in the transcript (compacted away, another branch) is skipped.
+ */
+function withMemoryMessages(messages: AgentMessage[], records: readonly MemoryMessageRecord[]): AgentMessage[] {
+	if (records.length === 0) return messages;
+	const pending = new Map(records.map((record) => [record.anchor, record.message]));
+	const out: AgentMessage[] = [];
+	let inserted = false;
+	for (const message of messages) {
+		if (message.role === "user") {
+			const memory = pending.get(message.timestamp);
+			if (memory !== undefined) {
+				pending.delete(message.timestamp);
+				out.push(memory);
+				inserted = true;
+			}
+		}
+		out.push(message);
+	}
+	return inserted ? out : messages;
+}
+
 /** Restates the run's steers for a verification phase that starts after them. */
 function formatSteerContext(steers: readonly string[]): string {
 	if (steers.length === 0) return "";
@@ -5246,11 +5648,27 @@ function formatSteerContext(steers: readonly string[]): string {
 }
 
 /** One more verification turn for steers that arrived after the last phase's final model request. */
-function buildSteerContinuationPrompt(steers: readonly string[]): string {
-	return (
-		`${formatSteerContext(steers)}Apply the latest correction: search or verify further if it needs that, ` +
-		`then reply with the complete final answer to the original question and no tool call.`
-	);
+function buildSteerContinuationPrompt(steers: readonly string[], correctWithTool = false): string {
+	const finish = correctWithTool
+		? `correct the first answer with ${REVISE_ANSWER_TOOL_NAME} where the correction needs it, then reply with one short line and no tool call.`
+		: `then reply with the complete final answer to the original question and no tool call.`;
+	return `${formatSteerContext(steers)}Apply the latest correction: search or verify further if it needs that, ${finish}`;
+}
+
+function isLocalFile(path: string): boolean {
+	return isAbsolute(path) && isRegularFile(path);
+}
+
+/**
+ * The first answer with the model's corrections applied, followed by the model's closing reply only when that reply
+ * cites evidence: a plain closing note ("removed the payout claim") only describes corrections the tool already
+ * carries. When every claim was retracted, the closing reply is all there is to say.
+ */
+function composeRevisedAnswer(revised: string, closing: string | undefined): string {
+	if (closing === undefined) return revised;
+	if (revised === "") return closing;
+	const cites = answerMarkers(closing, isLocalFile).some((marker) => marker.kind !== "number");
+	return cites ? `${revised}\n\n${closing}` : revised;
 }
 
 /**
@@ -5264,10 +5682,13 @@ function formatFirstAnswerContext(fastAnswer: string | undefined, delivered: boo
 	if (fastAnswer === undefined) {
 		return "(the fast phase produced no answer — write the complete answer)";
 	}
-	const header = delivered
-		? "The user has ALREADY received this immediate first answer (its citations were renumbered for the user; the [eN] ids below are still valid for you):"
-		: "An internal first-pass draft was produced but was NOT shown to the caller; write the complete answer:";
-	return `${header}\n${fastAnswer}`;
+	if (!delivered) {
+		return `An internal first-pass draft was produced but was NOT shown to the caller; write the complete answer:\n${fastAnswer}`;
+	}
+	const listed = splitClaims(fastAnswer)
+		.map((claim) => `${claim.id}: ${claim.text.replace(/\n/gu, "\n    ")}`)
+		.join("\n");
+	return `The user has ALREADY received this immediate first answer. It is split into claims you can name (the [eN] ids are the ones you wrote and are still valid for you):\n${listed}`;
 }
 
 /**
@@ -5275,6 +5696,29 @@ function formatFirstAnswerContext(fastAnswer: string | undefined, delivered: boo
  * states the search-range failure, carries the agent's own last note as the
  * reason, suggests next steps, and points at the attached retrieval trace.
  */
+/**
+ * The window a search tool call asked for, as ISO instants, for the run trace. Undefined when the call carried none or
+ * its bounds do not parse: the tool itself rejects those verbatim, so the trace never records a window that was not used.
+ */
+function windowForTrace(args: unknown): { since?: string; until?: string } | undefined {
+	if (typeof args !== "object" || args === null) return undefined;
+	const { since, until } = args as { since?: unknown; until?: unknown };
+	let window: TimeWindow | undefined;
+	try {
+		window = parseTimeWindow({
+			since: typeof since === "string" ? since : undefined,
+			until: typeof until === "string" ? until : undefined,
+		});
+	} catch {
+		return undefined;
+	}
+	if (window === undefined) return undefined;
+	return {
+		...(window.since === undefined ? {} : { since: new Date(window.since).toISOString() }),
+		...(window.until === undefined ? {} : { until: new Date(window.until).toISOString() }),
+	};
+}
+
 function buildMissingFinalAnswer(
 	query: string,
 	reason: string | undefined,
@@ -5496,6 +5940,7 @@ function toMinSyncReasonDiagnostic(reason: string): SearchDocumentDiagnostic {
  * path is legitimate.
  */
 function pinExcludedPath(path: string): string {
+	if (isGlobExclusion(path)) return path;
 	const resolvedPath = resolve(path);
 	try {
 		return join(realpathSync(dirname(resolvedPath)), basename(resolvedPath));

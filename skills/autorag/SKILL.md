@@ -73,6 +73,34 @@ from it instead of probing. `"filee": { "enabled": false }` in `config.json` rem
 tools; `filee.timeoutMs` (default 30 minutes) and `filee.dataDir` (Filee's
 own settings and engines, `FILEE_DATA_DIR`) tune them.
 
+### Calculating numbers and dates
+
+The `calculator` Agent tool does every calculation the model would otherwise
+do in its head; the system prompt and each phase prompt (the fast answer
+included) tell the model never to compute these itself. It is read-only,
+in-process, and needs no configuration. Operations:
+
+- `evaluate`: exact decimal arithmetic to 40 significant digits (`0.1 + 0.2`
+  is `0.3`), `+ - * / % ^ !`, percent and percent change, rounding, sums,
+  means, medians, standard deviations, roots, logs, and trig. `exact: false`
+  in the result means a step rounded; `exp`, `ln`, `log`, trig, and fractional
+  powers are accurate to about 15 digits, not 40. A bare `log(x)` is refused as
+  ambiguous; use `ln`, `log10`, or `log(x, base)`.
+- `date_diff`, `date_add`, `date_info`: day counts, calendar spans
+  (`10 months, 7 days`), month-end clamping (Jan 31 + 1 month is Feb 28),
+  weekday, ISO week, and leap year. Dates read as `YYYY-MM-DD`, `YYYY/MM/DD`,
+  `YYYYMMDD`, `YYYY년 M월 D일`, ISO datetimes with an offset, epoch seconds,
+  `today`, or `now`.
+- `business_days_between` and `add_business_days`: Monday to Friday minus a
+  `holidays` list. The tool knows no public holidays; pass them in.
+- `now` and `convert_timezone`: the current time and DST-aware zone
+  conversion. An omitted `timeZone` means the host zone and the result says so;
+  a datetime with no offset needs its zone. A zone abbreviation other than
+  UTC, KST, and JST is refused, and the error names what to pass instead: PST,
+  PDT, MST, MDT, EST, and EDT are fixed offsets (PST is `-08:00` all year, so
+  it differs from `America/Los_Angeles` in summer), and CST, IST, and BST mean
+  several zones, so the user has to say which.
+
 ### Excluding local files from the index
 
 `"excludePaths"` in `config.json` lists files or folders (absolute, or relative
@@ -125,20 +153,27 @@ autorag evidence <sessionId> --result 1 --json
 
 The response includes the original source, retrieval method, stable evidence
 ID, raw excerpt/content, and any available `chunkIndex`, `lineNumber` and
-`lineEnd` (the chunk's line range in the parsed document), `section` (the
-article or heading it sits in), `retrievalResultId`, and metadata. Omit `--result` to inspect every result in
+`lineEnd` (the chunk's line range in the parsed document), `pageStart` and
+`pageEnd` (its 1-based page range, only for PDF, HWP/HWPX and PPTX with real
+page boundaries), `section` (the article or heading it sits in), `retrievalResultId`, and metadata. Omit `--result` to inspect every result in
 the session. Prefer this command whenever the caller wants detailed chunk text
 rather than only the curated summary.
 
 - `--scope` narrows datasource retrieval to a requested sub-path (ordinary
   per-query filtering).
 - `--json` is required for programmatic consumption.
-- Each search result carries `locations` (`lineStart`, `lineEnd`, `section`)
+- Each search result carries `locations` (`lineStart`, `lineEnd`, `pageStart`, `pageEnd`, `section`)
   when the harness measured where its evidence sits in the parsed document. Quote
   those, not line numbers or counts written in the answer prose; a
   `line-reference-unverified` diagnostic (with `--debug`) flags prose line
-  numbers no cited evidence covers. Locations are absent for chunks the chunker
-  rewrote (such as flattened tables).
+  numbers no cited evidence covers, and a `page-reference-unverified` diagnostic
+  does the same for pages. Locations are absent for chunks the chunker
+  rewrote (such as flattened tables). A page is reported only when the parser
+  measured real page boundaries (`pageMode` `layout`) and both ends of the chunk
+  land on a placed page: files whose pages are a section-level approximation,
+  formats without pages (DOCX, text, spreadsheets), and chunks on a page kordoc
+  left empty (a table continued across pages) carry no page. Existing indexes
+  gain pages when the next refresh re-parses their paged documents.
 - `--debug` is required for `sessionId` and diagnostics in search output.
 - `autorag evidence` is the detailed source/chunk inspection path.
 
@@ -246,7 +281,7 @@ Reset and rebuild commands remove only selected workspace `.autorag` indexes.
 Never target source documents. `memory inspect` is read-only and path-opaque.
 `memory export-ltr` reads the learning-to-rank log beside the memory file and
 writes LightGBM LambdaRank files to `--output`; set `"rankingLog": false` to
-stop logging (see `docs/learning-to-rank.md`).
+stop logging (see `docs/retrieval/learning-to-rank.md`).
 
 `autorag ltr` trains an XGBoost ranker from that log and, only when enabled,
 reorders the baseline the reranker returned: `ltr status|list|train`,
@@ -266,4 +301,4 @@ searches it never saw. Settings live in the config's `ltr` block.
   including the shipped `setup`, `models`, `tui`, and `lite`
   commands. `autorag <command> --help` prints that command's own flags, and
   `autorag --version` prints the installed version. See
-  `docs/minsync-setup.md#embedding-backends` for MinSync setup and embedding-backend selection.
+  `docs/indexing/embedding-backends.md#backend-resolution-order` for MinSync setup and embedding-backend selection.

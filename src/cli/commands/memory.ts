@@ -20,7 +20,7 @@ const DEFAULT_VALID_FRACTION = 0.2;
  *
  * `autorag memory export-ltr --output <dir>` — turn the learning-to-rank log
  * beside the memory file into LightGBM LambdaRank files (see
- * docs/learning-to-rank.md). Model-free and read-only on the log.
+ * docs/retrieval/learning-to-rank.md). Model-free and read-only on the log.
  */
 export async function runMemory(ctx: CommandContext): Promise<number> {
 	const subcommand = ctx.positionals[0];

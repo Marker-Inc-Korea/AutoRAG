@@ -82,4 +82,36 @@ describe("runWatch (cli)", () => {
 			true,
 		);
 	});
+
+	it("watch --once exits 0 with skipped=true when the window is closed", async () => {
+		writeConfig();
+		const out: string[] = [];
+		const now = new Date();
+		const start = new Date(now.getTime() + 3 * 3600_000);
+		const hhmm = (d: Date) => `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+		const end = new Date(start.getTime() + 600_000);
+		const code = await runWatch(
+			makeCtx({
+				stdout: (l) => out.push(l),
+				flags: { once: true, window: `${hhmm(start)}-${hhmm(end)}` },
+				repeatedFlags: { window: [`${hhmm(start)}-${hhmm(end)}`] },
+			}),
+		);
+		expect(code).toBe(0);
+		expect(JSON.parse(out[0] as string)).toEqual({ ok: true, skipped: true, reason: "outside-window" });
+	});
+
+	it("watch --once rejects a malformed --window with exit 2", async () => {
+		writeConfig();
+		const err: string[] = [];
+		const code = await runWatch(
+			makeCtx({
+				flags: { once: true, window: "nope" },
+				repeatedFlags: { window: ["nope"] },
+				stderr: (l) => err.push(l),
+			}),
+		);
+		expect(code).toBe(2);
+		expect(err.join("")).toContain("windows");
+	});
 });

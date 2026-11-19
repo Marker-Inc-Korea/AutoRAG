@@ -28,16 +28,49 @@ export interface RetrievalFallbackEvent {
 	reason: string;
 }
 
+/** One hit dropped because the file it was indexed from no longer exists on disk. */
+export interface RetrievalMissingSource {
+	/** Virtual path the index knows the document by. */
+	virtualPath: string;
+	/** The original source path that could not be resolved. */
+	sourcePath: string;
+	/** Filesystem error code (`ENOENT` or `ENOTDIR`). */
+	code: string;
+}
+
+export interface RetrievalSourceMissingEvent {
+	/** Registered name of the method that skipped the hits. */
+	method: string;
+	missing: readonly RetrievalMissingSource[];
+}
+
 export interface RetrievalOptions {
 	topK?: number;
 	scope?: string;
-	filters?: Record<string, unknown>;
+	/**
+	 * Time window `[since, until)` in epoch ms. Only narrows: it composes with `scope` (both must match) and never
+	 * widens what a datasource's trusted config allows. The pipeline applies it to every method's results (see
+	 * `time-window.ts`); a method may additionally push it into its own store to widen recall.
+	 */
+	since?: number;
+	until?: number;
+	/**
+	 * Per-search filters a datasource declares through {@link DatasourceSkill.searchFilters}, by filter name. Like `scope`,
+	 * they only narrow: a method that does not know a filter ignores it, and none can reach past the operator's config.
+	 */
+	filters?: Readonly<Record<string, readonly string[]>>;
 	signal?: AbortSignal;
 	/**
 	 * Owned by the retrieval pipeline, not by callers: invoked when a method answered through a fallback.
 	 * Methods that wrap another method must not forward it.
 	 */
 	onFallback?: (event: RetrievalFallbackEvent) => void;
+	/**
+	 * Owned by the retrieval pipeline, not by callers: invoked once per query when a method skipped hits whose
+	 * source file no longer exists (a stale index entry). The remaining hits are still returned, so this is a
+	 * warning and not a failure of the surface. Methods that wrap another method must not forward it.
+	 */
+	onSourceMissing?: (event: RetrievalSourceMissingEvent) => void;
 }
 
 export interface RetrievalMethod {
@@ -45,7 +78,12 @@ export interface RetrievalMethod {
 	retrieve(query: string, options: RetrievalOptions): Promise<RetrievalResult[]>;
 }
 
-export type RetrievalDiagnosticCode = "retrieval-method-failed" | "rerank-failed";
+export type RetrievalDiagnosticCode =
+	| "retrieval-method-failed"
+	| "retrieval-source-missing"
+	| "rerank-failed"
+	| "time-window-untimed"
+	| "time-window-ceiling";
 
 /**
  * A retrieval surface (local MinSync files or one datasource) that was not
@@ -76,9 +114,30 @@ export interface RetrievalDiagnostic {
 	reason?: string;
 }
 
+/**
+ * What a time window did to the candidates, so an empty answer can say why: nothing existed in the range, results had
+ * no timestamp, or the over-fetch ceiling cut the search short.
+ */
+export interface RetrievalWindowReport {
+	readonly since?: number;
+	readonly until?: number;
+	/** Candidates the methods returned before the window was applied. */
+	readonly examined: number;
+	/** Candidates inside the window. */
+	readonly matched: number;
+	/** Candidates dropped because the method gave them neither `publishedAt` nor a source mtime. */
+	readonly untimed: number;
+	/** Some method returned as many candidates as it was asked for, so older or newer matches may be unexamined. */
+	readonly ceilingHit: boolean;
+	/** The depth each method was asked for. */
+	readonly fetchDepth: number;
+}
+
 export interface RetrievalWithDiagnostics {
 	results: Map<string, RetrievalResult[]>;
 	diagnostics: RetrievalDiagnostic[];
+	/** Present only when the query carried a time window. */
+	window?: RetrievalWindowReport;
 	/** Surfaces that were not searched for this query. Empty when every method ran. */
 	unsearched: RetrievalUnsearchedSurface[];
 }

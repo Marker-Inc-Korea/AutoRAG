@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { BigIntStats, Dir } from "node:fs";
 import { opendir, readFile, stat } from "node:fs/promises";
-import { basename, dirname, extname, join, resolve, sep } from "node:path";
+import { basename, dirname, extname, join, resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { type DupeyCliOptions, fingerprintWithDupey } from "../dupey/cli.ts";
 import {
@@ -10,6 +10,7 @@ import {
 	canonicalPathMapper,
 	isPathInside,
 } from "../filesystem/cloud-placeholder.ts";
+import { createPathExclusionMatcher } from "../filesystem/path-exclusions.ts";
 import { planSourceRoots, type SourceRoot, sourceIdentifier } from "../filesystem/source-paths.ts";
 import { resolveMinSyncBinary } from "../minsync/binary.ts";
 import { MinSyncStageSession } from "../minsync/stage.ts";
@@ -37,6 +38,7 @@ import {
 	type ParsedMirrorIndex,
 	type ParsedMirrorSkipReason,
 } from "./index-store.ts";
+import { writePagesSidecar } from "./pages-sidecar.ts";
 import { parsedMirrorRoot, parsedOutputPath } from "./paths.ts";
 
 /** Refuse to fully load/parse sources larger than this. Keeps Node heap stable on home folders. */
@@ -56,8 +58,8 @@ export const DEFAULT_MAX_WALK_DEPTH = 64;
 
 /**
  * Sources parsed and committed per batch before {@link ParsedMirrorSyncOptions.onBatch}
- * runs. Small enough that a corpus becomes searchable after its first slice,
- * large enough to amortize one index sync's startup.
+ * runs. Small enough that the first batch starts the index sync soon after parsing
+ * begins; later syncs fold every batch committed meanwhile into one run.
  */
 export const DEFAULT_MIRROR_BATCH_SIZE = 25;
 
@@ -103,6 +105,15 @@ export interface ParsedMirrorSyncOptions {
 	readonly maxSourceBytes?: number;
 	/** Absolute source paths omitted from parsed mirrors (for example exact duplicate copies). */
 	readonly excludeSourcePaths?: ReadonlySet<string>;
+	/**
+	 * Read-only freshness checks only: omit the sources the last refresh already recorded as
+	 * `duplicate-excluded` instead of requiring a fresh duplicate scan. Duplicate selection needs
+	 * a content scan of every root, which is the dominant cost of a status or retrieve call.
+	 * A recorded copy is only omitted while its mtime and size still match the record, so an
+	 * edited copy is still reported stale. Copies that became duplicates after the last refresh
+	 * are not known here; see `AutoRAGAgent.scanMirrorStaleness`.
+	 */
+	readonly reuseRecordedDuplicateExclusions?: boolean;
 	/** Absolute source paths or directories omitted by the user. */
 	readonly userExcludedSourcePaths?: ReadonlySet<string>;
 	/**
@@ -124,9 +135,11 @@ export interface ParsedMirrorSyncOptions {
 	 */
 	readonly batchSize?: number;
 	/**
-	 * Runs after each batch of sources is parsed and committed to the mirror, and
-	 * before the next batch is read, so a caller can make the batch's results
-	 * searchable (stage them and sync the index). A thrown error aborts the
+	 * Runs after each batch of sources is parsed and committed to the mirror, so
+	 * a caller can make the batch's results searchable (sync the index). The next
+	 * batch is read once the returned promise settles: a caller that wants parsing
+	 * to carry on returns at once and indexes in the background, and waits only on
+	 * the final batch. A thrown error aborts the
 	 * refresh; returning `stop` ends the loop after this batch. Deletions of
 	 * genuinely-removed sources wait for the final batch, so a mid-refresh call
 	 * never drops a not-yet-reached document from the index.
@@ -423,6 +436,7 @@ function sourcePlan(
 	current: readonly CurrentEntry[],
 	registry: ParserRegistry,
 	options: ParsedMirrorSyncOptions,
+	recordedDuplicateSources?: ReadonlySet<string>,
 ): {
 	versions: Map<string, string>;
 	omitted: Map<string, SourceOmission>;
@@ -433,7 +447,7 @@ function sourcePlan(
 		const parser = registry.getForVirtualPath(entry.virtualPath);
 		if (isPathExcluded(entry.sourcePath, options.userExcludedSourcePaths))
 			omitted.set(entry.virtualPath, { reason: "user-excluded" });
-		else if (options.excludeSourcePaths?.has(entry.sourcePath))
+		else if (options.excludeSourcePaths?.has(entry.sourcePath) || recordedDuplicateSources?.has(entry.virtualPath))
 			omitted.set(entry.virtualPath, {
 				reason: "duplicate-excluded",
 				diagnostic: {
@@ -617,6 +631,7 @@ async function syncWithRegistry(
 				const path = pathsByKey.get(decision.key);
 				await session.delete(decision.key);
 				if (path === undefined) continue;
+				writePagesSidecar(parsedOutputPath(options.root, path), "", undefined);
 				if (previous.entries[path]) deleted += 1;
 				if (!currentPaths.has(path))
 					diagnostics.push({
@@ -814,6 +829,18 @@ async function syncWithRegistry(
 						});
 						continue;
 					}
+					try {
+						writePagesSidecar(outputPath, markdown, parsed.pages);
+					} catch (error) {
+						// Pages are an addition to the text: losing them leaves line locations intact, so the file
+						// stays indexed, but the loss is reported rather than hidden.
+						diagnostics.push({
+							code: "mirror-write-failed",
+							severity: "warning",
+							message: `The page index could not be saved, so evidence from this document names no page: ${error instanceof Error ? error.message : String(error)}`,
+							source: entry.virtualPath,
+						});
+					}
 					await session.commit(mirrorStageKey(entry.virtualPath), versions.get(entry.virtualPath)!, {
 						path: basename(outputPath),
 						size: Buffer.byteLength(markdown),
@@ -913,6 +940,24 @@ async function syncWithRegistry(
 	}
 }
 
+/**
+ * Virtual paths the last refresh recorded as `duplicate-excluded` whose file is unchanged since
+ * (same mtime and size). A changed copy is left out so the normal freshness check reports it.
+ */
+function recordedDuplicateSources(previous: ParsedMirrorIndex, current: readonly CurrentEntry[]): ReadonlySet<string> {
+	const recorded = new Set<string>();
+	for (const entry of current) {
+		const skip = previous.skipped?.[entry.virtualPath];
+		if (
+			skip?.reason === "duplicate-excluded" &&
+			skip.sourceMtimeNs === entry.mtimeNs &&
+			skip.sourceSizeBytes === entry.sizeBytes
+		)
+			recorded.add(entry.virtualPath);
+	}
+	return recorded;
+}
+
 /** Ask MinSync's read-only plan which current source revisions still need work. */
 export async function detectMirrorStaleness(options: ParsedMirrorSyncOptions): Promise<ParsedMirrorDiagnostic[]> {
 	const registry = options.registry ?? createDefaultParserRegistry(options.parserOptions);
@@ -939,7 +984,10 @@ export async function detectMirrorStaleness(options: ParsedMirrorSyncOptions): P
 				output_root: join(parsedMirrorRoot(options.root), "files"),
 			}),
 		);
-		const { versions, omitted } = sourcePlan(current, registry, options);
+		const recordedDuplicates = options.reuseRecordedDuplicateExclusions
+			? recordedDuplicateSources(previous, current)
+			: undefined;
+		const { versions, omitted } = sourcePlan(current, registry, options, recordedDuplicates);
 		const fingerprint = parseFingerprint(options);
 		const plan = await session.plan({
 			stage: "parse",
@@ -1031,12 +1079,17 @@ function normalizeExtension(extension: string): string {
 	return lower.startsWith(".") ? lower : `.${lower}`;
 }
 
+const matcherBySet = new WeakMap<ReadonlySet<string>, (path: string) => boolean>();
+
+/** A path is excluded when it equals an excluded path, sits under one, or matches an excluded glob. */
 export function isPathExcluded(sourcePath: string, excluded: ReadonlySet<string> | undefined): boolean {
-	if (excluded === undefined) return false;
-	for (const excludedPath of excluded) {
-		if (sourcePath === excludedPath || sourcePath.startsWith(`${excludedPath}${sep}`)) return true;
+	if (excluded === undefined || excluded.size === 0) return false;
+	let matcher = matcherBySet.get(excluded);
+	if (matcher === undefined) {
+		matcher = createPathExclusionMatcher([...excluded]);
+		matcherBySet.set(excluded, matcher);
 	}
-	return false;
+	return matcher(sourcePath);
 }
 
 type SearchRootUnavailableReason = "gone" | "not-a-directory" | "unreadable" | "empty";

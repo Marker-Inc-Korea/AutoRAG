@@ -3,6 +3,8 @@ import { REST, Routes } from "discord.js";
 import installDiscordRemote from "pi-discord-remote";
 import { loadConfig } from "pi-discord-remote/dist/config.js";
 import { splitMessage } from "pi-discord-remote/dist/helpers.js";
+import type { Revision } from "./answer-revision.ts";
+import { REVISE_ANSWER_TOOL_NAME, type ReviseAnswerDetails } from "./revise-answer-tool.ts";
 
 /** Tools the `pi-discord-remote` extension registers; pi's allow-list must name them to keep them active. */
 export const DISCORD_REMOTE_TOOL_NAMES = ["discord_ask_user_question", "discord_send_image"] as const;
@@ -120,6 +122,15 @@ export function createDiscordRemoteExtension(hooks: DiscordRemoteHooks): Extensi
 			const text = (message.content ?? []).map((part) => (part.type === "text" ? (part.text ?? "") : "")).join("");
 			if (text.trim() !== "") phaseTexts.push(text);
 		});
+		pi.on("tool_execution_end", async (event, ctx) => {
+			if (!discordRun || event.toolName !== REVISE_ANSWER_TOOL_NAME || event.isError) return;
+			const details: ReviseAnswerDetails | undefined = event.result?.details;
+			if (details?.revision === undefined) return;
+			// A correction is news to the channel: the closing reply that pings the asker is only a note about it.
+			await postEarlierPhase(formatRevisionForDiscord(details.revision), (message) =>
+				ctx.ui.notify(message, "warning"),
+			);
+		});
 		pi.on("agent_start", async (_event, ctx) => {
 			// A new phase begins: the previous one's answer is final for Discord only once the run settles, so show it now.
 			if (!discordRun || phaseTexts.length === 0) return;
@@ -134,6 +145,23 @@ export function createDiscordRemoteExtension(hooks: DiscordRemoteHooks): Extensi
 	};
 }
 
+/** A revision as one Discord message: the original struck out, the replacement in bold, the reason beside the headline. */
+function formatRevisionForDiscord(revision: Revision): string {
+	const subject = revision.claimId === undefined ? "" : ` ${revision.claimId}`;
+	if (revision.op === "confirm") return `✓ Checked${subject} — ${revision.reason}`;
+	const headline = { replace: "Corrected", retract: "Retracted", add: "Added" }[revision.op];
+	// Discord closes strikethrough and bold at a blank line, so each non-empty line carries its own markers.
+	const each = (text: string, mark: string): string[] =>
+		text
+			.split("\n")
+			.filter((line) => line.trim() !== "")
+			.map((line) => `${mark}${line}${mark}`);
+	return [
+		`✎ ${headline}${subject} — ${revision.reason}`,
+		...(revision.original === undefined ? [] : each(revision.original, "~~")),
+		...(revision.replacement === undefined ? [] : each(revision.replacement, "**")),
+	].join("\n");
+}
 function textOfContent(content: unknown): string {
 	if (!Array.isArray(content)) return "";
 	return content

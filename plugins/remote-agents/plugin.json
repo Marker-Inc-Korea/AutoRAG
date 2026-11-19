@@ -1,0 +1,14 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "autorag-remote",
+  "version": "1.0.0",
+  "description": "How to search your own files and chat or mail archives with AutoRAG from an always-on cloud agent (Grok Bot, OpenAI dots, Claude Duet, Meta Muse). Skill only: you register your own AutoRAG server URL, because it runs on your machine.",
+  "author": {
+    "name": "Marker Inc. Korea",
+    "url": "https://github.com/Marker-Inc-Korea"
+  },
+  "homepage": "https://github.com/Marker-Inc-Korea/AutoRAG/tree/main/plugins/remote-agents",
+  "repository": "https://github.com/Marker-Inc-Korea/AutoRAG/tree/main/plugins/remote-agents",
+  "license": "Apache-2.0",
+  "keywords": ["rag", "search", "retrieval", "local-first", "documents", "mcp"]
+}

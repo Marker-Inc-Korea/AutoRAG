@@ -255,6 +255,48 @@ describe("two-phase progressive answers (minimal-thinking fast → high-thinking
 		expect(progress.some((text) => text.includes("Final answer"))).toBe(false);
 	});
 
+	it("records the model's since/until on the retrieval trace and only searches inside the window (#1958)", async () => {
+		const rows: RetrievalResult[] = [
+			{
+				id: "old",
+				source: "/kakao/acct-1/chunks/old",
+				content: "refund approval, July",
+				score: 1,
+				metadata: { publishedAt: Date.UTC(2026, 6, 10) },
+			},
+			{
+				id: "new",
+				source: "/kakao/acct-1/chunks/new",
+				content: "refund approval, October",
+				score: 0.5,
+				metadata: { publishedAt: Date.UTC(2026, 9, 10) },
+			},
+		];
+		const model = fauxModel(
+			true,
+			fastAnswerCall(),
+			fauxAssistantMessage(
+				[
+					fauxToolCall("search_all_documents", {
+						query: "refund approval",
+						since: "2026-10-01T00:00:00Z",
+						until: "2026-11-01T00:00:00Z",
+					}),
+				],
+				{ stopReason: "toolUse" },
+			),
+			// A drained script ends the run as a degraded response, which carries the retrieval trace.
+		);
+		const agent = new AutoRAGAgent({ ...agentOptions(model), datasourceSkills: [makeSkill(rows)] });
+
+		const response = await agent.searchDocuments("what was approved last month?");
+
+		const entry = response.retrievalTrace?.find((candidate) => candidate.tool === "search_all_documents");
+		expect(entry?.query).toBe("refund approval");
+		expect(entry?.window).toEqual({ since: "2026-10-01T00:00:00.000Z", until: "2026-11-01T00:00:00.000Z" });
+		expect(entry?.results.map((result) => result.source)).toEqual(["/kakao/acct-1/chunks/new"]);
+	});
+
 	it("returns a degraded fallback with reason and retrieval trace when the model request fails", async () => {
 		const rows: RetrievalResult[] = [
 			{
@@ -397,27 +439,29 @@ describe("two-phase progressive answers (minimal-thinking fast → high-thinking
 		).toContain("e99");
 	});
 
-	it("asks for a delta-only final answer when the fast answer was already delivered", () => {
+	it("asks for corrections as tool calls, with the claims named, when the fast answer was already delivered", () => {
 		const model = fauxModel(true, fauxAssistantMessage("noop", { stopReason: "stop" }));
 		const agent = new AutoRAGAgent(agentOptions(model));
 
-		const delta = agent.buildRefinementPrompt(
+		const delivered = agent.buildRefinementPrompt(
 			"what approval do refund exceptions need?",
 			{},
-			"Fast: refund exceptions need director approval before payout [e1].",
+			"Fast: refund exceptions need director approval before payout [e1].\n- Paid monthly",
 			true,
 		);
-		// The model must be able to see the exact first answer it is diffing against.
-		expect(delta).toContain("Fast: refund exceptions need director approval before payout [e1].");
-		expect(delta).toMatch(/MUST contain only/i);
-		expect(delta).toMatch(/never restate/i);
+		// The model sees the exact first answer, split into claims it can name, with its own [eN] ids.
+		expect(delivered).toContain("c1: Fast: refund exceptions need director approval before payout [e1].");
+		expect(delivered).toContain("c2: - Paid monthly");
+		expect(delivered).toContain("revise_answer");
+		expect(delivered).toMatch(/ONE short line/);
+		expect(delivered).not.toMatch(/DELTA ONLY|MUST contain only/i);
 
 		const complete = agent.buildRefinementPrompt("what approval do refund exceptions need?", {}, undefined, false);
 		expect(complete).toContain("the fast phase produced no answer");
-		expect(complete).not.toMatch(/MUST contain only/i);
+		expect(complete).not.toContain("revise_answer");
 	});
 
-	it("walks the verification phase through the already-delivered fast answer as a delta task", async () => {
+	it("walks the verification phase through the already-delivered fast answer as a list of claims to correct", async () => {
 		const prompts: string[] = [];
 		const model = fauxModel(
 			true,
@@ -429,8 +473,8 @@ describe("two-phase progressive answers (minimal-thinking fast → high-thinking
 		const events = await collectEvents(agent, "what approval do refund exceptions need?");
 
 		const finalPrompt = prompts.at(-1) ?? "";
-		expect(finalPrompt).toContain("Fast answer: refund exceptions require director approval before payout.");
-		expect(finalPrompt).toMatch(/MUST contain only/i);
+		expect(finalPrompt).toContain("c1: Fast answer: refund exceptions require director approval before payout.");
+		expect(finalPrompt).toContain("revise_answer");
 		const complete = events.find((event) => event.type === "complete");
 		expect(complete?.type === "complete" && complete.response.answer).toContain("Correction:");
 	});
@@ -490,7 +534,8 @@ describe("two-phase progressive answers (minimal-thinking fast → high-thinking
 		const response = await agent.searchDocuments("what approval do refund exceptions need?");
 
 		const finalPrompt = prompts.at(-1) ?? "";
-		expect(finalPrompt).not.toMatch(/MUST contain only/i);
+		expect(finalPrompt).not.toContain("revise_answer");
+		expect(finalPrompt).toContain("COMPLETE");
 		expect(response.answer).toContain("Complete verified answer");
 	});
 });

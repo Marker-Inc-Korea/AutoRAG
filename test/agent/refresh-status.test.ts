@@ -43,6 +43,36 @@ describe("getRefreshStatus", () => {
 		expect(status.counts).toBeUndefined();
 	});
 
+	it("reads freshness without running a duplicate scan and still reports a refreshed corpus as current", async () => {
+		writeFileSync(join(docs, "a-copy.txt"), "Alpha content\n");
+		const dupeyCommands: string[] = [];
+		const agent = makeAgent({
+			dupey: {
+				run: async (args: readonly string[]) => {
+					dupeyCommands.push(args[0] ?? "");
+					const dir = args[1] ?? docs;
+					return JSON.stringify({
+						dir,
+						files: [
+							{ path: "a.txt", content_hash: "same" },
+							{ path: "a-copy.txt", content_hash: "same" },
+						],
+						families: [],
+						errors: [],
+					});
+				},
+			},
+		});
+		await agent.refresh(true);
+		expect(dupeyCommands).toContain("scan");
+		dupeyCommands.length = 0;
+
+		const status = await agent.getRefreshStatus();
+
+		expect(dupeyCommands).toEqual([]);
+		expect(status.stale).toBe(false);
+	});
+
 	it("reports the active indexing phase and known document progress", async () => {
 		const agent = makeAgent();
 		const releaseMinSync = deferred<void>();

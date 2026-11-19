@@ -3,7 +3,7 @@ import { evidenceChunkKey } from "../retrieval/evidence-id.ts";
 import type { CitationNumbers } from "./citation-numbers.ts";
 import { answerMarkers } from "./citations.ts";
 import { type EvidenceLedger, isRegularFile } from "./evidence-ledger.ts";
-import { findUnverifiedLineClaims } from "./location-claims.ts";
+import { findUnverifiedLineClaims, findUnverifiedPageClaims } from "./location-claims.ts";
 import type {
 	AutoRAGEmittedResult,
 	AutoRAGEvidenceRef,
@@ -204,6 +204,8 @@ export function deriveResultsFromAnswer(
 					excerpt,
 					...(ref.lineNumber !== undefined ? { lineNumber: ref.lineNumber } : {}),
 					...(ref.lineEnd !== undefined ? { lineEnd: ref.lineEnd } : {}),
+					...(ref.pageStart !== undefined ? { pageStart: ref.pageStart } : {}),
+					...(ref.pageEnd !== undefined ? { pageEnd: ref.pageEnd } : {}),
 					...(ref.section !== undefined ? { section: ref.section } : {}),
 				};
 			}),
@@ -237,6 +239,20 @@ export function deriveResultsFromAnswer(
 			code: "line-reference-unverified",
 			severity: "warning",
 			message: `The answer names line number(s) ${unverifiedLines.join(", ")} that no cited evidence covers. Trust results[].evidence lineNumber/lineEnd, which the harness measured, over the answer's prose.`,
+			source: "agent",
+		});
+	}
+	const unverifiedPages = findUnverifiedPageClaims(
+		answer,
+		[...sources.values()].flatMap((cited) =>
+			cited.refs.map((ref) => ({ pageStart: ref.pageStart, pageEnd: ref.pageEnd })),
+		),
+	);
+	if (unverifiedPages.length > 0) {
+		diagnostics.push({
+			code: "page-reference-unverified",
+			severity: "warning",
+			message: `The answer names page number(s) ${unverifiedPages.join(", ")} that no cited evidence covers. Trust results[].evidence pageStart/pageEnd, which the parser measured, over the answer's prose.`,
 			source: "agent",
 		});
 	}

@@ -18,6 +18,8 @@ export interface LedgerEvidenceInput {
 	readonly chunkIndex?: number;
 	readonly lineNumber?: number;
 	readonly lineEnd?: number;
+	readonly pageStart?: number;
+	readonly pageEnd?: number;
 	readonly section?: string;
 	readonly parserType?: string;
 	readonly documentType?: string;
@@ -40,6 +42,8 @@ const ledgerEntrySchema = Type.Object({
 	chunkIndex: Type.Optional(Type.Number()),
 	lineNumber: Type.Optional(Type.Number()),
 	lineEnd: Type.Optional(Type.Number()),
+	pageStart: Type.Optional(Type.Number()),
+	pageEnd: Type.Optional(Type.Number()),
 	section: Type.Optional(Type.String()),
 	parserType: Type.Optional(Type.String()),
 	documentType: Type.Optional(Type.String()),
@@ -119,6 +123,8 @@ function toEvidenceRef(entry: LedgerEntry): AutoRAGEvidenceRef {
 		...(entry.chunkIndex !== undefined ? { chunkIndex: entry.chunkIndex } : {}),
 		...(entry.lineNumber !== undefined ? { lineNumber: entry.lineNumber } : {}),
 		...(entry.lineEnd !== undefined ? { lineEnd: entry.lineEnd } : {}),
+		...(entry.pageStart !== undefined ? { pageStart: entry.pageStart } : {}),
+		...(entry.pageEnd !== undefined ? { pageEnd: entry.pageEnd } : {}),
 		...(entry.section !== undefined ? { section: entry.section } : {}),
 		...(entry.parserType !== undefined ? { parserType: entry.parserType } : {}),
 		...(entry.documentType !== undefined ? { documentType: entry.documentType } : {}),
@@ -175,6 +181,29 @@ export class EvidenceLedger {
 		return ids;
 	}
 
+	/** Ids whose text a search tool already put in front of the model during the current run. */
+	private readonly shown = new Set<string>();
+
+	/** Whether a search already showed this evidence's text in the current run. */
+	hasShown(id: string): boolean {
+		return this.shown.has(id);
+	}
+
+	/** Record that this evidence's text reached the model; returns whether it had already. */
+	markShown(id: string): boolean {
+		const had = this.shown.has(id);
+		this.shown.add(id);
+		return had;
+	}
+
+	/**
+	 * Start a run: nothing has been shown yet. A new question may follow a compaction that dropped the
+	 * earlier tool output, so a repeat is only ever "already shown" within one run.
+	 */
+	beginRun(): void {
+		this.shown.clear();
+	}
+
 	/** Record evidence and return its id. The same chunk always gets the same id. */
 	register(input: LedgerEvidenceInput): string {
 		const content = input.content.slice(0, MAX_CONTENT_CHARS);
@@ -211,6 +240,8 @@ export class EvidenceLedger {
 		const chunkIndex = metadataNumber(metadata, "chunkIndex");
 		const lineNumber = metadataNumber(metadata, "lineNumber");
 		const lineEnd = metadataNumber(metadata, "lineEnd");
+		const pageStart = metadataNumber(metadata, "pageStart");
+		const pageEnd = metadataNumber(metadata, "pageEnd");
 		const section = metadataString(metadata, "section");
 		const parserType = metadataString(metadata, "parserType");
 		const documentType = metadataString(metadata, "documentType");
@@ -224,6 +255,7 @@ export class EvidenceLedger {
 			...(chunkIndex !== undefined ? { chunkIndex } : {}),
 			...(lineNumber !== undefined ? { lineNumber } : {}),
 			...(lineEnd !== undefined ? { lineEnd } : {}),
+			...(pageStart !== undefined && pageEnd !== undefined ? { pageStart, pageEnd } : {}),
 			...(section !== undefined ? { section } : {}),
 			...(parserType !== undefined ? { parserType } : {}),
 			...(documentType !== undefined ? { documentType } : {}),
@@ -258,6 +290,7 @@ export class EvidenceLedger {
 		this.byKey.clear();
 		this.byId.clear();
 		this.unsaved.clear();
+		this.shown.clear();
 	}
 
 	/** Entries recorded or changed since the last call, for the hosting session to persist. */

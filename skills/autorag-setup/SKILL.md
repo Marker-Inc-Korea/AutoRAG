@@ -207,7 +207,7 @@ resolves in order:
    daemon is started and no local model is loaded.
 2. A running `minsync serve` daemon (loopback only; MinSync 0.4.12+).
    AutoRAG never starts it: run `minsync serve --idle-timeout 0` yourself, as
-   a launchd/systemd service (see `docs/minsync-setup.md`), or press
+   a launchd/systemd service (see `docs/indexing/embedding-backends.md`), or press
    Ctrl+Shift+E in `autorag tui`. `autorag setup` only reports whether it is
    alive.
 3. MinSync's in-process engine, through the optional Node-API addon
@@ -354,6 +354,45 @@ only when `rerank.model` names a model; then the pool is wide (Jikji 30, MinSync
 default) each source contributes its own top 10 to the first answer. An explicit
 value always wins.
 
+### Record cut (`limits.recordCut`)
+
+On by default. A search that keeps only the top N *chunks* lets one long
+document whose dozens of passages all match fill every slot while a document
+only the keyword leg found falls past the cut. The record cut spreads the top N
+across documents instead. Turn it off with `limits.recordCut.enabled: false`.
+When on:
+
+- MinSync and the merged search ask for `depth` times the requested count (3x,
+  never past 300 hits), then keep the requested count spread across documents:
+  the best half with at most `max(perRecordFloor, topK / perRecordDivisor)`
+  chunks per document (8 at `topK` 50), then the best chunk of each document not
+  shown yet (`newRecordShare`, default 0.5 of `topK`), then rank order.
+- A chunk a search tool already showed during the same run is listed by id
+  without its text (`already shown earlier in this run`). A new run resends it.
+- Each search tool result is held to `resultChars` (60000). The budget is split
+  max-min fairly across the chunks, so one huge chunk is cut with a note instead
+  of starving the rest; chunks whose share would fall under `minReadChars`
+  (2000) are listed as `not read` with their ids.
+
+| Field | Default | Controls |
+|---|---|---|
+| `enabled` | true | Set `false` to turn the record cut off |
+| `depth` | 3 | Fusion depth, 1-10 |
+| `newRecordShare` | 0.5 | Share of `topK` reserved for documents not shown yet, 0-1 |
+| `perRecordFloor` | 4 | Fewest chunks one document may keep in the head, 1-300 |
+| `perRecordDivisor` | 6 | One document keeps at most `topK / perRecordDivisor` in the head, 1-300 |
+| `resultChars` | 60000 | Characters one search tool result may hold |
+| `minReadChars` | 2000 | Smallest share worth reading |
+
+```json
+{ "limits": { "recordCut": { "enabled": false } } }
+```
+
+Measured on the maintainer's own corpus (297 sampled passages, a natural question
+and a keyword query each, file-level gold, hybrid mode, top 10): nDCG@10 0.646 →
+0.656, MRR@10 0.588 → 0.600, Recall@10 0.825 → 0.830, and the top 10 holds 8.8
+distinct files instead of 7.5. The Recall difference is within noise.
+
 Ingest caps are trusted connector options under `datasources.<name>.connector`
 and are never settable from model/tool arguments: `maxDocuments`,
 `maxItemsPerFeed`, and `maxContentChars` (RSS). `maxContentChars` defaults to
@@ -373,7 +412,7 @@ config resolution.
 
 A root that is missing, unlistable, or empty while it previously held documents
 keeps its mirrors and reports `search-root-unavailable`; see
-`docs/minsync-setup.md`.
+`docs/indexing/embedding-backends.md`.
 
 ## Probe and configure datasource skills (setup wizard)
 
@@ -465,7 +504,7 @@ it up is an agent task with these steps. Run each command; do not just describe 
 6. **Before importing past history, install a skip list** in Hister's `rules.json`
    (login, mail, documents, social and console domains, private hosts, token-bearing
    URLs). `hister import browser history` re-downloads each URL *without* the
-   browser's cookies. See docs/datasource-skills.md, "Browser history via Hister".
+   browser's cookies. See docs/datasources/hister.md.
 7. Add `"browser": { "type": "hister", "connector": { "semantic": true } }` under
    `datasources`, then `autorag refresh` (only probes Hister) and
    `autorag lite retrieve "<a question>" --scope '/browser/**' --json`.
@@ -491,7 +530,7 @@ autorag setup --sync-hister            # writes them, restarts Hister, re-embeds
   it changes nothing and restarts nothing.
 - It refuses, and says why, when the shared backend is a remote endpoint (browsing
   text would leave the machine) or MinSync's in-process engine (Hister cannot reach
-  it; run `minsync serve --idle-timeout 0`, docs/minsync-setup.md).
+  it; run `minsync serve --idle-timeout 0`, docs/indexing/embedding-backends.md).
 - If `restartRequired` or `reindexRequired` is true in the report, the step was
   not done (no Homebrew service, or it failed): run `brew services restart hister`
   and `hister reindex` yourself. Check with `hister doctor`: the line

@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import {
 	chmodSync,
 	existsSync,
@@ -11,10 +11,12 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AutoRAGAgent, type AutoRAGRefreshProgress, MinSyncVectorMethod } from "../../src/index.ts";
+import type { MinSyncDiagnosticCode } from "../../src/minsync/types.ts";
 import { loadMirrorIndex } from "../../src/mirror/index.ts";
 import { DEFAULT_MIRROR_BATCH_SIZE } from "../../src/mirror/sync.ts";
+import { PlainTextParser } from "../../src/parser/index.ts";
 import { fakeMinSyncStageSimulatorPath } from "../helpers/fake-minsync.ts";
 
 let root: string;
@@ -27,6 +29,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+	vi.restoreAllMocks();
 	rmSync(root, { recursive: true, force: true });
 });
 
@@ -56,9 +59,16 @@ function writeSources(count: number): void {
 /**
  * A MinSync stand-in that stages through the shared simulator, answers queries by
  * walking the staged `files/`, and records every `sync` run (invocation number and
- * the staged paths it saw). `failAtSync` makes the n-th sync exit non-zero.
+ * the staged paths it saw). `failAtSync` makes the n-th sync exit non-zero; `holdFirstSyncPath`
+ * keeps the first sync running until that file exists, so a test decides when it may finish.
  */
-function writeBatchedMinSync(binaryPath: string, logPath: string, counterPath: string, failAtSync = 0): void {
+function writeBatchedMinSync(
+	binaryPath: string,
+	logPath: string,
+	counterPath: string,
+	options: { readonly failAtSync?: number; readonly holdFirstSyncPath?: string } = {},
+): void {
+	const { failAtSync = 0, holdFirstSyncPath = "" } = options;
 	writeFileSync(
 		binaryPath,
 		`#!/usr/bin/env node
@@ -101,6 +111,13 @@ if (args[0] === "stage") {
   writeFileSync(${JSON.stringify(counterPath)}, String(run));
   const staged = walk(join(process.cwd(), "files"), "");
   appendFileSync(${JSON.stringify(logPath)}, JSON.stringify({ run, staged }) + "\\n");
+  if (run === 1 && ${JSON.stringify(holdFirstSyncPath)}) {
+    // Another process releases this sync, so the wait is on a file the test writes, not on a timer.
+    const hold = ${JSON.stringify(holdFirstSyncPath)};
+    const deadline = Date.now() + 20000;
+    while (!existsSync(hold) && Date.now() < deadline) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25);
+    writeFileSync(hold + ".result", existsSync(hold) ? "released" : "timeout");
+  }
   if (${failAtSync} > 0 && run === ${failAtSync}) {
     console.error("synthetic batch failure");
     process.exit(1);
@@ -162,114 +179,321 @@ function stagedFiles(workspacePath: string): string[] {
 }
 
 function queryHits(binary: string, workspacePath: string): number {
-	const result = spawnSync(binary, ["query", "--format", "json", "-k", "1000", "anything"], {
+	const stdout = execFileSync(process.execPath, [binary, "query", "--format", "json", "-k", "1000", "anything"], {
 		cwd: workspacePath,
 		encoding: "utf8",
 	});
-	const parsed: unknown = JSON.parse(result.stdout);
+	const parsed: unknown = JSON.parse(stdout);
 	if (typeof parsed === "object" && parsed !== null && "results" in parsed && Array.isArray(parsed.results)) {
 		return parsed.results.length;
 	}
 	return 0;
 }
 
+/**
+ * Releases a held first sync once parsing reaches its last source. A refresh that parsed and synced one
+ * batch at a time would never get there while the sync waits, so a release proves the two overlapped.
+ */
+function releaseWhenParsingEnds(holdPath: string, total: number): (progress: AutoRAGRefreshProgress) => void {
+	return (progress) => {
+		if (progress.phase === "parsed" && progress.processed === total - 1) writeFileSync(holdPath, "");
+	};
+}
+
 describe("batched refresh", () => {
-	it("makes the first batch searchable before later batches are parsed", async () => {
+	it("stops repeated check failures and resumes committed mirrors without premature deletions", async () => {
+		const binary = join(root, "batched-minsync.mjs");
+		writeBatchedMinSync(binary, join(root, "minsync.log"), join(root, "minsync.counter"));
+		const workspacePath = join(root, ".autorag", "minsync");
+		const agent = makeAgent({ binary, workspacePath, extra: { refresh: { maxDeleteRatio: 1 } } });
+		const syncMirrors = agent.syncParsedMirrors.bind(agent);
+		vi.spyOn(agent, "syncParsedMirrors").mockImplementation((force, options) =>
+			syncMirrors(force, { ...options, batchSize: 2 }),
+		);
+		writeFileSync(join(docs, "removed.txt"), "removed source");
+		writeFileSync(join(docs, "z-unreached.txt"), "previously indexed source");
+		await agent.refresh(false, { methods: ["minsync"] });
+		const previous = loadMirrorIndex(root, { minSyncBinaryPath: binary }).entries;
+		rmSync(join(docs, "removed.txt"));
+		const total = 12;
+		writeSources(total);
+		const parse = vi.spyOn(PlainTextParser.prototype, "parse");
+		const message = "exit status 1: /tmp/index/config.toml: invalid compact_target_rows";
+		const sync = vi.spyOn(agent, "syncMinSync").mockResolvedValue({
+			ok: false,
+			synced: 0,
+			workspacePath,
+			reason: "check-failed",
+			diagnostic: { code: "sync-failed", message },
+		});
+
+		const stopped = await agent.refresh(false, { methods: ["minsync"] });
+
+		expect(sync).toHaveBeenCalledTimes(3);
+		expect(parse.mock.calls.length).toBeGreaterThan(0);
+		expect(parse.mock.calls.length).toBeLessThan(total);
+		expect(stopped.written).toBe(parse.mock.calls.length);
+		expect(stopped.deleted).toBe(0);
+		expect(stopped.minsync).toMatchObject({ ok: false, reason: "check-failed" });
+		for (const diagnostics of [stopped.diagnostics, stopped.minsync?.diagnostics]) {
+			const failures = diagnostics?.filter((d) => d.code === "minsync-sync-failed");
+			expect(failures).toHaveLength(1);
+			expect(failures?.[0]).toMatchObject({ source: "minsync", reason: "check-failed", severity: "error" });
+			expect(failures?.[0]?.message).toContain("exit status 1: <path> invalid compact_target_rows");
+			expect(failures?.[0]?.message).not.toContain("/tmp/index");
+			expect(failures?.[0]?.message).toContain("next refresh resumes");
+		}
+		const committed = loadMirrorIndex(root, { minSyncBinaryPath: binary }).entries;
+		for (const [path, entry] of Object.entries(previous)) expect(committed[path]).toEqual(entry);
+		const parsedPaths = parse.mock.calls.map(([input]) => input.virtualPath);
+		for (const path of parsedPaths) expect(committed[path]).toBeDefined();
+		expect(stagedFiles(workspacePath).some((path) => path.endsWith("removed.txt.md"))).toBe(true);
+		expect(stagedFiles(workspacePath).some((path) => path.endsWith("z-unreached.txt.md"))).toBe(true);
+
+		sync.mockRestore();
+		parse.mockClear();
+		const resumed = await agent.refresh(false, { methods: ["minsync"] });
+		expect(resumed.minsync?.ok).toBe(true);
+		expect(resumed.written).toBe(total - parsedPaths.length);
+		expect(parse).toHaveBeenCalledTimes(total - parsedPaths.length);
+		expect(parse.mock.calls.every(([input]) => !parsedPaths.includes(input.virtualPath))).toBe(true);
+		const finished = loadMirrorIndex(root, { minSyncBinaryPath: binary }).entries;
+		for (const path of parsedPaths) expect(finished[path]).toEqual(committed[path]);
+		expect(finished["/docs/z-unreached.txt"]).toEqual(previous["/docs/z-unreached.txt"]);
+		expect(finished["/docs/removed.txt"]).toBeUndefined();
+		expect(resumed.deleted).toBe(1);
+		expect(stagedFiles(workspacePath)).toHaveLength(total + 1);
+	});
+
+	it.each<{
+		reason?: string;
+		code?: MinSyncDiagnosticCode;
+	}>([
+		{ reason: "init-failed", code: "sync-failed" },
+		{ reason: "embedder-unavailable", code: "embedder-unavailable" },
+		{ reason: "check-failed" },
+		{ code: "sync-failed" },
+		{},
+		{ reason: "lock-held", code: "minsync-lock-held" },
+	])("stops a repeated structured failure %j regardless of changing prose", async ({ reason, code }) => {
+		writeSources(8);
+		const binary = join(root, "batched-minsync.mjs");
+		writeBatchedMinSync(binary, join(root, "minsync.log"), join(root, "minsync.counter"));
+		const workspacePath = join(root, ".autorag", "minsync");
+		const agent = makeAgent({ binary, workspacePath });
+		const syncMirrors = agent.syncParsedMirrors.bind(agent);
+		vi.spyOn(agent, "syncParsedMirrors").mockImplementation((force, options) =>
+			syncMirrors(force, { ...options, batchSize: 1 }),
+		);
+		let attempts = 0;
+		const sync = vi.spyOn(agent, "syncMinSync").mockImplementation(async () => ({
+			ok: false,
+			synced: 0,
+			workspacePath,
+			...(reason === undefined ? {} : { reason }),
+			...(code === undefined ? {} : { diagnostic: { code, message: `failure ${++attempts} at /tmp/index` } }),
+		}));
+		const result = await agent.refresh(false, { methods: ["minsync"] });
+		expect(sync).toHaveBeenCalledTimes(reason === "lock-held" ? 1 : 3);
+		expect(result.written).toBeLessThan(8);
+		expect(result.minsync?.ok).toBe(false);
+		expect(result.minsync?.reason).toBe(reason);
+		expect(result.minsync?.diagnostics).toHaveLength(1);
+		const diagnostic = result.minsync?.diagnostics?.[0];
+		expect(result.diagnostics.filter((d) => d.source === "minsync")).toEqual([diagnostic]);
+		expect(diagnostic?.code).toBe(
+			code === "embedder-unavailable" || code === "minsync-lock-held" ? code : "minsync-sync-failed",
+		);
+		if (code !== undefined) expect(diagnostic?.message).toContain(`failure ${attempts} at <path>`);
+		expect(diagnostic?.message).not.toContain("/tmp/index");
+		if (reason !== "lock-held") {
+			expect(diagnostic?.reason).toBe(reason ?? code ?? "unknown failure");
+			expect(diagnostic?.message).toContain("next refresh resumes");
+		}
+	});
+
+	it.each(["reason", "code", "success"] as const)("resets the failure streak on a changed %s", async (change) => {
+		writeSources(8);
+		const binary = join(root, "batched-minsync.mjs");
+		writeBatchedMinSync(binary, join(root, "minsync.log"), join(root, "minsync.counter"));
+		const workspacePath = join(root, ".autorag", "minsync");
+		const agent = makeAgent({ binary, workspacePath });
+		const syncMirrors = agent.syncParsedMirrors.bind(agent);
+		vi.spyOn(agent, "syncParsedMirrors").mockImplementation((force, options) =>
+			syncMirrors(force, { ...options, batchSize: 1 }),
+		);
+		let attempts = 0;
+		const sync = vi.spyOn(agent, "syncMinSync").mockImplementation(async () => {
+			attempts += 1;
+			if (attempts >= 6 || (attempts === 3 && change === "success")) return { ok: true, synced: 1, workspacePath };
+			return {
+				ok: false,
+				synced: 0,
+				workspacePath,
+				reason: attempts === 3 && change === "reason" ? "init-failed" : "check-failed",
+				diagnostic: {
+					code: attempts === 3 && change === "code" ? "migration-required" : "sync-failed",
+					message: "failed",
+				},
+			};
+		});
+		const result = await agent.refresh(false, { methods: ["minsync"] });
+		expect(sync).toHaveBeenCalledTimes(8);
+		expect(result.written).toBe(8);
+		expect(result.minsync?.ok).toBe(true);
+		expect(result.minsync?.diagnostics).toBeUndefined();
+		expect(result.diagnostics.filter((d) => d.code === "minsync-sync-failed")).toEqual([]);
+	});
+
+	it.each(["single", "alternating", "alternating-recovered", "recovered", "partial"] as const)(
+		"bounds per-file diagnostics for %s failures",
+		async (scenario) => {
+			const workspacePath = join(root, ".autorag", "minsync");
+			const agent = makeAgent({ binary: "minsync", workspacePath });
+			const batches = scenario === "single" ? 1 : 6;
+			const virtualPaths = Array.from({ length: 100_000 }, (_, index) => `/docs/f${index}.txt`);
+			let attempts = 0;
+			const partialFailure = { path: "/docs/skipped.txt", stage: "embed", error: "cannot embed /tmp/skipped.txt" };
+			const sync = vi.spyOn(agent, "syncMinSync").mockImplementation(async () => {
+				attempts += 1;
+				// Two failures, a success, two more failures, a success: both the cap and streak must reset.
+				if (
+					((scenario === "recovered" || scenario === "partial") && attempts % 3 === 0) ||
+					(scenario === "alternating-recovered" && attempts === batches)
+				) {
+					return {
+						ok: true,
+						synced: 1,
+						workspacePath,
+						...(scenario === "partial" ? { filesFailed: [partialFailure] } : {}),
+					};
+				}
+				return {
+					ok: false,
+					synced: 0,
+					workspacePath,
+					reason: scenario.startsWith("alternating") && attempts % 2 === 0 ? "init-failed" : "check-failed",
+					diagnostic: { code: "sync-failed", message: "exit 1: /tmp/config.toml: invalid compact_target_rows" },
+				};
+			});
+			vi.spyOn(agent, "syncParsedMirrors").mockImplementation(async (_force, options) => {
+				for (let index = 1; index <= batches; index += 1) {
+					const outcome = await options?.onBatch?.({ index, virtualPaths, final: index === batches });
+					expect(outcome?.stop).not.toBe(true);
+					// Let the immediate scripted sync settle before handing over another committed batch.
+					await Promise.resolve();
+				}
+				return {
+					scanned: virtualPaths.length,
+					written: virtualPaths.length,
+					deleted: 0,
+					skipped: 0,
+					indexPath: "",
+					diagnostics: [],
+				};
+			});
+			const result = await agent.refresh(false, { methods: ["minsync"] });
+			expect(sync).toHaveBeenCalledTimes(batches);
+			if (scenario === "recovered" || scenario === "partial" || scenario === "alternating-recovered") {
+				expect(result.minsync?.ok).toBe(true);
+				expect(result.minsync?.diagnostics).toBeUndefined();
+				expect(result.diagnostics.filter((d) => d.code === "minsync-sync-failed")).toEqual([]);
+				expect(result.diagnostics.filter((d) => d.code === "minsync-file-skipped")).toHaveLength(
+					scenario === "partial" ? 1 : 0,
+				);
+			} else {
+				expect(result.minsync?.ok).toBe(false);
+				for (const diagnostics of [result.diagnostics, result.minsync?.diagnostics]) {
+					const failures = diagnostics?.filter((d) => d.code === "minsync-sync-failed");
+					expect(failures).toHaveLength(102);
+					expect(failures?.filter((d) => d.source !== "minsync")).toHaveLength(100);
+					expect(
+						failures?.filter((d) => d.message.includes(`${batches * 100_000 - 100} additional per-file`)),
+					).toHaveLength(1);
+					expect(failures?.find((d) => d.severity === "error")?.message).toBe(
+						"exit 1: <path> invalid compact_target_rows",
+					);
+				}
+			}
+		},
+	);
+
+	it("syncs the first batch while the rest is still being parsed", async () => {
 		const total = DEFAULT_MIRROR_BATCH_SIZE + 5;
 		writeSources(total);
 		const binary = join(root, "batched-minsync.mjs");
 		const logPath = join(root, "minsync.log");
 		const counterPath = join(root, "minsync.counter");
-		writeBatchedMinSync(binary, logPath, counterPath);
+		const hold = join(root, "hold");
+		writeBatchedMinSync(binary, logPath, counterPath, { holdFirstSyncPath: hold });
 		const workspacePath = join(root, ".autorag", "minsync");
 		const method = new MinSyncVectorMethod({ root, binaryPath: binary, workspacePath, autoInstall: false });
 		const agent = makeAgent({ binary, workspacePath });
 
-		let boundary:
-			| {
-					readonly syncs: number;
-					readonly ready: boolean;
-					readonly staged: readonly string[];
-					readonly queryHits: number;
-					readonly currentVirtualPath?: string;
-			  }
-			| undefined;
-		await agent.refresh(true, {
-			methods: ["minsync"],
-			onProgress: (progress: AutoRAGRefreshProgress) => {
-				if (boundary !== undefined) return;
-				if (progress.phase !== "parsed" || progress.processed !== DEFAULT_MIRROR_BATCH_SIZE) return;
-				// This fires at the top of the first batch-2 file, after batch 1's sync.
-				boundary = {
-					syncs: syncRuns(logPath).length,
-					ready: method.isReady(),
-					staged: stagedFiles(workspacePath),
-					queryHits: queryHits(binary, workspacePath),
-					currentVirtualPath: progress.currentVirtualPath,
-				};
-			},
-		});
+		await agent.refresh(true, { methods: ["minsync"], onProgress: releaseWhenParsingEnds(hold, total) });
 
-		expect(boundary).toBeDefined();
-		expect(boundary?.currentVirtualPath).toMatch(/f25\.txt$/);
-		expect(boundary?.syncs).toBe(1);
-		expect(boundary?.ready).toBe(true);
-		expect(boundary?.staged).toHaveLength(DEFAULT_MIRROR_BATCH_SIZE);
-		expect(boundary?.staged.some((path) => path.endsWith("f24.txt.md"))).toBe(true);
-		expect(boundary?.staged.some((path) => path.endsWith("f25.txt.md"))).toBe(false);
-		expect(boundary?.queryHits).toBe(DEFAULT_MIRROR_BATCH_SIZE);
-
-		// The remaining batch ran too, and the whole corpus is queryable afterwards.
+		// The first sync only finished because parsing carried on to the last source.
+		expect(readFileSync(`${hold}.result`, "utf8")).toBe("released");
+		// Two syncs, not one per batch: the first covered batch 1, the second everything committed meanwhile.
 		const runs = syncRuns(logPath);
 		expect(runs).toHaveLength(2);
+		expect(runs[0]?.staged.length).toBeGreaterThanOrEqual(DEFAULT_MIRROR_BATCH_SIZE);
 		expect(runs[1]?.staged).toHaveLength(total);
+		expect(method.isReady()).toBe(true);
+		expect(queryHits(binary, workspacePath)).toBe(total);
 		const results = await method.retrieve("content", { topK: 5 });
 		expect(results.length).toBeGreaterThan(0);
 	});
 
-	it("continues past a failing MinSync batch and a later sync recovers its files", async () => {
+	it("continues past a failing MinSync sync and a later sync recovers its files", async () => {
 		const total = DEFAULT_MIRROR_BATCH_SIZE * 2 + 10;
 		writeSources(total);
 		const binary = join(root, "batched-minsync.mjs");
 		const logPath = join(root, "minsync.log");
 		const counterPath = join(root, "minsync.counter");
-		writeBatchedMinSync(binary, logPath, counterPath, 2);
+		const hold = join(root, "hold");
+		writeBatchedMinSync(binary, logPath, counterPath, { failAtSync: 1, holdFirstSyncPath: hold });
 		const workspacePath = join(root, ".autorag", "minsync");
 		const agent = makeAgent({ binary, workspacePath });
 
-		const result = await agent.refresh(true, { methods: ["minsync"] });
+		const result = await agent.refresh(true, {
+			methods: ["minsync"],
+			onProgress: releaseWhenParsingEnds(hold, total),
+		});
 
-		// Every batch was attempted: the failure did not stop the ones after it,
-		// and the final sync indexed the failed batch's still-staged files.
+		// The failure did not stop the next sync, which indexed the failed sync's still-staged files.
 		const runs = syncRuns(logPath);
-		expect(runs).toHaveLength(3);
-		expect(runs[0]?.staged).toHaveLength(DEFAULT_MIRROR_BATCH_SIZE);
-		expect(runs[1]?.staged).toHaveLength(DEFAULT_MIRROR_BATCH_SIZE * 2);
-		expect(runs[2]?.staged).toHaveLength(total);
+		expect(runs).toHaveLength(2);
+		expect(runs[1]?.staged).toHaveLength(total);
 		expect(result.minsync?.ok).toBe(true);
 		expect(result.diagnostics.filter((diagnostic) => diagnostic.code === "minsync-sync-failed")).toEqual([]);
 	});
 
-	it("reports the files of a failed final batch", async () => {
+	it("reports the files covered by a failed final sync", async () => {
 		const total = DEFAULT_MIRROR_BATCH_SIZE * 2 + 10;
 		writeSources(total);
 		const binary = join(root, "batched-minsync.mjs");
 		const logPath = join(root, "minsync.log");
 		const counterPath = join(root, "minsync.counter");
-		writeBatchedMinSync(binary, logPath, counterPath, 3);
+		const hold = join(root, "hold");
+		writeBatchedMinSync(binary, logPath, counterPath, { failAtSync: 2, holdFirstSyncPath: hold });
 		const workspacePath = join(root, ".autorag", "minsync");
 		const agent = makeAgent({ binary, workspacePath });
 
-		const result = await agent.refresh(true, { methods: ["minsync"] });
+		const result = await agent.refresh(true, {
+			methods: ["minsync"],
+			onProgress: releaseWhenParsingEnds(hold, total),
+		});
 
+		// The first sync covered batch 1 and succeeded; the failed second one covered every later batch.
 		expect(result.minsync?.ok).toBe(false);
 		const sources = result.diagnostics
 			.filter((diagnostic) => diagnostic.code === "minsync-sync-failed" && diagnostic.source !== "minsync")
 			.map((diagnostic) => diagnostic.source);
-		expect(sources).toContain("/docs/f50.txt");
+		expect(sources).toContain("/docs/f25.txt");
 		expect(sources).toContain("/docs/f59.txt");
-		expect(sources).not.toContain("/docs/f49.txt");
-		expect(sources).toHaveLength(total - DEFAULT_MIRROR_BATCH_SIZE * 2);
+		expect(sources).not.toContain("/docs/f24.txt");
+		expect(sources).toHaveLength(total - DEFAULT_MIRROR_BATCH_SIZE);
 	});
 
 	it("keeps not-yet-reached documents mid-refresh and deletes removed sources at the end", async () => {
@@ -320,26 +544,27 @@ describe("batched refresh", () => {
 		expect(stagedFiles(workspacePath).some((path) => path.endsWith("f00.txt.md"))).toBe(false);
 	});
 
-	it("syncs only batches whose mirrors changed, and always the final one", async () => {
+	it("starts no sync for batches whose mirrors did not change, and always syncs after the final one", async () => {
 		const total = DEFAULT_MIRROR_BATCH_SIZE * 2 + 10;
 		writeSources(total);
 		const binary = join(root, "batched-minsync.mjs");
 		const logPath = join(root, "minsync.log");
 		const counterPath = join(root, "minsync.counter");
-		writeBatchedMinSync(binary, logPath, counterPath);
+		const hold = join(root, "hold");
+		writeBatchedMinSync(binary, logPath, counterPath, { holdFirstSyncPath: hold });
 		const workspacePath = join(root, ".autorag", "minsync");
 		const agent = makeAgent({ binary, workspacePath });
-		await agent.refresh(true, { methods: ["minsync"] });
+		await agent.refresh(true, { methods: ["minsync"], onProgress: releaseWhenParsingEnds(hold, total) });
+		expect(syncRuns(logPath)).toHaveLength(2);
+
+		// Nothing changed: only the final batch syncs.
+		await agent.refresh(false, { methods: ["minsync"] });
 		expect(syncRuns(logPath)).toHaveLength(3);
 
-		// Nothing changed: one sync (the final batch) instead of one per batch.
-		await agent.refresh(false, { methods: ["minsync"] });
-		expect(syncRuns(logPath)).toHaveLength(4);
-
-		// A change in the middle batch syncs that batch and the final one.
+		// A change in the middle batch syncs it, and the final batch syncs once more.
 		writeFileSync(join(docs, "f30.txt"), "changed content\n");
 		await agent.refresh(false, { methods: ["minsync"] });
-		expect(syncRuns(logPath)).toHaveLength(6);
+		expect(syncRuns(logPath)).toHaveLength(5);
 	});
 
 	it("still suppresses a mass delete in the batched refresh", async () => {

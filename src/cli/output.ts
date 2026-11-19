@@ -1,4 +1,5 @@
 import type { AutoRAGRefreshResult, AutoRAGRefreshStatus } from "../agent/agent.ts";
+import type { Revision } from "../agent/answer-revision.ts";
 import { DecisionModelUnavailableError } from "../agent/decision-model-check.ts";
 import type { SearchDocumentsResponse } from "../agent/search-documents.ts";
 import type { MemorySchema } from "../memory/memory.ts";
@@ -200,6 +201,8 @@ export function renderStatus(status: AutoRAGRefreshStatus, opts: RenderOptions):
 interface MeasuredLocation {
 	readonly lineStart?: number;
 	readonly lineEnd?: number;
+	readonly pageStart?: number;
+	readonly pageEnd?: number;
 	readonly section?: string;
 }
 
@@ -208,10 +211,12 @@ function measuredLocations(result: SearchDocumentsResponse["results"][number]): 
 	const seen = new Set<string>();
 	const locations: MeasuredLocation[] = [];
 	for (const e of result.evidence) {
-		if (e.lineNumber === undefined && e.section === undefined) continue;
+		if (e.lineNumber === undefined && e.pageStart === undefined && e.section === undefined) continue;
 		const location: MeasuredLocation = {
 			...(e.lineNumber !== undefined ? { lineStart: e.lineNumber } : {}),
 			...(e.lineEnd !== undefined ? { lineEnd: e.lineEnd } : {}),
+			...(e.pageStart !== undefined ? { pageStart: e.pageStart } : {}),
+			...(e.pageEnd !== undefined ? { pageEnd: e.pageEnd } : {}),
 			...(e.section !== undefined ? { section: e.section } : {}),
 		};
 		const key = JSON.stringify(location);
@@ -238,6 +243,8 @@ function searchEnvelope(resp: SearchDocumentsResponse, debug: boolean) {
 				const ev: Record<string, unknown> = { excerpt: e.excerpt };
 				if (e.lineNumber !== undefined) ev.lineNumber = e.lineNumber;
 				if (e.lineEnd !== undefined) ev.lineEnd = e.lineEnd;
+				if (e.pageStart !== undefined) ev.pageStart = e.pageStart;
+				if (e.pageEnd !== undefined) ev.pageEnd = e.pageEnd;
 				if (e.section !== undefined) ev.section = e.section;
 				return ev;
 			});
@@ -279,6 +286,8 @@ function renderSearchHuman(resp: SearchDocumentsResponse, debug: boolean): strin
 				const described = describeLocation({
 					...(ev.lineNumber !== undefined ? { lineStart: ev.lineNumber } : {}),
 					...(ev.lineEnd !== undefined ? { lineEnd: ev.lineEnd } : {}),
+					...(ev.pageStart !== undefined ? { pageStart: ev.pageStart } : {}),
+					...(ev.pageEnd !== undefined ? { pageEnd: ev.pageEnd } : {}),
 				});
 				const ln = described !== undefined ? ` (${described})` : "";
 				lines.push(`   evidence${ln}: ${ev.excerpt}`);
@@ -313,6 +322,21 @@ export function renderPreliminary(resp: SearchDocumentsResponse, opts: RenderOpt
 		return JSON.stringify({ type: "preliminary", response: searchEnvelope(resp, opts.debug ?? false) }, null, 2);
 	}
 	return `fast answer (still verifying):\n${renderSearchHuman(resp, opts.debug ?? false)}`;
+}
+
+/**
+ * Render one correction of the first answer the caller already holds. JSON carries the revision as is; the human form
+ * is a headline with the reason, the original as `− ` lines (U+2212: a claim that is a bullet starts with `- ` itself), and the replacement as `+ ` lines.
+ */
+export function renderRevision(revision: Revision, opts: RenderOptions): string {
+	if (opts.json) return JSON.stringify({ type: "revision", revision }, null, 2);
+	const subject = revision.claimId === undefined ? "" : ` ${revision.claimId}`;
+	if (revision.op === "confirm") return `Checked${subject} — ${revision.reason}`;
+	const headline = { replace: "Corrected", retract: "Retracted", add: "Added" }[revision.op];
+	const lines = [`${headline}${subject} — ${revision.reason}`];
+	if (revision.original !== undefined) lines.push(...revision.original.split("\n").map((line) => `− ${line}`));
+	if (revision.replacement !== undefined) lines.push(...revision.replacement.split("\n").map((line) => `+ ${line}`));
+	return lines.join("\n");
 }
 
 function renderMemoryHuman(schema: MemorySchema, debug: boolean): string {

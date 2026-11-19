@@ -1,10 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
-import type { Api, Model } from "@earendil-works/pi-ai";
+import { type Api, InMemoryCredentialStore, type Model } from "@earendil-works/pi-ai";
 import { findEnvKeys, getEnvApiKey } from "@earendil-works/pi-ai/compat";
 import { getAgentDir, ModelRuntime, SettingsManager } from "@earendil-works/pi-coding-agent";
 import type { AutoRAGAgentOptions, AutoRAGRefreshLimits, AutoRAGRetrievalLimits } from "../agent/agent.ts";
+import { type IndexSchedule, validateIndexSchedule } from "../agent/index-schedule.ts";
 import type { JevToolOptions } from "../agent/jev-extension.ts";
 import {
 	type LoadLocalAutoRAGModelOptions,
@@ -32,12 +33,15 @@ import { resolveAutoRAGHome } from "../config/home.ts";
 import { embeddingEndpointSource } from "../datasource/embedding-env.ts";
 import { discrawlEmbeddingRuntimeFor } from "../datasource/skills/discrawl/embedding.ts";
 import { buildDatasourceSkills, type DatasourcesConfig } from "../datasource/skills/factory.ts";
+import { wombatMirrorDir } from "../datasource/skills/wombat/index.ts";
 import { createEmbedderFromConfig } from "../embedding/index.ts";
 import { acquireFileLock, type FileLockHandle } from "../filesystem/file-lock.ts";
+import { isGlobExclusion } from "../filesystem/path-exclusions.ts";
 import { LanguageError, type LanguageTag, normalizeLanguages } from "../language.ts";
 import type { LtrSettings } from "../ltr/manager.ts";
 import type { EnsureMinSyncBinaryOptions, MinSyncEmbedderConfig } from "../minsync/index.ts";
 import { renameWithRetry } from "../mirror/atomic-write.ts";
+import { MAX_FUSION_DEPTH, MAX_PER_RECORD, type RecordCutOptions } from "../retrieval/record-cut.ts";
 import {
 	DEFAULT_RERANK_PROVIDER,
 	DEFAULT_RERANK_TOP_N,
@@ -151,7 +155,7 @@ export interface QueryDecompositionConfig {
 	model?: AgentModelConfig;
 }
 
-/** Opt-in learning-to-rank serving and retraining. See docs/learning-to-rank.md. */
+/** Opt-in learning-to-rank serving and retraining. See docs/retrieval/learning-to-rank.md. */
 export interface LtrConfig {
 	/** Reorder the baseline with a trained model. Default false. */
 	enabled?: boolean;
@@ -459,12 +463,37 @@ function resolveSearchPaths(searchPaths: readonly string[], origin: string): str
 	return searchPaths.map((searchPath) => resolvePersistedPath(searchPath, origin));
 }
 
+/**
+ * wombat parses coding-agent sessions into a text mirror and has MinSync embed it. That mirror sits under the home
+ * directory, so a `searchPaths` entry that covers it would make the local-file index parse, chunk and embed every
+ * conversation a second time under a file path. The datasource owns those conversations; the local index leaves
+ * the mirror out.
+ */
+function wombatMirrorExclusions(datasources: CliConfig["datasources"]): string[] {
+	const mirrors: string[] = [];
+	for (const [name, raw] of Object.entries(datasources ?? {})) {
+		if (raw === false || (typeof raw === "object" && raw !== null && raw.enabled === false)) continue;
+		const entry = typeof raw === "object" && raw !== null ? raw : undefined;
+		if ((entry?.type ?? name) !== "wombat") continue;
+		const connector = entry?.connector as { dataDir?: unknown; env?: Record<string, string | undefined> } | undefined;
+		mirrors.push(
+			wombatMirrorDir({
+				...(typeof connector?.dataDir === "string" ? { dataDir: connector.dataDir } : {}),
+				...(connector?.env === undefined ? {} : { env: connector.env }),
+			}),
+		);
+	}
+	return mirrors;
+}
+
 function resolveExcludePaths(value: unknown, origin: string): string[] | undefined {
 	if (value === undefined) return undefined;
 	if (!Array.isArray(value) || value.some((path) => typeof path !== "string" || path.length === 0)) {
 		throw new ConfigError("Config field 'excludePaths' must be a non-empty string array");
 	}
-	return resolveSearchPaths(value, origin);
+	// A glob (`**/node_modules/**`) matches absolute paths anywhere; resolving it against the workspace would pin it
+	// to one directory and it would silently stop matching.
+	return (value as string[]).map((entry) => (isGlobExclusion(entry) ? entry : resolvePersistedPath(entry, origin)));
 }
 
 function resolvePersistedPath(path: string, origin: string): string {
@@ -825,6 +854,17 @@ const LIMITS_ALLOWLIST: Record<string, true> = {
 	minSyncScopedQueryTopK: true,
 	toolDescriptionInstanceScopes: true,
 	prefetch: true,
+	recordCut: true,
+};
+
+const LIMITS_RECORD_CUT_ALLOWLIST: Record<string, true> = {
+	enabled: true,
+	depth: true,
+	newRecordShare: true,
+	perRecordFloor: true,
+	perRecordDivisor: true,
+	resultChars: true,
+	minReadChars: true,
 };
 
 const LIMITS_PREFETCH_ALLOWLIST: Record<string, true> = {
@@ -842,6 +882,56 @@ function positiveLimitField(record: Record<string, unknown>, key: string, path: 
 		throw new ConfigError(`${path}.${key} must be a positive integer`);
 	}
 	return value;
+}
+
+function boundedIntegerField(
+	record: Record<string, unknown>,
+	key: string,
+	path: string,
+	low: number,
+	high: number,
+): number | undefined {
+	const value = record[key];
+	if (value === undefined) return undefined;
+	if (typeof value !== "number" || !Number.isInteger(value) || value < low || value > high) {
+		throw new ConfigError(`${path}.${key} must be an integer from ${low} to ${high}`);
+	}
+	return value;
+}
+
+/** Validate `limits.recordCut`: the switch plus bounded tuning. Unknown keys fail, like every other limits field. */
+function normalizeRecordCutConfig(raw: unknown): RecordCutOptions {
+	if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+		throw new ConfigError("limits.recordCut must be an object");
+	}
+	const record = raw as Record<string, unknown>;
+	for (const key of Object.keys(record)) {
+		if (!Object.hasOwn(LIMITS_RECORD_CUT_ALLOWLIST, key)) {
+			throw new ConfigError(`limits.recordCut.${key} is not a recognized field`);
+		}
+	}
+	const path = "limits.recordCut";
+	if (record.enabled !== undefined && typeof record.enabled !== "boolean") {
+		throw new ConfigError(`${path}.enabled must be a boolean`);
+	}
+	const share = record.newRecordShare;
+	if (share !== undefined && (typeof share !== "number" || !(share >= 0 && share <= 1))) {
+		throw new ConfigError(`${path}.newRecordShare must be a number from 0 to 1`);
+	}
+	const depth = boundedIntegerField(record, "depth", path, 1, MAX_FUSION_DEPTH);
+	const perRecordFloor = boundedIntegerField(record, "perRecordFloor", path, 1, MAX_PER_RECORD);
+	const perRecordDivisor = boundedIntegerField(record, "perRecordDivisor", path, 1, MAX_PER_RECORD);
+	const resultChars = positiveLimitField(record, "resultChars", path);
+	const minReadChars = positiveLimitField(record, "minReadChars", path);
+	return {
+		...(record.enabled !== undefined ? { enabled: record.enabled as boolean } : {}),
+		...(depth !== undefined ? { depth } : {}),
+		...(share !== undefined ? { newRecordShare: share as number } : {}),
+		...(perRecordFloor !== undefined ? { perRecordFloor } : {}),
+		...(perRecordDivisor !== undefined ? { perRecordDivisor } : {}),
+		...(resultChars !== undefined ? { resultChars } : {}),
+		...(minReadChars !== undefined ? { minReadChars } : {}),
+	};
 }
 
 /** Validate the `limits` section and map it onto the agent option. */
@@ -883,6 +973,7 @@ export function normalizeLimitsConfig(raw: unknown): AutoRAGRetrievalLimits {
 			...(sectionLimit !== undefined ? { sectionLimit } : {}),
 		};
 	}
+	const recordCut = record.recordCut === undefined ? undefined : normalizeRecordCutConfig(record.recordCut);
 	return {
 		...(mergedEvidenceCeiling !== undefined ? { mergedEvidenceCeiling } : {}),
 		...(singleDatasourceTopK !== undefined ? { singleDatasourceTopK } : {}),
@@ -890,6 +981,7 @@ export function normalizeLimitsConfig(raw: unknown): AutoRAGRetrievalLimits {
 		...(minSyncScopedQueryTopK !== undefined ? { minSyncScopedQueryTopK } : {}),
 		...(toolDescriptionInstanceScopes !== undefined ? { toolDescriptionInstanceScopes } : {}),
 		...(prefetch !== undefined ? { prefetch } : {}),
+		...(recordCut !== undefined ? { recordCut } : {}),
 	};
 }
 
@@ -902,6 +994,7 @@ const REFRESH_ALLOWLIST: Record<string, true> = {
 	cloudMaxBytes: true,
 	cloudEvictAfterParse: true,
 	cloudEvictRetries: true,
+	schedule: true,
 };
 
 /** Validate the `refresh` section and map it onto the agent option. */
@@ -948,7 +1041,16 @@ export function normalizeRefreshConfig(raw: unknown): AutoRAGRefreshLimits {
 	) {
 		throw new ConfigError("refresh.cloudEvictRetries must be a non-negative integer");
 	}
+	let schedule: IndexSchedule | undefined;
+	if (record.schedule !== undefined) {
+		try {
+			schedule = validateIndexSchedule(record.schedule);
+		} catch (error) {
+			throw new ConfigError((error as Error).message);
+		}
+	}
 	return {
+		...(schedule !== undefined ? { schedule } : {}),
 		...(maxDeleteRatio !== undefined ? { maxDeleteRatio } : {}),
 		...(maxScannedEntries !== undefined ? { maxScannedEntries } : {}),
 		...(maxDepth !== undefined ? { maxDepth } : {}),
@@ -1530,7 +1632,10 @@ export function buildAgentOptions(config: CliConfig, agentDir?: string): Omit<Au
 				: {}),
 		};
 	}
-	if (config.excludePaths !== undefined) opts.excludePaths = config.excludePaths;
+	const wombatMirrors = wombatMirrorExclusions(config.datasources);
+	if (config.excludePaths !== undefined || wombatMirrors.length > 0) {
+		opts.excludePaths = [...new Set([...(config.excludePaths ?? []), ...wombatMirrors])];
+	}
 	if (config.limits !== undefined) opts.limits = config.limits;
 	if (config.refresh !== undefined) opts.refresh = config.refresh;
 	// One embedder serves memory and every datasource, so a single `minSync.embedder` block (local MinSync or a
@@ -1682,9 +1787,19 @@ function resolveAgentDir(options: ResolveAgentModelOptions): string {
  * refresh is disabled so model resolution stays fast and offline-safe.
  */
 function getModelRuntime(agentDir: string): Promise<ModelRuntime> {
-	const cached = modelRuntimeCache.get(agentDir);
+	const environmentOnly = process.env.AUTORAG_AUTH_MODE === "environment";
+	const cacheKey = `${environmentOnly ? "environment" : "stored"}:${agentDir}`;
+	const cached = modelRuntimeCache.get(cacheKey);
 	if (cached !== undefined) return cached;
 	const created = (async () => {
+		if (environmentOnly) {
+			return ModelRuntime.create({
+				credentials: new InMemoryCredentialStore(),
+				modelsPath: null,
+				allowModelNetwork: false,
+				refreshOnCreate: false,
+			});
+		}
 		const runtime = await ModelRuntime.create({
 			authPath: join(agentDir, "auth.json"),
 			modelsPath: join(agentDir, "models.json"),
@@ -1696,9 +1811,9 @@ function getModelRuntime(agentDir: string): Promise<ModelRuntime> {
 		await registerDazziProvider(runtime);
 		return runtime;
 	})();
-	modelRuntimeCache.set(agentDir, created);
+	modelRuntimeCache.set(cacheKey, created);
 	created.catch(() => {
-		modelRuntimeCache.delete(agentDir);
+		modelRuntimeCache.delete(cacheKey);
 	});
 	return created;
 }
@@ -1812,6 +1927,7 @@ async function resolvePiDefaultModel(
 	runtime: ModelRuntime,
 	options: ResolveAgentModelOptions,
 ): Promise<Model<Api> | undefined> {
+	if (process.env.AUTORAG_AUTH_MODE === "environment") return undefined;
 	let provider: string | undefined;
 	let id: string | undefined;
 	try {
