@@ -98,6 +98,7 @@ import {
 	type MinSyncVectorMethodOptions,
 } from "../minsync/index.ts";
 import { MinSyncStageError } from "../minsync/stage.ts";
+import type { FirstBuildSession } from "../minsync/workspace-lock.ts";
 import { cloudFingerprintExclusions, loadCloudFingerprints } from "../mirror/cloud-fingerprints.ts";
 import { PARSED_MIRROR_SUBDIR, refreshReadinessPath } from "../mirror/paths.ts";
 import {
@@ -4066,6 +4067,8 @@ export class AutoRAGAgent {
 		const forwardAbort = (): void => syncAbort.abort(signal?.reason);
 		signal?.addEventListener("abort", forwardAbort, { once: true });
 		let minSyncPipeline: PipelinedSync | undefined;
+		// A refresh that builds the index from nothing lets queries read beside all its syncs, not only the first.
+		const firstBuild = needsParsed && wants("minsync") ? this.minSyncMethod.beginFirstBuild() : undefined;
 		try {
 			writeRefreshProgress(this.workspaceProjectRoot, progress);
 			// MinSync indexes the parsed mirrors. When both run, the first committed batch starts a sync while
@@ -4102,6 +4105,7 @@ export class AutoRAGAgent {
 										total: syncTotal,
 									});
 								},
+								firstBuild,
 							);
 							minSyncBatches.push(result);
 							// Every sync indexes the whole staged mirror, so a successful one also
@@ -4373,6 +4377,7 @@ export class AutoRAGAgent {
 		} finally {
 			signal?.removeEventListener("abort", forwardAbort);
 			await minSyncPipeline?.settle();
+			firstBuild?.end();
 			this.refreshState = {
 				...this.refreshState,
 				inFlight: false,
@@ -4744,12 +4749,17 @@ export class AutoRAGAgent {
 		return { excluded };
 	}
 
+	/**
+	 * `session` marks this as one sync of a refresh that builds the index from nothing, which queries may read beside; only the
+	 * refresh passes it.
+	 */
 	async syncMinSync(
 		force = false,
 		signal?: AbortSignal,
 		onProgress?: (progress: MinSyncSyncProgress) => void,
+		session?: FirstBuildSession,
 	): Promise<MinSyncSyncResult> {
-		const result = await this.minSyncMethod.sync(force, signal, onProgress);
+		const result = await this.minSyncMethod.sync(force, signal, onProgress, session);
 		this.refreshState = { ...this.refreshState, minsync: result };
 		return result;
 	}
