@@ -44,6 +44,39 @@ function bump(counts: Map<string, number>, workspacePath: string, by: 1 | -1): v
 	else counts.set(workspacePath, next);
 }
 
+/** Syncs in flight that belong to a first-build session (counted when registered, so one that has not started yet counts too). */
+const workspaceSessionSyncs = new Map<string, number>();
+
+/**
+ * One refresh that builds a workspace's index from nothing. Only the syncs that carry it (`runWorkspaceSync`'s `session` option)
+ * count as the refresh's own: each runs with the embedder that wrote the earlier ones, over rows it wrote itself, so a query may read
+ * beside every one of them and not only the first. A sync from anywhere else (a second instance, a forced or embedder-switching
+ * refresh) carries no session and keeps the refusal, whatever else is running.
+ */
+export interface FirstBuildSession {
+	readonly workspacePath: string;
+	isOpen(): boolean;
+	/** Call when the refresh is over; calling it again does nothing. */
+	end(): void;
+}
+
+/**
+ * Open a session when `workspacePath` holds nothing a refresh could be resuming: no `cursor.json`, and none of what an interrupted
+ * first sync leaves behind. `undefined` when the workspace already holds an index (or an interrupted build left rows), which a query is
+ * never allowed to read while it is being rewritten.
+ */
+export function beginFirstBuild(workspacePath: string): FirstBuildSession | undefined {
+	if (!startsAsCleanFirstSync(workspacePath)) return undefined;
+	let open = true;
+	return {
+		workspacePath,
+		isOpen: () => open,
+		end: () => {
+			open = false;
+		},
+	};
+}
+
 /**
  * Whether a sync that is about to start is the first one of an index that was never built: no `cursor.json`, and none of what an
  * earlier first sync leaves behind (`txn.json`, and the journal `progress.jsonl`, which MinSync creates right after the
@@ -62,7 +95,9 @@ function startsAsCleanFirstSync(workspacePath: string): boolean {
  */
 function firstSyncIsReadable(workspacePath: string): boolean {
 	const state = join(workspacePath, ".minsync");
-	return !existsSync(join(state, "cursor.json")) && existsSync(join(state, "txn.json"));
+	// A later sync of a first-build session answers from the cursor the earlier one wrote.
+	if (existsSync(join(state, "cursor.json"))) return (workspaceSessionSyncs.get(workspacePath) ?? 0) > 0;
+	return existsSync(join(state, "txn.json"));
 }
 
 function refusal(workspacePath: string): Error {
@@ -74,25 +109,36 @@ function refusal(workspacePath: string): Error {
  * before this returns, so a query issued right after the call already sees the sync. It starts only once the queries
  * that ran beside an earlier first sync are done, so it never rewrites the index or the config under one.
  */
-export function runWorkspaceSync<T>(workspacePath: string, run: () => Promise<T>): Promise<T> {
+export function runWorkspaceSync<T>(
+	workspacePath: string,
+	run: () => Promise<T>,
+	options: { readonly session?: FirstBuildSession } = {},
+): Promise<T> {
+	const owned =
+		options.session !== undefined && options.session.workspacePath === workspacePath && options.session.isOpen();
 	bump(workspaceSyncInFlight, workspacePath, 1);
+	if (owned) bump(workspaceSessionSyncs, workspacePath, 1);
 	return withWorkspaceLock(workspacePath, async () => {
 		await (workspaceQueryTails.get(workspacePath) ?? Promise.resolve());
-		// Decided when this sync really starts, after the ones queued ahead of it have finished.
-		const clean = startsAsCleanFirstSync(workspacePath);
+		// Decided when this sync really starts, after the ones queued ahead of it have finished. A session's sync is counted already.
+		const clean = !owned && startsAsCleanFirstSync(workspacePath);
 		if (clean) bump(workspaceFirstSyncInFlight, workspacePath, 1);
 		try {
 			return await run();
 		} finally {
 			if (clean) bump(workspaceFirstSyncInFlight, workspacePath, -1);
 		}
-	}).finally(() => bump(workspaceSyncInFlight, workspacePath, -1));
+	}).finally(() => {
+		bump(workspaceSyncInFlight, workspacePath, -1);
+		if (owned) bump(workspaceSessionSyncs, workspacePath, -1);
+	});
 }
 
-/** Whether every sync in flight for `workspacePath` is a clean first sync, whose committed batches a query may read. */
+/** Whether every sync in flight for `workspacePath` is a clean first sync or one of a first-build session, whose committed batches a query may read. */
 function onlyCleanFirstSyncsInFlight(workspacePath: string): boolean {
 	const all = workspaceSyncInFlight.get(workspacePath) ?? 0;
-	return all > 0 && all === (workspaceFirstSyncInFlight.get(workspacePath) ?? 0);
+	const own = (workspaceFirstSyncInFlight.get(workspacePath) ?? 0) + (workspaceSessionSyncs.get(workspacePath) ?? 0);
+	return all > 0 && all === own;
 }
 
 export interface WorkspaceQueryOptions {

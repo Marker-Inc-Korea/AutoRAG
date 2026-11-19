@@ -66,13 +66,17 @@ function writeBatchedMinSync(
 	binaryPath: string,
 	logPath: string,
 	counterPath: string,
-	options: { readonly failAtSync?: number; readonly holdFirstSyncPath?: string } = {},
+	options: {
+		readonly failAtSync?: number;
+		readonly holdFirstSyncPath?: string;
+		readonly holdSecondSyncPath?: string;
+	} = {},
 ): void {
-	const { failAtSync = 0, holdFirstSyncPath = "" } = options;
+	const { failAtSync = 0, holdFirstSyncPath = "", holdSecondSyncPath = "" } = options;
 	writeFileSync(
 		binaryPath,
 		`#!/usr/bin/env node
-import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 
@@ -111,12 +115,15 @@ if (args[0] === "stage") {
   writeFileSync(${JSON.stringify(counterPath)}, String(run));
   const staged = walk(join(process.cwd(), "files"), "");
   appendFileSync(${JSON.stringify(logPath)}, JSON.stringify({ run, staged }) + "\\n");
-  if (run === 1 && ${JSON.stringify(holdFirstSyncPath)}) {
+  // Like MinSync: a transaction is open while a sync runs, and the cursor appears when it ends.
+  mkdirSync(dirname(cursor), { recursive: true });
+  writeFileSync(join(dirname(cursor), "txn.json"), JSON.stringify({ source_id: "files", status: "started" }));
+  const holdPath = run === 1 ? ${JSON.stringify(holdFirstSyncPath)} : run === 2 ? ${JSON.stringify(holdSecondSyncPath)} : "";
+  if (holdPath) {
     // Another process releases this sync, so the wait is on a file the test writes, not on a timer.
-    const hold = ${JSON.stringify(holdFirstSyncPath)};
     const deadline = Date.now() + 20000;
-    while (!existsSync(hold) && Date.now() < deadline) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25);
-    writeFileSync(hold + ".result", existsSync(hold) ? "released" : "timeout");
+    while (!existsSync(holdPath) && Date.now() < deadline) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25);
+    writeFileSync(holdPath + ".result", existsSync(holdPath) ? "released" : "timeout");
   }
   if (${failAtSync} > 0 && run === ${failAtSync}) {
     console.error("synthetic batch failure");
@@ -124,6 +131,7 @@ if (args[0] === "stage") {
   }
   mkdirSync(dirname(cursor), { recursive: true });
   writeFileSync(cursor, JSON.stringify({ ready: true }));
+  rmSync(join(dirname(cursor), "txn.json"), { force: true });
   console.log(JSON.stringify({ files_processed: staged.length }));
 } else if (args[0] === "query") {
   const hits = walk(join(process.cwd(), "files"), "").map((path) => ({
@@ -443,6 +451,37 @@ describe("batched refresh", () => {
 		expect(queryHits(binary, workspacePath)).toBe(total);
 		const results = await method.retrieve("content", { topK: 5 });
 		expect(results.length).toBeGreaterThan(0);
+	});
+
+	it("answers a query while the refresh's second sync runs, and refuses it again once the refresh is over", async () => {
+		const total = DEFAULT_MIRROR_BATCH_SIZE + 5;
+		writeSources(total);
+		const binary = join(root, "batched-minsync.mjs");
+		const logPath = join(root, "minsync.log");
+		const counterPath = join(root, "minsync.counter");
+		const holdOne = join(root, "hold-one");
+		const holdTwo = join(root, "hold-two");
+		writeBatchedMinSync(binary, logPath, counterPath, { holdFirstSyncPath: holdOne, holdSecondSyncPath: holdTwo });
+		const workspacePath = join(root, ".autorag", "minsync");
+		const method = new MinSyncVectorMethod({ root, binaryPath: binary, workspacePath, autoInstall: false });
+		const agent = makeAgent({ binary, workspacePath });
+
+		const refresh = agent.refresh(true, { methods: ["minsync"], onProgress: releaseWhenParsingEnds(holdOne, total) });
+		// The refresh's second sync starts on an index whose cursor the first one wrote, and waits for this test to release it.
+		await vi.waitFor(() => expect(syncRuns(logPath)).toHaveLength(2), { timeout: 20_000 });
+		expect(existsSync(join(workspacePath, ".minsync", "cursor.json"))).toBe(true);
+		const during = await method.retrieve("content", { topK: 5 });
+		expect(during.length).toBeGreaterThan(0);
+		writeFileSync(holdTwo, "");
+		await refresh;
+
+		// Over: a later sync of the built index is refused again, as it always was.
+		writeFileSync(join(docs, "late.txt"), "late content\n");
+		rmSync(holdTwo, { force: true });
+		const later = agent.syncMinSync(false);
+		await expect(method.retrieve("content", { topK: 5 })).rejects.toThrow("another sync is in progress");
+		writeFileSync(holdTwo, "");
+		await later;
 	});
 
 	it("continues past a failing MinSync sync and a later sync recovers its files", async () => {

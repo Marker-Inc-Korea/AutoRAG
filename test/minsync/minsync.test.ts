@@ -1392,6 +1392,56 @@ process.exit(2);
 		expect(fake.overlap()).toBe(1);
 	});
 
+	it("searches beside every sync of a refresh that builds the index from nothing, not only the first", async () => {
+		writeFirstSyncFake({ syncMs: 600 });
+		const method = new MinSyncVectorMethod({ binaryPath: minsyncBinary, root, workspacePath: minsyncWorkspace });
+		const session = method.beginFirstBuild();
+		expect(session).toBeDefined();
+		await method.sync(false, undefined, undefined, session);
+		// The second sync of the same refresh starts on an index whose cursor the first one wrote.
+		rmSync(join(root, "sync-started"), { force: true });
+		const second = method.sync(false, undefined, undefined, session);
+		await untilSyncProcessStarted();
+		expect(existsSync(join(minsyncWorkspace, ".minsync", "cursor.json"))).toBe(true);
+		await expect(method.retrieve("renewal cancellation", { topK: 1 })).resolves.toEqual([]);
+		await second;
+		session?.end();
+	});
+
+	it("refuses a query beside a sync from another caller while a first build is running", async () => {
+		writeFirstSyncFake({ syncMs: 600 });
+		const method = new MinSyncVectorMethod({ binaryPath: minsyncBinary, root, workspacePath: minsyncWorkspace });
+		const session = method.beginFirstBuild();
+		await method.sync(false, undefined, undefined, session);
+		// A second instance on the same workspace, with no session: it may rebuild the index (a forced sync, another embedder).
+		const other = new MinSyncVectorMethod({ binaryPath: minsyncBinary, root, workspacePath: minsyncWorkspace });
+		rmSync(join(root, "sync-started"), { force: true });
+		const foreign = other.sync(true);
+		await untilSyncProcessStarted();
+		await expect(method.retrieve("renewal cancellation", { topK: 1 })).rejects.toThrow("another sync is in progress");
+		await foreign;
+		session?.end();
+	});
+
+	it("refuses the same query once the first build is over", async () => {
+		writeFirstSyncFake({ syncMs: 400 });
+		const method = new MinSyncVectorMethod({ binaryPath: minsyncBinary, root, workspacePath: minsyncWorkspace });
+		const session = method.beginFirstBuild();
+		await method.sync(false, undefined, undefined, session);
+		session?.end();
+		// A sync that still carries the ended session is no longer one of the refresh's own.
+		const later = method.sync(false, undefined, undefined, session);
+		await expect(method.retrieve("renewal cancellation", { topK: 1 })).rejects.toThrow("another sync is in progress");
+		await later;
+	});
+
+	it("opens no first-build session on an index that already exists", async () => {
+		mkdirSync(join(minsyncWorkspace, ".minsync"), { recursive: true });
+		writeFileSync(join(minsyncWorkspace, ".minsync", "cursor.json"), JSON.stringify({ ready: true }));
+		const method = new MinSyncVectorMethod({ binaryPath: minsyncBinary, root, workspacePath: minsyncWorkspace });
+		expect(method.beginFirstBuild()).toBeUndefined();
+	});
+
 	it("refuses a queued query when a normal sync took over before its turn came", async () => {
 		const fake = writeFirstSyncFake({ syncMs: 250, queryMs: 700 });
 		const method = new MinSyncVectorMethod({ binaryPath: minsyncBinary, root, workspacePath: minsyncWorkspace });
