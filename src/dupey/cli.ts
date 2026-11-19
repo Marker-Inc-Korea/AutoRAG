@@ -152,6 +152,9 @@ const CONTAINS_MIN_JACCARD = 0.4;
 
 export type DupeyRelation = "exact" | "near" | "contains" | "different";
 
+/** `dupey scan --image-threshold`'s default: perceptual similarity (`1 - hamming / 128`) that joins two images. */
+const IMAGE_NEAR_SIMILARITY = 0.9;
+
 export type DupeyCompareResult =
 	| {
 			readonly relation: DupeyRelation;
@@ -160,7 +163,19 @@ export type DupeyCompareResult =
 			readonly containmentAInB?: number;
 			readonly containmentBInA?: number;
 	  }
-	/** dupey cannot extract text from one of the files (for example HTML or an image), so no family can form. */
+	/**
+	 * Two images (dupey 0.3.0+): pixel equality plus a 128-bit perceptual hash. `hamming` is absent when either
+	 * picture has no detail to hash (a flat colour), in which case only pixel-identical copies match.
+	 */
+	| {
+			readonly relation: DupeyRelation;
+			readonly similarity: number;
+			readonly hamming?: number;
+	  }
+	/**
+	 * dupey cannot compare the pair: it cannot extract text from one of the files (for example HTML), or one is an
+	 * image and the other a document. No family can form either way.
+	 */
 	| { readonly relation: "unsupported" };
 
 /**
@@ -177,7 +192,11 @@ export async function compareWithDupey(
 	try {
 		stdout = await runDupey(["compare", resolve(a), resolve(b)], options);
 	} catch (error) {
-		if (error instanceof DupeyCliError && error.message.includes("unsupported format")) {
+		if (
+			error instanceof DupeyCliError &&
+			(error.message.includes("unsupported format") ||
+				error.message.includes("cannot compare an image with a document"))
+		) {
 			return { relation: "unsupported" };
 		}
 		throw error;
@@ -186,6 +205,15 @@ export async function compareWithDupey(
 	for (const line of stdout.split(/\r?\n/)) {
 		const tab = line.indexOf("\t");
 		if (tab > 0) fields.set(line.slice(0, tab), line.slice(tab + 1).trim());
+	}
+	// Two images print `similarity`/`hamming` instead of the text scores.
+	const similarity = parseScore(fields.get("similarity"));
+	if (similarity !== undefined && !fields.has("near_score")) {
+		const hamming = parseScore(fields.get("hamming"));
+		let imageRelation: DupeyRelation = "different";
+		if (fields.get("exact_equal") === "true") imageRelation = "exact";
+		else if (similarity >= IMAGE_NEAR_SIMILARITY) imageRelation = "near";
+		return { relation: imageRelation, similarity, ...(hamming !== undefined ? { hamming } : {}) };
 	}
 	const nearScore = parseScore(fields.get("near_score"));
 	const jaccard = parseScore(fields.get("jaccard"));
@@ -230,8 +258,10 @@ function spawnDupey(executable: string, args: readonly string[], options: DupeyC
 			cwd: options.cwd,
 			stdio: ["ignore", "pipe", "pipe"],
 		});
-		let stdout = "";
-		let stderr = "";
+		// Collected as bytes and decoded once: a pipe delivers arbitrary chunks, and decoding each on its own turns a
+		// multi-byte character cut by a chunk boundary (every Korean path) into U+FFFD.
+		const stdoutChunks: Buffer[] = [];
+		const stderrChunks: Buffer[] = [];
 		let settled = false;
 		const timeout = setTimeout(() => {
 			child.kill("SIGTERM");
@@ -240,8 +270,8 @@ function spawnDupey(executable: string, args: readonly string[], options: DupeyC
 				reject(new DupeyCliError("dupey timed out."));
 			}
 		}, options.timeoutMs ?? 120_000);
-		child.stdout.on("data", (chunk: Buffer) => (stdout += chunk.toString()));
-		child.stderr.on("data", (chunk: Buffer) => (stderr += chunk.toString()));
+		child.stdout.on("data", (chunk: Buffer) => stdoutChunks.push(chunk));
+		child.stderr.on("data", (chunk: Buffer) => stderrChunks.push(chunk));
 		child.once("error", (error) => {
 			clearTimeout(timeout);
 			if (!settled) {
@@ -253,6 +283,8 @@ function spawnDupey(executable: string, args: readonly string[], options: DupeyC
 			clearTimeout(timeout);
 			if (settled) return;
 			settled = true;
+			const stdout = Buffer.concat(stdoutChunks).toString("utf8");
+			const stderr = Buffer.concat(stderrChunks).toString("utf8");
 			if (code !== 0) {
 				reject(
 					new DupeyCliError(

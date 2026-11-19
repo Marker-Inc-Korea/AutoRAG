@@ -22,7 +22,10 @@ export interface CloudFingerprint {
 
 /**
  * AutoRAG-owned store of cloud fingerprints, keyed by absolute source path. Not part of the MinSync stage schema.
- * Version 2 holds hashes from dupey 0.2.0 or later (the floor AutoRAG enforces); version 1 was written by 0.1.2.
+ * Version 2 holds hashes from dupey 0.2.0 or later; version 1 was written by 0.1.2. AutoRAG now requires 0.3.1, which
+ * hashes a text file with a UTF-8 byte-order mark by its text where 0.2.x hashed the mark too. A stored 0.2.x hash for
+ * such a file therefore matches no copy, which only means it is not excluded as a duplicate (both copies stay indexed);
+ * it can never join two different documents, so the store version is left as it is.
  */
 export interface CloudFingerprintStore {
 	readonly version: 2;

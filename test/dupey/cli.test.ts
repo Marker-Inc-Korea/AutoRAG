@@ -1,4 +1,4 @@
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -59,23 +59,87 @@ describe.skipIf(process.platform === "win32")("dupey version floor", () => {
 		return { executable, log };
 	}
 
-	it("refuses a dupey older than 0.2.0 without running the scan", async () => {
+	it("refuses a dupey older than 0.3.1 without running the scan", async () => {
 		const { executable, log } = fakeDupey("0.1.2");
 
 		const scan = scanWithDupey(tmpdir(), { executable });
 
 		await expect(scan).rejects.toBeInstanceOf(DupeyCliError);
-		await expect(scan).rejects.toThrow(/dupey 0\.1\.2 .* older than the 0\.2\.0/);
+		await expect(scan).rejects.toThrow(/dupey 0\.1\.2 .* older than the 0\.3\.1/);
 		expect(readFileSync(log, "utf8")).toBe("");
 	});
 
-	it("runs a dupey at the floor", async () => {
-		const { executable, log } = fakeDupey("0.2.0");
+	it.each(["0.2.0", "0.3.0"])(
+		"refuses dupey %s: it drops unreadable folders from a scan and hashes UTF-16 or BOM text differently",
+		async (version) => {
+			const { executable, log } = fakeDupey(version);
+
+			await expect(scanWithDupey(tmpdir(), { executable })).rejects.toThrow(
+				new RegExp(`dupey ${version.replaceAll(".", "\\.")} .* older than the 0\\.3\\.1`),
+			);
+			expect(readFileSync(log, "utf8")).toBe("");
+		},
+	);
+
+	it("runs a dupey at the floor, and newer ones", async () => {
+		const { executable, log } = fakeDupey("0.3.1");
 
 		await scanWithDupey(tmpdir(), { executable });
 		await scanWithDupey(tmpdir(), { executable });
 
 		expect(readFileSync(log, "utf8")).toBe("scan\nscan\n");
+	});
+});
+
+describe.skipIf(process.platform === "win32")("dupey process output", () => {
+	const dirs: string[] = [];
+	afterEach(() => {
+		for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+	});
+
+	/** A fake `dupey` that writes `body` to stdout in `chunkBytes`-sized writes, flushed one at a time. */
+	function chunkedDupey(body: string, chunkBytes: number): string {
+		const dir = mkdtempSync(join(tmpdir(), "dupey-chunks-"));
+		dirs.push(dir);
+		const bodyFile = join(dir, "body.json");
+		writeFileSync(bodyFile, body);
+		const executable = join(dir, "dupey");
+		writeFileSync(
+			executable,
+			`#!/usr/bin/env node
+if (process.argv[2] === "--version") { console.log("dupey 0.3.1"); process.exit(0); }
+const fs = require("node:fs");
+const bytes = fs.readFileSync(${JSON.stringify(bodyFile)});
+let offset = 0;
+const writeNext = () => {
+  if (offset >= bytes.length) return;
+  const end = Math.min(offset + ${chunkBytes}, bytes.length);
+  const more = process.stdout.write(bytes.subarray(offset, end));
+  offset = end;
+  if (more) setImmediate(writeNext); else process.stdout.once("drain", writeNext);
+};
+writeNext();
+`,
+		);
+		chmodSync(executable, 0o755);
+		return executable;
+	}
+
+	it("keeps multi-byte characters intact when they straddle a pipe chunk boundary", async () => {
+		// Every path is Korean (3 bytes per syllable) and the stream is cut into 7-byte writes, so almost every
+		// chunk boundary lands inside a character. Decoding each chunk on its own turns those into U+FFFD.
+		const paths = Array.from({ length: 40 }, (_, index) => `/문서/한국어 파일 이름 ${index}.txt`);
+		const body = JSON.stringify({
+			dir: "/문서",
+			files: paths.map((path) => ({ path, content_hash: "h" })),
+			families: [],
+			errors: [],
+		});
+		const executable = chunkedDupey(body, 7);
+
+		const scan = await scanWithDupey("/문서", { executable });
+
+		expect(scan.files.map((file) => file.path)).toEqual(paths);
 	});
 });
 
