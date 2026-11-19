@@ -59,7 +59,7 @@
     "@earendil-works/pi-agent-core": "^1.4.0",
     "@earendil-works/pi-ai": "^1.4.0",
     "@earendil-works/pi-coding-agent": "1.4.0",
-    "@earendil-works/pi-tui": "1.4.0",
+    "@earendil-works/pi-tui": "1.5.2",
     "@llblab/pi-telegram": "0.58.3",
     "@modelcontextprotocol/server": "^2.4.0",
     "@parcel/watcher": "2.6.0",
