@@ -104,7 +104,7 @@ async function runDarwin(dirs: readonly string[]): Promise<void> {
 			}
 			// Settle the placeholder the way a cloud file that has synced already is settled: the first hydrate of a
 			// file written on this Mac rounds its mtime to the cloud's precision (measured ~100 ns), after which it is
-			// stable. Without this, the next refresh re-downloads the file once (see docs/minsync-setup.md).
+			// stable. Without this, the next refresh re-downloads the file once (see docs/indexing/embedding-backends.md).
 			for (const file of files) readFileSync(file, "utf8");
 			for (const file of files) await releaseWhenUploaded(probe, file);
 			const dataless = await probe.datalessAmong(files);

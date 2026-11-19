@@ -55,16 +55,19 @@ export class WombatMethod implements RetrievalMethod {
 	async retrieve(query: string, options: RetrievalOptions): Promise<RetrievalResult[]> {
 		if (!query.trim()) return [];
 		const topK = options.topK ?? 20;
-		// An agent allow-list is applied after the CLI answers, so over-fetch to keep topK results after it.
+		const agents = this.effectiveAgents(options.filters?.agents);
+		// The filter and the connector's list leave no agent in common: nothing to search, and nothing past the operator's list.
+		if (agents !== undefined && agents.length === 0) return [];
 		const result = await this.client.search(this.mode, query, {
-			topK: this.agents === undefined ? topK : topK * 4,
+			topK,
+			...(agents === undefined ? {} : { agents }),
 			signal: options.signal,
 		});
 		// A wombat failure reaches the caller verbatim: the pipeline reports this datasource as unsearched.
 		if (!result.ok) throw datasourceCliError("wombat", `search --mode ${this.mode}`, result);
 		return result.hits
 			.filter((hit) => {
-				if (this.agents !== undefined && !this.agents.includes(hit.agent)) return false;
+				if (agents !== undefined && !agents.includes(hit.agent)) return false;
 				return matchesDatasourceScope(datasourceSourcePath("wombat", this.instanceId, hit.chunkId), options.scope);
 			})
 			.map((hit) => ({
@@ -92,6 +95,15 @@ export class WombatMethod implements RetrievalMethod {
 				},
 			}))
 			.slice(0, topK);
+	}
+
+	/**
+	 * The agents this search covers: the per-search choice, narrowed to the connector's own list. A choice only narrows,
+	 * so an agent outside the list is dropped rather than searched. Undefined: every agent.
+	 */
+	private effectiveAgents(chosen: readonly string[] | undefined): readonly string[] | undefined {
+		if (chosen === undefined || chosen.length === 0) return this.agents;
+		return this.agents === undefined ? chosen : chosen.filter((agent) => this.agents?.includes(agent) === true);
 	}
 }
 

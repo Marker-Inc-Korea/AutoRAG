@@ -42,4 +42,4 @@ googleanalytics_id = "G-T8ZKQM6RT9"
 
 html_theme = "furo"
 html_static_path = ["_static"]
-html_baseurl = "https://marker-inc-korea.github.io/AutoRAG/"
+html_baseurl = "https://autorag-docs.nomadamas.org/legacy/"

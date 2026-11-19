@@ -162,3 +162,12 @@ describe("buildSystemPrompt single-agent contract", () => {
 		expect(text).not.toContain("- **manage_automations**: caller-provided tool");
 	});
 });
+
+describe("revise_answer in the system prompt", () => {
+	it("lists the tool with what it is for, only when the session has it, and not as a caller tool", () => {
+		const prompt = buildSystemPrompt({ toolNames: ["bash", "revise_answer"], modelId: "test-model" });
+		expect(prompt).toMatch(/\*\*revise_answer\*\*: correct/);
+		expect(prompt).not.toContain("**revise_answer**: caller-provided tool");
+		expect(buildSystemPrompt({ toolNames: ["bash"], modelId: "test-model" })).not.toContain("revise_answer");
+	});
+});

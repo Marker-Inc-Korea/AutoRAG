@@ -12,7 +12,7 @@ instructions.
 - **You bring the server.** AutoRAG runs on your computer, so its address is yours alone and cannot be written into a
   shared package. Start it with `autorag-mcp --http`, or switch on **Cloud agents** in the Dazzi app, then add that
   address in your agent's connector or plugin screen. Steps for each agent are in
-  [`docs/remote-agents.md`](../../docs/remote-agents.md); copy-paste prompts for Muse and Grok Bot are in
+  [`docs/agents/remote-agents.md`](../../docs/agents/remote-agents.md); copy-paste prompts for Muse and Grok Bot are in
   [`connect/`](connect).
 - **Read-only by default.** The server offers search and evidence tools (`autorag.search`, `autorag.search.files`,
   `autorag.datasources.list`, `autorag.evidence` and a few more). It does not offer re-indexing, saving reports or file

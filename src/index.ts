@@ -16,6 +16,8 @@ export {
 	DECISION_MODEL_UNAVAILABLE_CODE,
 	type DecisionModelFailureReason,
 	DecisionModelUnavailableError,
+	type Revision,
+	type RevisionOp,
 	reportSchema,
 	type SearchDocumentDiagnostic,
 	type SearchDocumentDiagnosticCode,

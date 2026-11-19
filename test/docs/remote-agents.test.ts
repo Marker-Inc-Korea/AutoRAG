@@ -3,9 +3,9 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { registeredMcpToolNames } from "../helpers/mcp-tool-names.ts";
 
-const DOC = readFileSync(new URL("../../docs/remote-agents.md", import.meta.url), "utf8");
+const DOC = readFileSync(new URL("../../docs/agents/remote-agents.md", import.meta.url), "utf8");
 
-describe("docs/remote-agents.md matches the server", () => {
+describe("docs/agents/remote-agents.md matches the server", () => {
 	it("names only tools the server really registers", async () => {
 		const registered = await registeredMcpToolNames({ readOnly: false });
 		const mentioned = [...new Set(DOC.match(/\bautorag\.[a-z]+(?:\.[a-z]+)?\b/g) ?? [])].filter(
@@ -36,7 +36,7 @@ describe("docs/remote-agents.md matches the server", () => {
 	});
 });
 
-describe("docs/remote-agents.md for Dazzi app users", () => {
+describe("docs/agents/remote-agents.md for Dazzi app users", () => {
 	const section = (heading: string): string => {
 		const start = DOC.indexOf(`## ${heading}`);
 		if (start < 0) return "";
