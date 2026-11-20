@@ -18,18 +18,21 @@ function diagnosticProjection(d: {
 	readonly severity: string;
 	readonly message: string;
 	readonly source?: string;
+	readonly reason?: string;
 }): {
 	code: string;
 	severity: string;
 	message: string;
 	source?: string;
+	reason?: string;
 } {
-	const out: { code: string; severity: string; message: string; source?: string } = {
+	const out: { code: string; severity: string; message: string; source?: string; reason?: string } = {
 		code: d.code,
 		severity: d.severity,
 		message: d.message,
 	};
 	if (d.source !== undefined) out.source = d.source;
+	if (d.reason !== undefined) out.reason = d.reason;
 	return out;
 }
 
@@ -134,10 +137,10 @@ function renderRefreshHuman(result: AutoRAGRefreshResult, debug: boolean): strin
 		if (result.fsearch.message !== undefined) parts.push(`message=${result.fsearch.message}`);
 		lines.push(`  fsearch: ${parts.join(" ")}`);
 	}
-	if ((debug || !ok) && result.diagnostics && result.diagnostics.length > 0) {
-		for (const d of result.diagnostics) {
-			lines.push(`  diagnostic: [${d.severity}] ${d.code}: ${d.message}`);
-		}
+	const visibleDiagnostics =
+		debug || !ok ? (result.diagnostics ?? []) : (result.diagnostics ?? []).filter((d) => d.severity !== "info");
+	for (const d of visibleDiagnostics) {
+		lines.push(`  diagnostic: [${d.severity}] ${d.code}: ${d.message}`);
 	}
 	return lines.join("\n");
 }

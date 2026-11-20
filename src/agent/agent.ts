@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { existsSync, watch as fsWatch, mkdirSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, watch as fsWatch, mkdirSync, realpathSync, statSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { Agent, AgentEvent, AgentMessage, AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import type { Api, ImageContent, Model, TextContent } from "@earendil-works/pi-ai";
@@ -45,6 +45,7 @@ import {
 	defaultCloudProbe,
 } from "../filesystem/cloud-placeholder.ts";
 import { isGlobExclusion } from "../filesystem/path-exclusions.ts";
+import { planSourceRoots } from "../filesystem/source-paths.ts";
 import {
 	FSearchClient,
 	type FSearchClientOptions,
@@ -104,7 +105,13 @@ import {
 import { MinSyncStageError } from "../minsync/stage.ts";
 import type { FirstBuildSession } from "../minsync/workspace-lock.ts";
 import { cloudFingerprintExclusions, loadCloudFingerprints } from "../mirror/cloud-fingerprints.ts";
-import { PARSED_MIRROR_SUBDIR, refreshReadinessPath } from "../mirror/paths.ts";
+import {
+	PARSED_MIRROR_SUBDIR,
+	type PersistedDuplicateScanWarning,
+	readPersistedDuplicateScanWarnings,
+	refreshReadinessPath,
+	writeParsedRefreshReadiness,
+} from "../mirror/paths.ts";
 import {
 	detectMirrorStaleness,
 	isPathExcluded,
@@ -4512,11 +4519,19 @@ export class AutoRAGAgent {
 				lastError: undefined,
 			};
 			if (needsParsed) {
-				mkdirSync(dirname(refreshReadinessPath(this.workspaceProjectRoot)), { recursive: true });
-				writeFileSync(
-					refreshReadinessPath(this.workspaceProjectRoot),
-					'{"version":1,"completed":true,"parsed":true}\n',
-				);
+				const duplicateScanWarnings: PersistedDuplicateScanWarning[] = summary.diagnostics
+					.filter(
+						(d): d is ParsedMirrorDiagnostic & { readonly reason: "timeout" | "scan-failed" } =>
+							d.code === "duplicate-scan-failed" && (d.reason === "timeout" || d.reason === "scan-failed"),
+					)
+					.map((d) => ({
+						code: "duplicate-scan-failed",
+						severity: "warning",
+						source: d.source,
+						reason: d.reason,
+						message: d.message,
+					}));
+				writeParsedRefreshReadiness(this.workspaceProjectRoot, duplicateScanWarnings);
 			}
 			progress = updateRefreshProgress(progress, {
 				state: "success",
@@ -4676,6 +4691,11 @@ export class AutoRAGAgent {
 				source: d.source,
 			})),
 		];
+		for (const warning of readPersistedDuplicateScanWarnings(this.workspaceProjectRoot)) {
+			if (!diagnostics.some((d) => d.code === warning.code && d.source === warning.source)) {
+				diagnostics.push(warning);
+			}
+		}
 		for (const result of this.refreshState.datasources) {
 			diagnostics.push(...mapDatasourceDiagnostics(result.diagnostics));
 		}
@@ -4874,7 +4894,7 @@ export class AutoRAGAgent {
 		options: Pick<ParsedMirrorSyncOptions, "signal" | "onProgress" | "retrySkipped" | "onBatch" | "batchSize"> = {},
 	): Promise<ParsedMirrorSyncResult> {
 		const duplicateFilter = await this.exactDuplicateExclusions();
-		return syncParsedMirrors({
+		const synced = await syncParsedMirrors({
 			...options,
 			...this.refreshLimits,
 			root: this.workspaceProjectRoot,
@@ -4890,6 +4910,11 @@ export class AutoRAGAgent {
 				? { cloudFingerprints: { dupey: this.dupeyOptions } }
 				: {}),
 		});
+		if (duplicateFilter.diagnostics.length === 0) return synced;
+		return {
+			...synced,
+			diagnostics: [...duplicateFilter.diagnostics, ...synced.diagnostics],
+		};
 	}
 
 	/**
@@ -4931,16 +4956,21 @@ export class AutoRAGAgent {
 		return this.cloudRootsPromise;
 	}
 
-	private async exactDuplicateExclusions(): Promise<{ readonly excluded: ReadonlySet<string> }> {
-		if (!this.excludeExactDuplicates || this.dupeyOptions === false) return { excluded: new Set() };
+	private async exactDuplicateExclusions(): Promise<{
+		readonly excluded: ReadonlySet<string>;
+		readonly diagnostics: readonly ParsedMirrorDiagnostic[];
+	}> {
+		if (!this.excludeExactDuplicates || this.dupeyOptions === false) return { excluded: new Set(), diagnostics: [] };
 		const excluded = new Set<string>();
+		const diagnostics: ParsedMirrorDiagnostic[] = [];
 		const userExcluded = new Set(this.excludePaths);
 		const cloudRoots = await this.cloudRoots();
 		// Cloud and network files are never scanned (their placeholders must not be read, and a network file
 		// would be re-read over the wire), so their stored fingerprints from the refresh that read them join the
 		// same hash groups as the scanned, non-cloud copies.
 		const fingerprints = cloudFingerprintExclusions(loadCloudFingerprints(this.workspaceProjectRoot));
-		for (const searchPath of this.searchPaths) {
+		for (const sourceRoot of planSourceRoots(this.searchPaths)) {
+			const searchPath = sourceRoot.rootPath;
 			const scope = cloudScope(searchPath, cloudRoots);
 			let scan: DupeyScanResult;
 			if (scope.insideCloudRoot) {
@@ -4959,6 +4989,17 @@ export class AutoRAGAgent {
 					});
 				} catch (error) {
 					if (!(error instanceof DupeyCliError)) throw error;
+					const timedOut = error.timedOut || /\btimed out\b/i.test(error.message);
+					const cause = sanitizeDiagnosticMessage(error.message) || "unknown error";
+					diagnostics.push({
+						code: "duplicate-scan-failed",
+						severity: "warning",
+						source: sourceRoot.prefix,
+						reason: timedOut ? "timeout" : "scan-failed",
+						message: timedOut
+							? `Exact-duplicate scan timed out for ${sourceRoot.prefix}; duplicates under this root were indexed: ${cause}`
+							: `Exact-duplicate scan failed for ${sourceRoot.prefix}; duplicates under this root were indexed: ${cause}`,
+					});
 					// Optional optimizer: missing/broken dupey must not make the corpus unavailable.
 					continue;
 				}
@@ -4971,7 +5012,7 @@ export class AutoRAGAgent {
 			);
 			for (const path of selected.excluded) excluded.add(path);
 		}
-		return { excluded };
+		return { excluded, diagnostics };
 	}
 
 	/**

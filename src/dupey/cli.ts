@@ -57,9 +57,12 @@ export interface DupeyFingerprint {
 }
 
 export class DupeyCliError extends Error {
-	constructor(message: string) {
+	readonly timedOut: boolean;
+
+	constructor(message: string, options?: { readonly timedOut?: boolean }) {
 		super(message);
 		this.name = "DupeyCliError";
+		this.timedOut = options?.timedOut ?? false;
 	}
 }
 
@@ -267,7 +270,7 @@ function spawnDupey(executable: string, args: readonly string[], options: DupeyC
 			child.kill("SIGTERM");
 			if (!settled) {
 				settled = true;
-				reject(new DupeyCliError("dupey timed out."));
+				reject(new DupeyCliError("dupey timed out.", { timedOut: true }));
 			}
 		}, options.timeoutMs ?? 120_000);
 		child.stdout.on("data", (chunk: Buffer) => stdoutChunks.push(chunk));
