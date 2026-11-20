@@ -94,7 +94,7 @@ Input typed during a search behaves like Pi's own turns:
 ### Embedding controls
 
 The footer shows the embedding backend state and re-probes it periodically. `Ctrl+Shift+E` starts or
-stops the local `minsync serve` daemon, and `/embedding [on|off|toggle|status]` does the same
+stops the local `inl serve` daemon, and `/embedding [on|off|toggle|status]` does the same
 without a bound key. When `minSync.embedder` is a remote endpoint there is no local daemon to
 toggle. See [Running the embedding daemon](../indexing/embedding-backends.md#running-the-embedding-daemon)
 and [TUI footer and the /embedding command](../indexing/embedding-backends.md#tui-footer-and-the-embedding-command).

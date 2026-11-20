@@ -6,12 +6,13 @@ import { createManagedEmbedder } from "./managed.ts";
 import { resolveEmbeddingPrefixes } from "./prefixes.ts";
 import { remoteEmbedderFromMinSync } from "./settings.ts";
 
+export type { DaemonKind, DaemonLauncher, InlDaemon } from "./daemon.ts";
 export {
 	DEFAULT_DAEMON_MODEL,
-	ensureMinSyncDaemon,
-	MinSyncDaemonError,
-	probeMinSyncDaemon,
-	stopMinSyncDaemon,
+	ensureInlDaemon,
+	InlDaemonError,
+	probeInlDaemon,
+	stopInlDaemon,
 } from "./daemon.ts";
 export type {
 	Embedder,
@@ -33,7 +34,7 @@ export interface EmbedderFromConfigOptions {
 	/** The `minSync.embedder` block: it selects the embedding backend for MinSync and every other consumer. */
 	readonly embedder?: MinSyncEmbedderConfig;
 	readonly env?: NodeJS.ProcessEnv;
-	/** User home that holds MinSync's `minsync serve` state; defaults to the real home. */
+	/** User home that holds im-not-llm's `inl serve` state; defaults to the real home. */
 	readonly home?: string;
 }
 
@@ -45,7 +46,7 @@ function localModel(embedder: MinSyncEmbedderConfig | undefined): string {
 
 /**
  * The single embedder AutoRAG shares between its own semantic stores and the datasources: a configured
- * remote endpoint, else the `minsync serve` daemon the operator runs, else MinSync's in-process engine.
+ * remote endpoint, else the `inl serve` daemon the operator runs, else MinSync's in-process engine.
  * AutoRAG never starts the daemon for it. A sparse-only config (`minSync.embedder.id: "none"`) asked for no
  * dense model, so the embedder reports no backend and every embed fails with that reason: consumers keep their
  * lexical path and nothing loads Qwen3.
@@ -77,7 +78,7 @@ const created = new Set<ManagedEmbedder>();
 
 /**
  * Unload every in-process model this process loaded. A short-lived command calls this on the way out so the
- * addon's native threads cannot keep the process alive after its answer is written. A `minsync serve` daemon
+ * addon's native threads cannot keep the process alive after its answer is written. An `inl serve` daemon
  * is not touched: it belongs to the operator.
  */
 export async function releaseEmbedders(): Promise<void> {

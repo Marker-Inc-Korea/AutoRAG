@@ -141,7 +141,7 @@ variable names, never values.
   provisions local helpers: `minsync` (`cargo install` when Rust is present,
   otherwise a sha256-verified GitHub release asset from NomaDamas/MinSync),
   `jikji` (`cargo install`), and the local models into
-  `~/.cache/minsync/models` from Hugging Face: Qwen3-Embedding-0.6B (about
+  `~/.cache/im-not-llm/models` from Hugging Face: Qwen3-Embedding-0.6B (about
   1.2 GB) and KURE-Sparse-nano (about 290 MB). `dupey` is used when installed.
   Downloads happen during refresh, never during a search.
 - **Reads outside the plugin's own data.** It reads the folders in your AutoRAG

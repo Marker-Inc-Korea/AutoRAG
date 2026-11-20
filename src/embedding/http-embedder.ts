@@ -67,7 +67,7 @@ function parseVectors(options: HttpEmbedderOptions, json: unknown, expected: num
 }
 
 /**
- * Embedder over an HTTP endpoint: a `minsync serve` daemon (either route) or any remote OpenAI-compatible
+ * Embedder over an HTTP endpoint: an `inl serve` daemon (either route) or any remote OpenAI-compatible
  * or TEI server. It owns no model and starts nothing.
  */
 export function createHttpEmbedder(options: HttpEmbedderOptions): Embedder {

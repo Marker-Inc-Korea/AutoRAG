@@ -2,7 +2,7 @@
  * Live manual QA for the github-gist datasource (issue #1588): the real
  * GitHub REST API with the gh CLI's authenticated token, incremental
  * re-index, lexical search, and semantic search through MinSync's Qwen3
- * (a running `minsync serve` daemon, started here when none runs). The token
+ * (a running `inl serve` daemon, started here when none runs). The token
  * is never printed or persisted by this script; embeddings stay on the local
  * machine.
  *

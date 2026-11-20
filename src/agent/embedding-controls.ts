@@ -1,5 +1,5 @@
 import type { ExtensionAPI, ExtensionContext, ExtensionFactory } from "@earendil-works/pi-coding-agent";
-import { ensureMinSyncDaemon, probeMinSyncDaemon, stopMinSyncDaemon } from "../embedding/daemon.ts";
+import { ensureInlDaemon, probeInlDaemon, stopInlDaemon } from "../embedding/daemon.ts";
 import type { EmbedderHealth, ManagedEmbedder } from "../embedding/embedder.ts";
 
 /** The footer and notifications of one pi session; writes after that session is replaced are dropped. */
@@ -10,7 +10,7 @@ interface SessionFooter {
 
 /** Footer slot of the embedding indicator. */
 export const EMBEDDING_STATUS_KEY = "autorag-embedding";
-/** Toggles the local `minsync serve` daemon. Not bound by pi, pi-tui or AutoRAG's own interrupt/follow-up keys. */
+/** Toggles the local `inl serve` daemon. Not bound by pi, pi-tui or AutoRAG's own interrupt/follow-up keys. */
 export const EMBEDDING_TOGGLE_KEY = "ctrl+shift+e";
 const POLL_INTERVAL_MS = 15_000;
 
@@ -29,8 +29,11 @@ export interface EmbeddingControlsOptions {
 	readonly embedder: ManagedEmbedder;
 	/** True when `minSync.embedder` names a remote endpoint: the toggle then has nothing local to start or stop. */
 	readonly remote: boolean;
-	/** Locates the `minsync` executable the toggle starts the daemon with. */
-	readonly resolveBinary: () => Promise<string>;
+	/**
+	 * Resolves the `minsync` fallback launcher, used only when `inl` is not on PATH. Omit to look for `minsync`
+	 * on PATH only.
+	 */
+	readonly resolveMinSyncBinary?: () => Promise<string>;
 }
 
 /** The footer text for one probe result. Plain text: pi's footer owns colour. */
@@ -40,7 +43,7 @@ export function embeddingStatusText(health: EmbedderHealth, toggleKey: string = 
 	}
 	if (health.backend === "daemon") return "embedding: daemon ● up";
 	if (health.backend === "in-process") return "embedding: in-process ●";
-	return `embedding: off ○ (/embedding on, or ${toggleKey}, starts minsync serve)`;
+	return `embedding: off ○ (/embedding on, or ${toggleKey}, starts inl serve)`;
 }
 
 /**
@@ -118,20 +121,26 @@ export function createEmbeddingControls(options: EmbeddingControlsOptions): Exte
 			}
 			busy = true;
 			try {
-				const running = await probeMinSyncDaemon();
+				const running = await probeInlDaemon();
 				if (running !== undefined && action === "on") {
-					target.notify(`minsync serve is already running at ${running.baseUrl}.`, "info");
+					target.notify(`An embedding daemon is already running at ${running.baseUrl}.`, "info");
 				} else if (running === undefined && action === "off") {
-					target.notify("minsync serve is not running.", "info");
+					target.notify("No embedding daemon is running.", "info");
 				} else if (running !== undefined) {
-					const stopped = await stopMinSyncDaemon();
-					target.notify(`Stopped minsync serve (pid ${stopped?.pid ?? "?"}).`, "info");
+					const stopped = await stopInlDaemon();
+					target.notify(`Stopped the embedding daemon (pid ${stopped?.pid ?? "?"}).`, "info");
 				} else {
 					target.setStatus("embedding: starting… (first start may download the model)");
-					const binaryPath = await options.resolveBinary();
-					// idle-timeout 0: the user turned it on, so it stays on until they turn it off.
-					const started = await ensureMinSyncDaemon({ binaryPath, idleTimeoutSeconds: 0 });
-					target.notify(`Started minsync serve at ${started.baseUrl}.`, "info");
+					// idle-timeout 0: the user turned it on, so it stays on until they turn it off. `inl` is
+					// preferred when it is on PATH; the caller's resolver supplies the `minsync` fallback.
+					const started = await ensureInlDaemon({
+						idleTimeoutSeconds: 0,
+						...(options.resolveMinSyncBinary === undefined
+							? {}
+							: { resolveMinSyncBinary: options.resolveMinSyncBinary }),
+					});
+					const launcher = started.launcher === "minsync" ? "minsync serve" : "inl serve";
+					target.notify(`Started ${launcher} at ${started.baseUrl}.`, "info");
 				}
 			} catch (error) {
 				target.notify(error instanceof Error ? error.message : String(error), "error");
@@ -142,7 +151,7 @@ export function createEmbeddingControls(options: EmbeddingControlsOptions): Exte
 		};
 
 		pi.registerShortcut(EMBEDDING_TOGGLE_KEY, {
-			description: "Start or stop the local embedding daemon (minsync serve)",
+			description: "Start or stop the local embedding daemon (inl serve)",
 			handler: (ctx) => act("toggle", ctx),
 		});
 

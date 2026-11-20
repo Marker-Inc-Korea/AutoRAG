@@ -2,33 +2,39 @@ import { chmodSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 export interface FakeServeOptions {
+	/** Executable to write: `inl` (default) or `minsync`, so PATH preference can be exercised. */
+	readonly name?: string;
 	readonly model?: string;
+	/** Engine kind reported on `GET /health`. Defaults to `dense`. */
+	readonly kind?: string;
 	readonly dimension?: number;
 	/** Exit non-zero before serving, with this stderr text. */
 	readonly failWith?: string;
 }
 
 /**
- * A `minsync` stand-in that implements only `serve`: it listens on loopback, publishes the same
- * discovery files as the real server (`<HOME>/.cache/minsync/serve/<instance>/{host,port,pid}`),
+ * An `inl serve` / `minsync serve` stand-in that implements only `serve`: it listens on loopback, publishes
+ * the same discovery files as the real server (`<HOME>/.cache/im-not-llm/serve/<instance>/{host,port,pid}`),
  * answers `GET /health`, TEI `POST /embed` and OpenAI `POST /v1/embeddings`, and removes its files on SIGTERM.
- * Vectors are deterministic: component i of a text is `(text.length + i) / 100`.
+ * Vectors are deterministic: component i of a text is `(text.length + i) / 100`. The shebang is the running
+ * `node`, so a test can put only this directory on the child's PATH.
  */
-export function writeFakeMinSyncServe(directory: string, options: FakeServeOptions = {}): string {
-	const binaryPath = join(directory, "minsync");
-	const script = `#!/usr/bin/env node
+export function writeFakeInlServe(directory: string, options: FakeServeOptions = {}): string {
+	const binaryPath = join(directory, options.name ?? "inl");
+	const script = `#!${process.execPath}
 const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
 const model = ${JSON.stringify(options.model ?? "Qwen/Qwen3-Embedding-0.6B")};
+const kind = ${JSON.stringify(options.kind ?? "dense")};
 const dimension = ${options.dimension ?? 4};
 const failWith = ${JSON.stringify(options.failWith ?? "")};
 const args = process.argv.slice(2);
 if (args[0] !== "serve") { console.error("unexpected command: " + args.join(" ")); process.exit(2); }
 if (failWith) { console.error(failWith); process.exit(1); }
-const dir = path.join(process.env.HOME, ".cache", "minsync", "serve", "fake-instance");
+const dir = path.join(process.env.HOME, ".cache", "im-not-llm", "serve", "fake-instance");
 fs.mkdirSync(dir, { recursive: true });
-const health = () => ({ status: "ok", model_id: model, dimension, dtype: "f32", device: "cpu", attention: "eager", max_length: 2048, max_inputs: 512, instance: "fake-instance", pid: process.pid, host: "127.0.0.1", port: server.address().port, url: "http://127.0.0.1:" + server.address().port, version: "0.4.12" });
+const health = () => ({ status: "ok", kind, model_id: model, dimension, dtype: "f32", device: "cpu", attention: "eager", max_length: 2048, max_inputs: 512, instance: "fake-instance", pid: process.pid, host: "127.0.0.1", port: server.address().port, url: "http://127.0.0.1:" + server.address().port, version: "0.3.3", loaded: true });
 const vector = (text) => Array.from({ length: dimension }, (_, i) => (text.length + i) / 100);
 const server = http.createServer((req, res) => {
   if (req.method === "GET" && req.url === "/health") { res.setHeader("content-type", "application/json"); res.end(JSON.stringify(health())); return; }

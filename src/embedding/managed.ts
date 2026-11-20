@@ -1,10 +1,10 @@
-import { DEFAULT_DAEMON_MODEL, type MinSyncDaemon, probeMinSyncDaemon } from "./daemon.ts";
+import { DEFAULT_DAEMON_MODEL, type InlDaemon, probeInlDaemon } from "./daemon.ts";
 import type { Embedder, EmbedderHealth, EmbeddingIdentity, EmbedOptions, ManagedEmbedder } from "./embedder.ts";
 import { createHttpEmbedder, type EmbeddingProtocol } from "./http-embedder.ts";
 import { type InProcessEmbedder, loadNativeEmbedder } from "./in-process.ts";
 import type { EmbeddingPrefixes } from "./prefixes.ts";
 
-/** An operator-configured remote endpoint. When present, AutoRAG never looks for MinSync's daemon. */
+/** An operator-configured remote endpoint. When present, AutoRAG never looks for the local daemon. */
 export interface RemoteEmbedderSettings {
 	readonly baseUrl: string;
 	readonly model: string;
@@ -24,10 +24,10 @@ export interface ManagedEmbedderOptions {
 	 * client, for every backend, because neither the daemon nor a remote server is asked to prefix.
 	 */
 	readonly prefixes?: EmbeddingPrefixes;
-	/** User home that holds MinSync's server state. */
+	/** User home that holds im-not-llm's server state. */
 	readonly home?: string;
 	readonly env?: NodeJS.ProcessEnv;
-	/** Model of the daemon to use. Defaults to MinSync's default Qwen3 embedder. */
+	/** Model of the daemon to use. Defaults to im-not-llm's default Qwen3 embedder. */
 	readonly model?: string;
 	/** Loads MinSync's in-process engine; only called when no daemon answers. */
 	readonly inProcess?: () => Promise<InProcessEmbedder>;
@@ -42,7 +42,7 @@ function message(error: unknown): string {
 }
 
 /**
- * `GET /health` of a remote endpoint's server root. TEI and `minsync serve` answer it, and so do most
+ * `GET /health` of a remote endpoint's server root. TEI and `inl serve` answer it, and so do most
  * OpenAI-compatible servers (vLLM, llama.cpp); a hosted API that has no such route answers 404, which still
  * proves the host is reachable, so only a network failure or a 5xx counts as down.
  */
@@ -59,10 +59,10 @@ async function probeRemote(remote: RemoteEmbedderSettings, fetchImpl: typeof fet
 
 /**
  * The one embedder every AutoRAG consumer shares. AutoRAG owns no embedding model and never starts or stops
- * a process: the operator runs `minsync serve` (see docs/indexing/embedding-backends.md) or points at a remote endpoint.
+ * a process: the operator runs `inl serve` (see docs/indexing/embedding-backends.md) or points at a remote endpoint.
  *
  * - **remote**: a configured endpoint is used as is; nothing local is looked for or loaded.
- * - **daemon**: a running `minsync serve` is preferred, because it keeps one warm copy of the model for every
+ * - **daemon**: a running `inl serve` is preferred, because it keeps one warm copy of the model for every
  *   process. It is looked up again on every call, so one started or stopped while AutoRAG runs is noticed.
  * - **in-process**: MinSync's own engine, used when no daemon answers. Daemon and in-process vectors are
  *   identical for the same model and device, so both report one identity and stores never re-embed
@@ -103,10 +103,10 @@ export function createManagedEmbedder(options: ManagedEmbedderOptions): ManagedE
 		};
 	}
 
-	let daemon: { readonly info: MinSyncDaemon; readonly embedder: Embedder } | undefined;
+	let daemon: { readonly info: InlDaemon; readonly embedder: Embedder } | undefined;
 	let inProcess: Promise<InProcessEmbedder> | undefined;
 
-	const adopt = (info: MinSyncDaemon): Embedder => {
+	const adopt = (info: InlDaemon): Embedder => {
 		const embedder = createHttpEmbedder({
 			protocol: "openai",
 			baseUrl: info.baseUrl,
@@ -119,8 +119,8 @@ export function createManagedEmbedder(options: ManagedEmbedderOptions): ManagedE
 		return embedder;
 	};
 
-	const probe = async (): Promise<MinSyncDaemon | undefined> =>
-		probeMinSyncDaemon({
+	const probe = async (): Promise<InlDaemon | undefined> =>
+		probeInlDaemon({
 			model: wantedModel,
 			...(options.home === undefined ? {} : { home: options.home }),
 			fetchImpl,
@@ -149,7 +149,7 @@ export function createManagedEmbedder(options: ManagedEmbedderOptions): ManagedE
 			return { source: await loadInProcess(), viaDaemon: false };
 		} catch (error) {
 			throw new Error(
-				`no embedding daemon is running and no in-process embedder is installed: ${message(error)}. Start \`minsync serve\` (see docs/indexing/embedding-backends.md) or set minSync.embedder to a remote endpoint.`,
+				`no embedding daemon is running and no in-process embedder is installed: ${message(error)}. Start \`inl serve\` (see docs/indexing/embedding-backends.md) or set minSync.embedder to a remote endpoint.`,
 				{ cause: error },
 			);
 		}

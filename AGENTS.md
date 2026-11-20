@@ -67,7 +67,7 @@ Never merge a PR on your own initiative. Merge only when the user explicitly ask
 
 ## Manual QA on a shared machine (binding)
 
-The maintainer's machine is shared. Several AutoRAG clones on different branches and versions, and several checkouts of the AutoRAG Electron Finder app, are developed **at the same time** by different agent sessions. All of them read one global AutoRAG home: `~/.autorag` (`config.json`, `memory.json`, TUI sessions). MinSync's model cache is separate and shared at `~/.cache/minsync/models`. The Electron app searches with whatever `~/.autorag/config.json` says, and so does the maintainer's real daily AutoRAG usage.
+The maintainer's machine is shared. Several AutoRAG clones on different branches and versions, and several checkouts of the AutoRAG Electron Finder app, are developed **at the same time** by different agent sessions. All of them read one global AutoRAG home: `~/.autorag` (`config.json`, `memory.json`, TUI sessions). im-not-llm's model cache is separate and shared at `~/.cache/im-not-llm/models`. The Electron app searches with whatever `~/.autorag/config.json` says, and so does the maintainer's real daily AutoRAG usage.
 
 That home belongs to the maintainer, not to your task. Every write your QA makes there silently changes every other clone, every app checkout, and the real setup. This already happened more than once: an ad-hoc QA step ran `autorag init --workspace "$TMP" --search-paths "$TMP/docs" --force` with no `--config` and no `AUTORAG_HOME`. `--workspace` does not move the config, so `--force` replaced the real `~/.autorag/config.json`. It dropped every configured datasource and pointed search at a temp directory that was deleted minutes later. From then on, every search on the machine, the desktop app included, failed with `AutoRAG search root does not exist: /var/folders/.../tmp.XXXX/docs` (#1743).
 
@@ -86,7 +86,7 @@ Rules for every manual QA, live check, and ad-hoc CLI or `AutoRAGAgent` run:
    A tool that starts a fresh shell per call (an agent `bash` tool, `tool.bash`, `Bun.$`, `spawn`) does not inherit a previous call's `export`. Repeat the exports in each call, or pass them through `env`.
 3. **`--workspace` is not isolation.** It moves the workspace only. The config path comes from `--config`, then `AUTORAG_CONFIG`, then `$AUTORAG_HOME/config.json`, then `~/.autorag/config.json`. Never run `autorag init --force` (or anything else that writes config) unless `AUTORAG_CONFIG` or `--config` points inside your temp root.
 4. **Check before you write.** Right before the first command that writes config, confirm the target is yours: `echo "$AUTORAG_CONFIG"` must print a path under `$QA_ROOT`. If it is empty or under `$HOME/.autorag`, stop.
-5. **Leave other state alone.** Do not stop, restart, or reconfigure processes you did not start. That includes other clones' `minsync serve` daemons and dev servers, a running Finder app, and `autorag watch` / refresh daemons. Do not edit crontabs or launch agents, and do not touch native datasource stores (see the live-E2E section). Use free ports rather than fixed ones.
+5. **Leave other state alone.** Do not stop, restart, or reconfigure processes you did not start. That includes other clones' `inl serve` daemons and dev servers, a running Finder app, and `autorag watch` / refresh daemons. Do not edit crontabs or launch agents, and do not touch native datasource stores (see the live-E2E section). Use free ports rather than fixed ones.
 6. **Prove it and clean up.** Hash the real config before and after the run (`shasum ~/.autorag/config.json`). The two hashes must match; record both in the task evidence. Then remove only your own `$QA_ROOT` and the processes you started.
 
 The fixed live-E2E runner below is clone-local, but host execution still exposes the
@@ -107,7 +107,7 @@ The container sets an ephemeral `HOME`, `AUTORAG_HOME`, and `AUTORAG_CONFIG`,
 bind-mounts this clone at `/workspace`, and does not mount the host `~/.autorag`
 or native datasource stores. Only the model credential allowlist in `QA_MODEL_ENV`
 is forwarded; set it empty (`QA_MODEL_ENV=`) to forward no credentials at all.
-The live runner starts a `minsync serve` daemon for the run, checks its `/health`
+The live runner starts a shared im-not-llm `inl serve`/`minsync serve` daemon for the run, checks its `/health`
 endpoint for `Qwen/Qwen3-Embedding-0.6B` at 1024 dimensions, and stops it after
 the run. Use `QA_PLATFORM` and `QA_MODEL_ENV` to select a supported architecture
 or credential allowlist.
@@ -177,7 +177,7 @@ Prerequisites:
   one implicitly:
   `export AUTORAG_LIVE_E2E_ROOT="$PWD/scripts/live-e2e"`
   `node scripts/live-e2e/runner.mjs bootstrap --root "$AUTORAG_LIVE_E2E_ROOT"`
-- MinSync 0.4.12 or newer on `PATH`. The runner starts a `minsync serve` daemon
+- MinSync 0.4.12 or newer on `PATH`. The runner starts a loopback `inl serve`/`minsync serve` daemon
   for the run and stops it afterwards; no manual Ollama serve, TEI adapter, or
   model pull is required. The Docker QA image (`scripts/ci/qa.Dockerfile`) ships
   the pinned, sha256-verified `minsync` release, so `make e2e-live*` needs
@@ -249,9 +249,9 @@ embedding service is used only when the operator explicitly configures
 The default product path uses MinSync's Qwen3-Embedding-0.6B engine (1024
 dimensions; queries carry Qwen3's `Instruct: …\nQuery:` header, passages are
 raw). Vectors come from a loopback
-`minsync serve` daemon when one answers, otherwise from MinSync's in-process
+`inl serve` daemon when one answers, otherwise from MinSync's in-process
 engine through the optional `@nomadamas/minsync-native` addon. AutoRAG never
-starts or stops the daemon: the operator runs `minsync serve --idle-timeout 0`
+starts or stops the daemon: the operator runs `inl serve --idle-timeout 0`
 (launchd/systemd, see `docs/indexing/embedding-backends.md`) or presses Ctrl+Shift+E in the
 TUI. `autorag setup` and `autorag status` only report the resolved
 `embedding.backend` (`daemon`, `in-process`, or `remote`) with the provider,

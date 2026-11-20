@@ -194,9 +194,9 @@ is impossible, refresh continues without this optimization and the user is
 told duplicate exclusion is off. Set `"excludeExactDuplicates": false` to
 index every copy.
 
-AutoRAG owns no embedding model. MinSync provisions the embedder
+AutoRAG owns no embedding model. im-not-llm provisions the embedder
 (`Qwen/Qwen3-Embedding-0.6B`, 1024 dimensions) in its own cache
-(`~/.cache/minsync/models`); there is no local model download and no bundled
+(`~/.cache/im-not-llm/models`); there is no local model download and no bundled
 runtime. One shared embedder serves everything that embeds inside
 AutoRAG: MinSync indexing/query, memory similar-question search, the
 chat-crawler sidecars, the GitHub Gist vector index, and the endpoint external
@@ -205,8 +205,8 @@ resolves in order:
 
 1. A configured remote endpoint (`minSync.embedder`), used for everything; no
    daemon is started and no local model is loaded.
-2. A running `minsync serve` daemon (loopback only; MinSync 0.4.12+).
-   AutoRAG never starts it: run `minsync serve --idle-timeout 0` yourself, as
+2. A running `inl serve` daemon (loopback only).
+   AutoRAG never starts it: run `inl serve --idle-timeout 0` yourself, as
    a launchd/systemd service (see `docs/indexing/embedding-backends.md`), or press
    Ctrl+Shift+E in `autorag tui`. `autorag setup` only reports whether it is
    alive.
@@ -478,7 +478,7 @@ and `index` lifecycle, then uses the mailcrawl CLI for BM25, semantic, or
 hybrid search. Do not use 0.1.3 or earlier: a no-op sync followed by `index`
 fails with `text array must be non-empty`. 0.3.0 embeds through the same
 backend as the rest of AutoRAG (a remote `minSync.embedder`, else the
-`minsync serve` daemon) instead of its own in-process model, and keeps vectors
+`inl serve` daemon) instead of its own in-process model, and keeps vectors
 in LanceDB. Switching from the old native model rebuilds the semantic index on
 the next `index`. kakao needs `lazykatok` 0.3.3 or newer for the same reason.
 Use mailcrawl for Gmail, IMAP, Maildir, and static `.eml`/`.mbox` mailbox retrieval. The former Gmail REST and `mail-export`
@@ -512,7 +512,7 @@ it up is an agent task with these steps. Run each command; do not just describe 
 **Shared embedding model.** Hister keeps its own vector store and embeds with
 whatever its `config.yml` `semantic_search` block says. Pointing it at a different
 model does not fail: vectors simply stop lining up and results get worse. So Hister
-must use the same model as AutoRAG, which is the `minsync serve` daemon (model
+must use the same model as AutoRAG, which is the `inl serve` daemon (model
 `Qwen/Qwen3-Embedding-0.6B`, 1024 dimensions, with Qwen3's query instruction).
 
 ```bash
@@ -525,12 +525,12 @@ autorag setup --sync-hister            # writes them, restarts Hister, re-embeds
   `config.yml.bak.<time>` is kept next to it), then runs `brew services restart hister`,
   waits for it to answer, and runs `hister reindex` when a change makes stored
   vectors stale. Without the flag setup never writes Hister's config.
-- The daemon port is chosen when `minsync serve` starts. After restarting the daemon,
+- The daemon port is chosen when `inl serve` starts. After restarting the daemon,
   run `autorag setup --sync-hister` again. It is idempotent: when nothing differs
   it changes nothing and restarts nothing.
 - It refuses, and says why, when the shared backend is a remote endpoint (browsing
   text would leave the machine) or MinSync's in-process engine (Hister cannot reach
-  it; run `minsync serve --idle-timeout 0`, docs/indexing/embedding-backends.md).
+  it; run `inl serve --idle-timeout 0`, docs/indexing/embedding-backends.md).
 - If `restartRequired` or `reindexRequired` is true in the report, the step was
   not done (no Homebrew service, or it failed): run `brew services restart hister`
   and `hister reindex` yourself. Check with `hister doctor`: the line

@@ -1,6 +1,6 @@
 /**
  * Live manual QA for the Obsidian vault datasource: a real vault fixture on disk, the real `minsync`
- * binary, and MinSync's own embedding engine (a running `minsync serve` daemon, started by the shared
+ * binary, and MinSync's own embedding engine (a running `inl serve` daemon, started by the shared
  * embedder when none runs). Nothing is mocked and no remote embedder is contacted.
  *
  * It walks the user-visible path: factory-built skill -> `agent.refresh` -> BM25 and semantic
@@ -49,7 +49,7 @@ try {
 	const embedder = createEmbedderFromConfig({});
 	const health = await embedder.health();
 	console.log(`embedding backend: ${health.backend} alive=${health.alive}${health.detail ? ` (${health.detail})` : ""}`);
-	check("an embedding backend is alive (run `minsync serve --idle-timeout 0` first)", health.alive);
+	check("an embedding backend is alive (run `inl serve --idle-timeout 0` first)", health.alive);
 
 	const { skills, unknown } = buildDatasourceSkills(
 		{ obsidian: { instanceId: "vault", connector: { vaultPath: vault } } },

@@ -10,14 +10,14 @@ RUN apt-get update \
 
 ARG TARGETARCH
 
-# The live E2E starts `minsync serve` and every index runs through the `minsync` CLI, so the image must carry it on
+# The live E2E starts a shared im-not-llm embedding daemon (`minsync serve` is a compatible launcher) and every index runs through the `minsync` CLI, so the image must carry it on
 # PATH; nothing in the run installs it. The release ships a Linux build for x86_64 only, so this image is amd64
 # (the default QA_PLATFORM) and any other architecture fails here instead of at run time. Keep the version in step
 # with MINSYNC_VERSION in src/minsync/installer.ts; the sha256 is the release asset digest. MinSync 0.6.0 and later
 # link glibc 2.43 (the release job runs on ubuntu-latest), so the base image must carry at least that: on Ubuntu 24.04
 # (glibc 2.39) `minsync` fails to start with "version `GLIBC_2.43' not found".
-ARG MINSYNC_VERSION=0.7.4
-ARG MINSYNC_SHA256=8e69ddcc09f5fe700b02f473eacafffae41621ba6261c4133d179b37720d3547
+ARG MINSYNC_VERSION=0.7.5
+ARG MINSYNC_SHA256=042f9eca664c70f9067d4be6bd7bb23ee379296efd39bf9e9e79ce21bd42f466
 RUN set -eu; \
 	if [ "${TARGETARCH:-amd64}" != "amd64" ]; then \
 		echo "MinSync ${MINSYNC_VERSION} publishes no Linux ${TARGETARCH} build; build this image with QA_PLATFORM=linux/amd64" >&2; \

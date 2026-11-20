@@ -353,7 +353,7 @@ async function runDarwin(): Promise<void> {
 	const embedder = createEmbedderFromConfig({});
 	const health = await embedder.health();
 	console.log(`embedding backend: ${health.backend} alive=${health.alive}${health.detail ? ` (${health.detail})` : ""}`);
-	check("an embedding backend is alive (run `minsync serve --idle-timeout 0` first)", health.alive);
+	check("an embedding backend is alive (run `inl serve --idle-timeout 0` first)", health.alive);
 
 	const sourceDir = join(qaRoot, "webdav-source");
 	const holderDir = join(qaRoot, "holder");
@@ -435,7 +435,7 @@ async function runWindows(): Promise<void> {
 	const probe = new WindowsCloudProbe();
 	const health = await createEmbedderFromConfig({}).health();
 	console.log(`embedding backend: ${health.backend} alive=${health.alive}${health.detail ? ` (${health.detail})` : ""}`);
-	check("an embedding backend is alive (run `minsync serve --idle-timeout 0` first)", health.alive);
+	check("an embedding backend is alive (run `inl serve --idle-timeout 0` first)", health.alive);
 
 	const shareDir = join(qaRoot, `autorag-e2e-${Math.random().toString(16).slice(2, 10)}`);
 	const shareName = basename(shareDir);

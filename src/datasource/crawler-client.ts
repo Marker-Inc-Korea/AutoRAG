@@ -23,6 +23,7 @@ const SAFE_ENV_KEYS = new Set([
 	"TEMP",
 	"NO_COLOR",
 	"APPDATA",
+	"INL_CACHE_DIR",
 	"ComSpec",
 	"LOCALAPPDATA",
 	"PATHEXT",

@@ -2,7 +2,7 @@
  * Live E2E: spreadsheets and CSV/TSV files through the real CLI, the parse worker, MinSync and its local embedder.
  *
  * Gated on AUTORAG_SPREADSHEET_LIVE=1 so the offline suite never needs MinSync or a model. Run
- * explicitly with `bun` and `minsync` on PATH (a running `minsync serve` daemon or the in-process
+ * explicitly with `bun` and `minsync` on PATH (a running `inl serve` daemon or the in-process
  * addon provides Qwen3 embeddings):
  *
  *   AUTORAG_SPREADSHEET_LIVE=1 bun run vitest run test/live-e2e/spreadsheet-search.test.ts

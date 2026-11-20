@@ -3,7 +3,7 @@ import type { DiscrawlEmbeddingRuntime } from "./types.ts";
 
 /**
  * discrawl keeps `openai_compatible` embeddings off ("requires API key env ...") unless the variable its
- * config names is non-empty, while `minsync serve` has no authentication and ignores the value. For the
+ * config names is non-empty, while `inl serve` has no authentication and ignores the value. For the
  * local daemon AutoRAG therefore names a variable of its own and supplies this fixed, non-secret placeholder
  * to the discrawl child only. It is never a credential and never read from the operator's environment.
  */

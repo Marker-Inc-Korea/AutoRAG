@@ -202,7 +202,7 @@ make e2e-live      E2E_ROOT="$AUTORAG_LIVE_E2E_ROOT"   # warm run, reusing state
 - A lane whose CLI or native store is missing reports `SKIP` with a reason; an
   installed and configured lane that fails reports `FAIL`. `SKIP` is never reported as
   `PASS`.
-- The local path is the default: the runner starts a loopback `minsync serve` daemon
+- The local path is the default: the runner starts a loopback `inl serve`/`minsync serve` daemon
   and checks its `/health` endpoint for `Qwen/Qwen3-Embedding-0.6B` at 1024
   dimensions, then stops the daemon after the run. A remote embedding endpoint is
   used only when the operator explicitly configures one in `minSync.embedder`.

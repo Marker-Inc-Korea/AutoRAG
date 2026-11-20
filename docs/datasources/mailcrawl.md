@@ -48,7 +48,7 @@ Refresh runs `mailcrawl sync`, then `mailcrawl index`.
 
 ## What is indexed
 
-`mailcrawl sync` fetches envelopes and messages; `mailcrawl index` builds the search index. Semantic vectors live in a LanceDB table (`<data-dir>/semantic.lance`) with the embedder identity in `semantic.identity.json`; a mismatch rebuilds the table and a search against a different embedder fails loudly rather than returning wrong neighbours. With a shared endpoint (`minsync serve` daemon or a remote `minSync.embedder`), mailcrawl embeds through it; a cold cache otherwise downloads ONNX weights on the first `index`. Results map to opaque `/mailcrawl/<instance>/chunks/<chunk-id>` sources.
+`mailcrawl sync` fetches envelopes and messages; `mailcrawl index` builds the search index. Semantic vectors live in a LanceDB table (`<data-dir>/semantic.lance`) with the embedder identity in `semantic.identity.json`; a mismatch rebuilds the table and a search against a different embedder fails loudly rather than returning wrong neighbours. With a shared endpoint (`inl serve` daemon or a remote `minSync.embedder`), mailcrawl embeds through it; a cold cache otherwise downloads ONNX weights on the first `index`. Results map to opaque `/mailcrawl/<instance>/chunks/<chunk-id>` sources.
 
 ```bash
 mailcrawl doctor

@@ -75,5 +75,5 @@ autorag refresh --method datasources
 | `no GitHub token: set GITHUB_TOKEN … or authenticate the gh CLI` | `datasource-unavailable` (`not-configured`) | Export the token variable or run `gh auth login`. |
 | `github: unauthorized` | `datasource-auth-error` | The token is invalid or lacks access. |
 | `github: rate limited or forbidden` | `datasource-rate-limited` | HTTP 403/429. |
-| `semantic-unavailable: …` | warning `datasource-index-failed` | The embedder failed; indexing and lexical search continue. Start `minsync serve --idle-timeout 0` or configure `minSync.embedder` (see [Embedding backends](../indexing/embedding-backends.md)). |
+| `semantic-unavailable: …` | warning `datasource-index-failed` | The embedder failed; indexing and lexical search continue. Start `inl serve --idle-timeout 0` or configure `minSync.embedder` (see [Embedding backends](../indexing/embedding-backends.md)). |
 | Semantic results miss a just-edited gist | — | The previous vector is excluded until the next refresh re-embeds it. |

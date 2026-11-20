@@ -39,7 +39,7 @@ Add a `datasources` entry to `~/.autorag/config.json`:
 | `binaryPath` | `clawgallery` | The executable, when it is not on `PATH`. |
 | `path` | unset | Local image folder to bootstrap; passed as `--path`. |
 | `syncVisual` | `true` | Run `clawgallery vdr sync` after bootstrap to build the vector index. |
-| `vdrBackend` | clawgallery default | `mlx`, `jina-mlx`, or `vsplade`; passed as `--backend` to `vdr sync`. |
+| `vdrBackend` | clawgallery default | `mlx`, `jina-mlx`, `vsplade`, or `inl`; passed as `--backend` to `vdr sync`. `inl` uses the im-not-llm multimodal embedder (`google/embeddinggemma-2`, 768-d) served by `inl serve --multimodal`. |
 | `defaultMode` | `hybrid` | The retrieval mode registered for search: `keyword`, `lexical`, `embedding`, or `hybrid`. |
 | `configDir` | AutoRAG-managed under the workspace | clawgallery's `CLAWGALLERY_CONFIG_DIR`. |
 | `timeoutMs` | `60000` | CLI spawn timeout. |
@@ -58,7 +58,7 @@ autorag refresh --method datasources
 
 ## Search behavior
 
-- Modes map to clawgallery: `keyword` searches image paths and captions and works without any vector index; `lexical` needs a sparse V-SPLADE index (`vdr sync --backend vsplade`); `embedding` needs a dense VDR index (`vdr sync --backend mlx` or another dense backend); `hybrid` asks clawgallery to RRF-fuse keyword results with every available dense and sparse channel.
+- Modes map to clawgallery: `keyword` searches image paths and captions and works without any vector index; `lexical` needs a sparse V-SPLADE index (`vdr sync --backend vsplade`); `embedding` needs a dense VDR index (`vdr sync --backend mlx`, `vdr sync --backend inl`, or another dense backend); `hybrid` asks clawgallery to RRF-fuse keyword results with every available dense and sparse channel.
 - The default mode is `hybrid`, which runs alone with `keyword` as a fallback only when hybrid fails. A mode pinned with `connector.defaultMode` runs by itself with no fallback.
 - A scope narrows within the connection, for example `/screenshots/**` (see [Scope narrowing](search-semantics.md#scope-narrowing)).
 - clawgallery results carry no timestamp, so a `since`/`until` window excludes every result and reports the method (see [Time windows](search-semantics.md#time-windows)).

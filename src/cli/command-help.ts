@@ -63,7 +63,7 @@ const COMMAND_USAGE: Readonly<Record<Exclude<CommandName, "lite">, string>> = {
 		"Usage: autorag setup [flags]",
 		"",
 		"Probes MinSync, the embedding backend (a configured remote endpoint, a running",
-		"`minsync serve` daemon, or MinSync's in-process engine), and every known",
+		"`inl serve` daemon, or MinSync's in-process engine), and every known",
 		"datasource, then reports what is ready and what is blocked. When no config",
 		"exists yet, a default one is written first from --search-paths/--workspace.",
 		"",

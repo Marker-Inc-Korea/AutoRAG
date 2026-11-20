@@ -22,7 +22,7 @@ export function buildLiveStackOptions(root, workspace) {
 		// trigger a jikji/cargo install mid-run: the corpus root is immutable.
 		jikji: false,
 		// AutoRAG owns no embedding model. MinSync's native Qwen3 does the embedding: through a running
-		// `minsync serve` daemon when one answers (refresh starts one), in-process otherwise.
+		// im-not-llm `inl serve` daemon when one answers (a compatible `minsync serve` works too), in-process otherwise.
 		minSync: {
 			workspacePath: resolve(workspace),
 			autoInstall: true,
@@ -128,7 +128,8 @@ export async function runWorkflow({ root, mode, evidenceDir }) {
 			OPENAI_API_KEY: "",
 			AUTORAG_OPENAI_API_KEY: "",
 		};
-		// The run owns its daemon: start `minsync serve` here, prove it answers /health as the pinned model,
+		// The run owns its daemon: start the shared im-not-llm embedding daemon here (`minsync serve` is a
+		// compatible launcher), prove it answers /health as the pinned model,
 		// then let the stack under test discover it exactly as a user's refresh would.
 		const started = await startMinSyncDaemon(childEnv);
 		daemonPid = started.pid;
