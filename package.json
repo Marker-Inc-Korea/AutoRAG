@@ -83,7 +83,7 @@
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.6.4",
+    "@biomejs/biome": "2.6.8",
     "@modelcontextprotocol/client": "^2.4.0",
     "@types/node": "^26.6.6",
     "@types/ws": "^8.18.2",
