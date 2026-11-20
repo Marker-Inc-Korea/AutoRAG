@@ -184,7 +184,7 @@ The app is one way in. The same librarian runs everywhere else:
 ## More
 
 - **Architecture:** [how it works](docs/contributing/architecture.md) · [indexing options](docs/indexing/overview.md) · [Jev decisions](docs/retrieval/jev.md) · [retrieval memory](docs/retrieval/memory.md) · [permissions](docs/agents/permissions.md)
-- **Reference:** [CLI commands](docs/reference/cli.md) · [TypeScript API](docs/reference/typescript-api.md) · [MCP and Lite](docs/agents/mcp-server.md) · [datasources](docs/datasources/overview.md) · [hosted Dazzi Models](docs/guide/models.md) · [troubleshooting](docs/guide/troubleshooting.md)
+- **Reference:** [CLI commands](docs/reference/cli.md) · [TypeScript API](docs/reference/typescript-api.md) · [MCP and Lite](docs/agents/mcp-server.md) · [datasources](docs/datasources/overview.md) · [hosted Dazzi Models](docs/guide/models.md) · [personal context with IDENTITY.md](docs/guide/identity.md) · [troubleshooting](docs/guide/troubleshooting.md)
 - **Connect:** [Telegram](docs/agents/telegram.md) · [WhatsApp](docs/agents/whatsapp.md) · [Discord](docs/agents/discord.md) · [all messengers](docs/agents/messengers.md)
 - **Why in-place federation:** [competitive landscape](docs/contributing/design-notes.md) · **Supply chain:** [SBOM and audits](docs/contributing/supply-chain.md) · **Legacy AutoML:** [legacy/](legacy/README.md)
 
