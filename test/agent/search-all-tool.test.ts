@@ -209,6 +209,36 @@ describe("search_all_documents tool", () => {
 
 		expect(textOf(out)).toContain(longContent);
 	});
+
+	it("surfaces bounded datasource context on merged result rows", async () => {
+		const provider: SearchAllDocumentsProvider = {
+			async searchAllDocuments() {
+				return {
+					results: [
+						{
+							id: "kakao-1",
+							source: "/kakao/default/chunks/1",
+							content: "Where should we deploy?",
+							score: 0.91,
+							metadata: {
+								chatName: "Project Falcon",
+								senderNickname: "Ada",
+								startedAt: "2026-08-30T19:12:00+09:00",
+							},
+						},
+					],
+					diagnostics: [],
+				};
+			},
+		};
+		const tool = createSearchAllDocumentsTool(provider);
+
+		const text = textOf(await tool.execute("call-context", { query: "deploy" }));
+
+		expect(text).toContain('chat: "Project Falcon"');
+		expect(text).toContain('from: "Ada"');
+		expect(text).toContain("at: 2026-08-30T10:12:00.000Z");
+	});
 });
 
 function textOf(result: { content: ReadonlyArray<{ type: string; text?: string }> }): string {
