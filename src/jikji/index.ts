@@ -7,6 +7,7 @@ export { JikjiClient } from "./client.ts";
 export type { JikjiDiagnostic, JikjiDiagnosticCode } from "./diagnostics.ts";
 export {
 	jikjiDiscoverDiagnostic,
+	jikjiDoctorDiagnostics,
 	jikjiFindDiagnostic,
 	jikjiPrepareDiagnostic,
 	jikjiUnusableRetryDiagnostic,
@@ -31,6 +32,7 @@ export type {
 	JikjiAnswerPack,
 	JikjiCandidate,
 	JikjiConfidence,
+	JikjiDoctorResult,
 	JikjiEvidence,
 	JikjiFailureReason,
 	JikjiFindOptions,

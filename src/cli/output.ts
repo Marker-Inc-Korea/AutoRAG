@@ -134,9 +134,10 @@ function renderRefreshHuman(result: AutoRAGRefreshResult, debug: boolean): strin
 		if (result.fsearch.message !== undefined) parts.push(`message=${result.fsearch.message}`);
 		lines.push(`  fsearch: ${parts.join(" ")}`);
 	}
-	if ((debug || !ok) && result.diagnostics && result.diagnostics.length > 0) {
-		for (const d of result.diagnostics) {
-			lines.push(`  diagnostic: [${d.severity}] ${d.code}: ${d.message}`);
+	for (const d of result.diagnostics ?? []) {
+		const source = d.code.startsWith("jikji-") && d.source?.startsWith("/") ? ` (${d.source})` : "";
+		if (debug || !ok || source !== "") {
+			lines.push(`  diagnostic: [${d.severity}] ${d.code}${source}: ${d.message}`);
 		}
 	}
 	return lines.join("\n");
@@ -182,10 +183,16 @@ function renderStatusHuman(status: AutoRAGRefreshStatus, debug: boolean): string
 	if (comps.everything) compParts.push(`everything=${comps.everything}`);
 	if (comps.fsearch) compParts.push(`fsearch=${comps.fsearch}`);
 	if (compParts.length > 0) lines.push(`  components: ${compParts.join(" ")}`);
+	for (const index of status.jikji ?? []) {
+		lines.push(
+			`  jikji: ${index.source} ${index.state}${index.docsFailed === undefined ? "" : ` docs_failed=${index.docsFailed}`}`,
+		);
+	}
 	if (status.lastError) lines.push(`  lastError: ${status.lastError}`);
 	if (debug || status.diagnostics.length > 0) {
 		for (const d of status.diagnostics) {
-			lines.push(`  diagnostic: [${d.severity}] ${d.code}: ${d.message}`);
+			const source = d.code.startsWith("jikji-") && d.source?.startsWith("/") ? ` (${d.source})` : "";
+			lines.push(`  diagnostic: [${d.severity}] ${d.code}${source}: ${d.message}`);
 		}
 	}
 	return lines.join("\n");

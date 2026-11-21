@@ -4,9 +4,9 @@ import { renderError, renderStatus } from "../output.ts";
 import type { CommandContext } from "./types.ts";
 
 /**
- * `autorag status` — path-opaque snapshot of corpus freshness and index health.
- * Runs a cheap parse-free staleness scan plus the cached last-refresh outcome.
- * Model-free. Never emits filesystem paths; only the renderered status text.
+ * `autorag status` — snapshot of corpus freshness and index health.
+ * Runs a parse-free staleness scan and inspects existing Jikji indexes without preparing them.
+ * Model-free. Native doctor errors are preserved verbatim, including paths when present.
  *
  * Exit codes: 0 on success, 2 on config error, 1 on runtime error.
  */

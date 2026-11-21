@@ -61,13 +61,13 @@ To drop and rebuild: `autorag index reset --method minsync,parsed --yes` removes
 
 ## Status fields
 
-`autorag status` is a path-opaque, model-free snapshot. It runs a cheap stat-only staleness scan plus the cached last-refresh outcome, and never prints filesystem paths.
+`autorag status` is a model-free snapshot. It checks corpus staleness, reads the last refresh outcome, and inspects the current Jikji index for each local search root. Native Jikji errors and warnings are shown verbatim, including filesystem paths when present.
 
 | Field | Meaning |
 | --- | --- |
-| `state` | `idle`, `indexing`, `success`, or `failed`. |
+| `state` | The refresh outcome: `idle`, `indexing`, `success`, or `failed`. This is separate from current Jikji index health. |
 | `inFlight` | A refresh is running in this process. |
-| `stale` | The index is missing, an engine is unavailable, or a source changed since the last refresh. |
+| `stale` | Parsed-mirror and MinSync freshness: an index is missing, the engine is unavailable, or a source changed since the last refresh. Jikji health is reported separately. |
 | `lastStartedAt` / `lastFinishedAt` | Timestamps of the last refresh, when known. |
 | `counts` | `scanned`, `written`, `deleted`, `skipped` for the last run. |
 | `progress.phase` | Current phase: `parsed`, `minsync`, `datasources`, `jikji`, `everything`, `fsearch`, or `finalizing`. |
@@ -75,8 +75,13 @@ To drop and rebuild: `autorag index reset --method minsync,parsed --yes` removes
 | `progress.minsync` | `synced`, `total`, and `filesSkipped` counters. |
 | `progress.ownerAlive` | Whether the recorded owner pid is still alive. |
 | `components` | Per-component readiness: `minsync`, `jikji`, `datasources`, `everything`, `fsearch`. |
-| `diagnostics` | The diagnostic codes from the last run (see [Refresh operations](refresh-operations.md)). |
+| `jikji` | Per-root current health: `source`, `state` (`prepared`, `not-prepared`, `needs-reprepare`, `unavailable`, or `skipped`), optional `docsFailed`, and native `errors` / `warnings`. Omitted when Jikji is disabled. |
+| `diagnostics` | Current freshness and Jikji health diagnostics, plus diagnostics retained from the last refresh (see [Refresh operations](refresh-operations.md)). |
 | `lastError` | A path-free summary when the last refresh failed. |
+
+Each status call checks Jikji again, so a new CLI process and an existing agent both see indexes prepared, repaired, or removed outside AutoRAG. `components.jikji` summarizes these roots as `ready`, `not-prepared`, `degraded`, `unavailable`, or `skipped`; a synchronous SDK component snapshot can still say `configured` before the first inspection. A successful refresh can therefore coexist with `needs-reprepare` or a positive `docsFailed` count. Refresh also includes these index diagnostics after running Jikji preparation.
+
+Status does not install Jikji, create an index, repair it, or re-prepare it. It checks for an existing prepared root before invoking native `jikji doctor`; doctor can refresh internal schema metadata in an existing database. Cloud and network roots are marked `skipped`, and disabled Jikji is not inspected. A `needs-reprepare` state reports the native failure (for example, `missing required artifact row: wiki_index`) so you can decide when to run `autorag refresh --method jikji` explicitly.
 
 ## Next steps
 
