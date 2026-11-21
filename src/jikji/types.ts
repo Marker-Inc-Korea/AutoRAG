@@ -86,6 +86,16 @@ export interface JikjiPrepareOptions {
 	readonly exclude?: readonly string[];
 }
 
+/** Current native index health, independent of this process's last refresh. */
+export interface JikjiDoctorResult {
+	readonly state: "prepared" | "not-prepared" | "needs-reprepare" | "unavailable";
+	/** Absent when doctor did not provide a manifest count. */
+	readonly docsFailed?: number;
+	/** Native error/warning text is preserved, including any paths it contains. */
+	readonly errors: readonly string[];
+	readonly warnings: readonly string[];
+}
+
 export type JikjiFailureReason =
 	| "aborted"
 	| "cloud-root-skipped"

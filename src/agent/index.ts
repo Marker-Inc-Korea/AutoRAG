@@ -1,4 +1,4 @@
-export type { AutoRAGAgentOptions, AutoRefreshOptions } from "./agent.ts";
+export type { AutoRAGAgentOptions, AutoRAGJikjiIndexStatus, AutoRefreshOptions } from "./agent.ts";
 export { AutoRAGAgent } from "./agent.ts";
 export type { Revision, RevisionOp } from "./answer-revision.ts";
 export {

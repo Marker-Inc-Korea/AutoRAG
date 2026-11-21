@@ -54,6 +54,7 @@ import {
 } from "../fsearch/index.ts";
 import {
 	jikjiDiscoverDiagnostic,
+	jikjiDoctorDiagnostics,
 	jikjiFindDiagnostic,
 	jikjiPrepareDiagnostic,
 	jikjiUnusableRetryDiagnostic,
@@ -63,6 +64,7 @@ import {
 	type JikjiCandidate,
 	JikjiClient,
 	type JikjiDiagnostic,
+	type JikjiDoctorResult,
 	type JikjiEvidence,
 	type JikjiFailureReason,
 	type JikjiFindOptions,
@@ -673,7 +675,13 @@ export interface AutoRAGRefreshComponentStatus {
 	readonly fsearch?: string;
 }
 
-/** Path-opaque snapshot of corpus freshness and the last refresh outcome. */
+/** Current index state for one configured root; native doctor errors remain verbatim. */
+export interface AutoRAGJikjiIndexStatus extends Omit<JikjiDoctorResult, "state"> {
+	readonly source: string;
+	readonly state: JikjiDoctorResult["state"] | "skipped";
+}
+
+/** Corpus freshness and the last refresh outcome, with verbatim native index diagnostics. */
 export interface AutoRAGRefreshStatus {
 	readonly state: "idle" | "indexing" | "success" | "failed";
 	readonly inFlight: boolean;
@@ -688,6 +696,8 @@ export interface AutoRAGRefreshStatus {
 	readonly stale: boolean;
 	readonly diagnostics: readonly SearchDocumentDiagnostic[];
 	readonly components: AutoRAGRefreshComponentStatus;
+	/** Current on-disk Jikji state, inspected separately from the last refresh outcome. */
+	readonly jikji?: readonly AutoRAGJikjiIndexStatus[];
 	readonly progress?: {
 		readonly phase: RefreshProgressPhase;
 		readonly sourceFiles?: { readonly total: number };
@@ -1111,6 +1121,8 @@ export class AutoRAGAgent {
 	private readonly searchPaths: string[];
 	/** Roots handed to Jikji: duplicates and roots nested in another root are dropped (see `outermostJikjiRoots`). */
 	private readonly jikjiRoots: readonly string[];
+	/** Last inspection, used only by the synchronous component summary. Status always inspects again. */
+	private jikjiIndexStatus: readonly AutoRAGJikjiIndexStatus[] | undefined;
 	private readonly configuredSearchPaths: readonly string[];
 	readonly languages: readonly LanguageTag[];
 	private retrievalScopeBindings: readonly RetrievalScopeBinding[];
@@ -4459,6 +4471,8 @@ export class AutoRAGAgent {
 					? await this.executeJikjiPrepare({ ...opts?.jikjiPrepare, ...(signal === undefined ? {} : { signal }) })
 					: undefined;
 			signal?.throwIfAborted();
+			const jikjiIndexes = jikji === undefined ? undefined : await this.inspectJikjiIndexes(signal);
+			signal?.throwIfAborted();
 			// On Windows, the bundled Everything instance indexes the same local
 			// roots by name so the agent can locate files instantly.
 			let everything: AutoRAGEverythingRefreshResult | undefined;
@@ -4574,6 +4588,7 @@ export class AutoRAGAgent {
 						message: d.message,
 						source: d.source,
 					})),
+					...this.jikjiIndexDiagnostics(jikjiIndexes),
 				],
 				minsync: publicMinsync,
 				datasources,
@@ -4634,8 +4649,8 @@ export class AutoRAGAgent {
 	}
 
 	/**
-	 * Path-opaque snapshot of corpus freshness and the last refresh outcome. Runs
-	 * a cheap parse-free staleness scan (stat only); never parses in this path.
+	 * Snapshot of corpus freshness, current Jikji health, and the last refresh outcome.
+	 * Runs a parse-free staleness scan; never parses or prepares an index in this path.
 	 *
 	 * Freshness is read from disk, not from this instance's history: a separate CLI
 	 * process (for example `autorag status` or `autorag lite status`) reports the
@@ -4644,6 +4659,20 @@ export class AutoRAGAgent {
 	 */
 	async getRefreshStatus(): Promise<AutoRAGRefreshStatus> {
 		const persistedProgress = readRefreshProgress(this.workspaceProjectRoot);
+		const jikji = await this.inspectJikjiIndexes();
+		const inspectedRoots = jikji?.filter((root) => root.state !== "skipped") ?? [];
+		// Keep the last prepare failure while the index still needs attention. A healthy
+		// disk inspection is evidence of recovery, including a repair outside this process.
+		const jikjiRecovered =
+			inspectedRoots.length > 0 &&
+			inspectedRoots.every(
+				(root) =>
+					root.state === "prepared" &&
+					(root.docsFailed ?? 0) === 0 &&
+					root.errors.length === 0 &&
+					root.warnings.length === 0,
+			);
+		if (jikjiRecovered) this.refreshState.jikjiDiagnostics = [];
 		let engineUnavailable = this.minSyncMethod.isBinaryMissing();
 		let staleDiagnostics: readonly ParsedMirrorDiagnostic[] = [];
 		let protocolDiagnostic: SearchDocumentDiagnostic | undefined;
@@ -4669,12 +4698,8 @@ export class AutoRAGAgent {
 			...staleDiagnostics.map(toSearchDiagnostic),
 			...(protocolDiagnostic === undefined ? [] : [protocolDiagnostic]),
 			...(await this.embeddingDiagnostics()),
-			...this.refreshState.jikjiDiagnostics.map((d) => ({
-				code: d.code,
-				severity: d.severity,
-				message: d.message,
-				source: d.source,
-			})),
+			...this.refreshState.jikjiDiagnostics,
+			...this.jikjiIndexDiagnostics(jikji),
 		];
 		for (const result of this.refreshState.datasources) {
 			diagnostics.push(...mapDatasourceDiagnostics(result.diagnostics));
@@ -4748,8 +4773,10 @@ export class AutoRAGAgent {
 			diagnostics,
 			components: {
 				...this.refreshComponentStatus(),
+				...(jikji === undefined ? {} : { jikji: this.summarizeJikjiIndexes(jikji) }),
 				...(protocolDiagnostic === undefined ? {} : { minsync: "unavailable" }),
 			},
+			...(jikji === undefined ? {} : { jikji }),
 			lastError:
 				this.refreshState.lastError ??
 				(persistedProgress?.state === "failed" ? persistedProgress.error : undefined),
@@ -4760,6 +4787,7 @@ export class AutoRAGAgent {
 	 * Synchronous per-component readiness snapshot (minsync/jikji/datasources/everything).
 	 * `minsync` is "ready" only after a successful sync wrote its cursor;
 	 * "configured" means the binary resolved but no index exists yet.
+	 * Jikji uses the latest status/refresh inspection; call getRefreshStatus for a fresh disk check.
 	 */
 	refreshComponentStatus(): AutoRAGRefreshComponentStatus {
 		const status: { minsync?: string; jikji?: string; datasources?: string; everything?: string; fsearch?: string } =
@@ -4772,10 +4800,7 @@ export class AutoRAGAgent {
 					? "ready"
 					: "configured";
 		if (this.jikjiClient !== undefined) {
-			// An informational diagnostic (a cloud root skipped on purpose) is not a degraded Jikji run.
-			status.jikji = this.refreshState.jikjiDiagnostics.some((diagnostic) => diagnostic.severity !== "info")
-				? "degraded"
-				: "configured";
+			status.jikji = this.summarizeJikjiIndexes(this.jikjiIndexStatus);
 		}
 		if (this.datasourceSkills.length > 0) {
 			status.datasources = this.refreshState.datasources.some((result) => !result.ok) ? "degraded" : "configured";
@@ -5027,6 +5052,52 @@ export class AutoRAGAgent {
 	async prepareJikji(options?: JikjiPrepareOptions): Promise<readonly AutoRAGJikjiPrepareResult[] | undefined> {
 		const results = await this.executeJikjiPrepare(options);
 		return results?.map((result) => this.sanitizeJikjiPrepareResult(result));
+	}
+
+	private async inspectJikjiIndexes(signal?: AbortSignal): Promise<readonly AutoRAGJikjiIndexStatus[] | undefined> {
+		const client = this.jikjiClient;
+		if (client === undefined) return undefined;
+		const cloudRoots = await this.cloudRoots();
+		const results = await Promise.all(
+			planJikjiSourceRoots(this.jikjiRoots).map(async ({ searchPath, prefix }): Promise<AutoRAGJikjiIndexStatus> => {
+				if (cloudScope(searchPath, cloudRoots).insideCloudRoot) {
+					return { source: prefix, state: "skipped", errors: [], warnings: [] };
+				}
+				return { ...(await client.doctor(searchPath, { signal })), source: prefix };
+			}),
+		);
+		this.jikjiIndexStatus = results;
+		return results;
+	}
+
+	private summarizeJikjiIndexes(indexes: readonly AutoRAGJikjiIndexStatus[] | undefined): string {
+		const roots = indexes?.filter((root) => root.state !== "skipped");
+		if (roots === undefined) return "configured";
+		if (roots.length === 0) return "skipped";
+		if (roots.every((root) => root.state === "unavailable")) return "unavailable";
+		if (
+			roots.some(
+				(root) =>
+					root.state === "needs-reprepare" ||
+					root.state === "unavailable" ||
+					(root.docsFailed ?? 0) > 0 ||
+					root.errors.length > 0 ||
+					root.warnings.length > 0,
+			)
+		)
+			return "degraded";
+		if (roots.some((root) => root.state === "not-prepared")) return "not-prepared";
+		return "ready";
+	}
+
+	private jikjiIndexDiagnostics(indexes: readonly AutoRAGJikjiIndexStatus[] | undefined): SearchDocumentDiagnostic[] {
+		return (indexes ?? []).flatMap((index) => {
+			if (index.state === "skipped") return [];
+			return jikjiDoctorDiagnostics({ ...index, state: index.state }).map((diagnostic) => ({
+				...diagnostic,
+				source: index.source,
+			}));
+		});
 	}
 
 	/**

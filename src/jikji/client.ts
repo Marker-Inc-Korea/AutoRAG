@@ -4,10 +4,12 @@ import { existsSync, realpathSync } from "node:fs";
 import { portableSpawnCommand } from "../process/portable-spawn.ts";
 import { TREE_KILL_GRACE_MS, terminateProcessTree } from "../process/terminate-tree.ts";
 import { parseJikjiAnswerPack } from "./answer-pack.ts";
+import { hasPreparedJikjiRoot, parseJikjiDoctorReport } from "./doctor.ts";
 import { cachedJikjiBinaryPath, ensureJikjiBinary, lookupExecutableInPath } from "./installer.ts";
 import { countFiles, scaledPrepareTimeoutMs } from "./prepare-budget.ts";
 import { SerialQueue } from "./serial-queue.ts";
 import type {
+	JikjiDoctorResult,
 	JikjiFailureReason,
 	JikjiFindOptions,
 	JikjiFindResult,
@@ -88,12 +90,14 @@ export class JikjiClient {
 	 * A usable result is cached per client. A query-time miss is not cached, so a later
 	 * refresh can still install.
 	 */
-	private async resolveCommand(options: { readonly install?: boolean } = {}): Promise<Resolved> {
+	private async resolveCommand(
+		options: { readonly install?: boolean; readonly env?: NodeJS.ProcessEnv } = {},
+	): Promise<Resolved> {
 		if (this.options.binaryPath !== undefined && this.options.binaryPath !== DEFAULT_BINARY) {
 			return { ok: true, command: commandFor(this.options.binaryPath) };
 		}
 		if (this.resolved !== undefined) return this.resolved;
-		const env = controlledEnv(this.options.env);
+		const env = options.env ?? controlledEnv(this.options.env);
 		const candidates: string[] = [];
 		const pathCommand = lookupExecutableInPath(DEFAULT_BINARY, env);
 		if (pathCommand !== undefined) candidates.push(pathCommand);
@@ -214,6 +218,67 @@ export class JikjiClient {
 			{ signal: options.signal, value: ABORTED_BEFORE_START },
 		);
 		return toFindResult(result);
+	}
+
+	/** Inspect an existing index without installing, registering, preparing or repairing a root. */
+	async doctor(root: string, options: { readonly signal?: AbortSignal } = {}): Promise<JikjiDoctorResult> {
+		const canonicalRoot = canonicalJikjiRoot(root);
+		// The native CLI consumes these internal worker markers before parsing argv.
+		// Inheriting one could initialize an unrelated root even for --version.
+		// Preserve configured undefined values so spawning cannot restore a data
+		// directory that the read-only preflight was explicitly told to ignore.
+		const env: NodeJS.ProcessEnv = {
+			...process.env,
+			...this.options.env,
+			JIKJI_BACKGROUND_REFRESH_ROOT: undefined,
+			JIKJI_BACKGROUND_REFRESH_LOCK: undefined,
+		};
+		if (process.platform === "win32") {
+			// Keep undefined entries: spawn merges process.env again, including keys
+			// removed by an explicit override before this doctor-only cleanup.
+			for (const key of new Set([...Object.keys(process.env), ...Object.keys(env)])) {
+				const name = key.toUpperCase();
+				if (name === "JIKJI_BACKGROUND_REFRESH_ROOT" || name === "JIKJI_BACKGROUND_REFRESH_LOCK") {
+					env[key] = undefined;
+				}
+			}
+		}
+		try {
+			if (!hasPreparedJikjiRoot(canonicalRoot, env)) {
+				return { state: "not-prepared", errors: [], warnings: [] };
+			}
+		} catch (error) {
+			return {
+				state: "unavailable",
+				errors: [error instanceof Error ? error.message : String(error)],
+				warnings: [],
+			};
+		}
+		const result = await this.findQueue.run(
+			async () => {
+				const resolved = await this.resolveCommand({ install: false, env });
+				if (!resolved.ok) return unsupportedVersion(resolved);
+				return spawnJikji({
+					options: { ...this.options, env },
+					command: resolved.command,
+					args: ["doctor", canonicalRoot, "--json"],
+					signal: options.signal,
+				});
+			},
+			{ signal: options.signal, value: ABORTED_BEFORE_START },
+		);
+		if (result.ok || (result.reason === undefined && result.code === 1)) {
+			try {
+				return parseJikjiDoctorReport(result.stdout);
+			} catch (error) {
+				return {
+					state: "unavailable",
+					errors: [error instanceof Error ? error.message : String(error), doctorFailure(result)],
+					warnings: [],
+				};
+			}
+		}
+		return { state: "unavailable", errors: [doctorFailure(result)], warnings: [] };
 	}
 
 	/**
@@ -428,6 +493,11 @@ function unsupportedVersion(resolved: Extract<Resolved, { ok: false }>): Process
 		code: null,
 		detectedVersion: resolved.detectedVersion,
 	};
+}
+
+function doctorFailure(result: ProcessResult): string {
+	const status = result.code === null ? "no exit status" : `exit status ${result.code}`;
+	return `Jikji doctor failed (${result.reason ?? (result.ok ? "invalid report" : "nonzero-exit")}, ${status}).\n${result.stderr}${result.stdout}`;
 }
 
 function controlledEnv(configuredEnv: Readonly<Record<string, string | undefined>> | undefined): NodeJS.ProcessEnv {
