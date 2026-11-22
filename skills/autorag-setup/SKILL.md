@@ -66,8 +66,8 @@ than latency.
 Start from a provider/model the current runtime can actually call. A Pi-usable
 ChatGPT, Claude, Gemini, or other authenticated subscription is valid; an
 installed CLI or subscription that Pi cannot invoke is not. For custom
-OpenAI-compatible endpoints, record the real wire API, base URL, and credential
-environment-variable name.
+OpenAI-compatible endpoints, record the real wire API and base URL, plus the
+credential environment-variable name when the provider uses one.
 
 Allowed `api` values:
 
@@ -78,7 +78,7 @@ Allowed `api` values:
 - `azure-openai-responses`
 
 If no callable setup can be established, ask the user for the provider, model
-id, API protocol, base URL when custom, and credential environment-variable
+id, API protocol, and any required base URL or credential environment-variable
 name. Do not invent provider identities or model ids.
 
 ## Propose and approve document roots
@@ -124,8 +124,13 @@ or the local runtime already supplies the intended model. Inspect what pi can
 resolve with `autorag models list` (`--available` shows only providers with
 configured credentials); it never prints credential values.
 
-For a custom endpoint, add `api`, `baseUrl`, and `apiKeyEnv` to the single
-`model` object in the trusted config:
+For a custom endpoint, set `api` and `baseUrl` in the single `model` object in
+the trusted config. Set `apiKeyEnv` when the provider uses an environment
+variable for its API key. For `"provider": "dazzi"`, omit `apiKeyEnv` even with
+a custom endpoint. AutoRAG rejects that field for Dazzi and uses the credential
+saved by `/login`.
+
+This example configures an OpenRouter endpoint.
 
 ```json
 {
