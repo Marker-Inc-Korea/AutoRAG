@@ -10,9 +10,11 @@
 
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { resolveUserHome } from "../../config/home.ts";
 import type { Embedder } from "../../embedding/embedder.ts";
 import { resolveMinSyncBinary } from "../../minsync/binary.ts";
 import { AliasedDatasourceSkill } from "../aliased-skill.ts";
+import { AttachmentRootsSkill, resolveAttachmentRoots } from "../attachments.ts";
 import { DescribedDatasourceSkill } from "../described-skill.ts";
 import type { EmbeddingEndpointSource } from "../embedding-env.ts";
 import { resolveSidecarOptions } from "../sidecar/config.ts";
@@ -530,11 +532,18 @@ export function buildDatasourceSkills(
 				...(!larkOwnsChannels && entry.channels?.names !== undefined ? { channelNames: entry.channels.names } : {}),
 			});
 		}
-		skills.push(
+		const described: DatasourceSkill =
 			typeof entry.description === "string" && entry.description.trim().length > 0
 				? new DescribedDatasourceSkill(aliased, entry.description.trim())
-				: aliased,
-		);
+				: aliased;
+		const roots = resolveAttachmentRoots({
+			template: templateName,
+			registrationName: name,
+			config: entry,
+			home: resolveUserHome(process.env),
+			env: process.env,
+		});
+		skills.push(roots.length === 0 ? described : new AttachmentRootsSkill(described, roots));
 	}
 	return { skills, unknown, retired };
 }

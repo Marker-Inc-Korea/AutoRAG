@@ -106,6 +106,22 @@ export interface DatasourceSkill {
 	 * when they cannot be read at the moment; a caller then searches without validating a filter value itself.
 	 */
 	searchFilters?(): Promise<readonly SearchFilterSpec[]>;
+	/**
+	 * Optional. Folders on this machine where the datasource's saved attachments (photos, documents, voice notes) live.
+	 * The agent gets them in the skill manifest and after each search result so it can open a file a message refers to.
+	 * Omit, or return an empty list, for a datasource that holds no files. See `attachments.ts`.
+	 */
+	attachmentRoots?(): readonly DatasourceAttachmentRoot[];
+}
+
+/** One folder of saved attachments belonging to a datasource connection. */
+export interface DatasourceAttachmentRoot {
+	/** Short stable label within the datasource, e.g. `media`. */
+	readonly id: string;
+	/** Absolute folder path. The folder may not exist yet. */
+	readonly path: string;
+	/** One sentence for the model: what is in it and how it is laid out. */
+	readonly description: string;
 }
 
 /**

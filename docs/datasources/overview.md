@@ -64,3 +64,19 @@ The factory keeps a `RETIRED_TEMPLATES` set containing only `spotlight`, which i
 - [Connecting a datasource](./connecting.md) — config keys, aliases, embedding, timeouts, retries.
 - [Search semantics](./search-semantics.md) — time windows, scope, result identity, diagnostics.
 - [Hybrid search for chat archives](./chat-hybrid-search.md) — the sidecar behind Slack, Telegram, WhatsApp, KakaoTalk, and Discord ranking.
+
+## Attachment folders
+
+A datasource that saves files (photos, documents, voice notes) tells the agent where they are. The agent sees the folders in two places: the skill text returned by `load_datasource_skill`, and the end of every `search_datasource_<id>` result that has hits. Each folder is shown with its state (`has files`, `empty`, `not created yet`), so the agent can open a file a message refers to with its file tools.
+
+| Datasource | Folder |
+|---|---|
+| Discord | `<AUTORAG_HOME>/attachments/discord/<connection>` (the folder `autorag attachments` fills) |
+| Telegram | `media/` beside the telecrawl archive (`connector.databasePath`, default `~/.telecrawl`) |
+| WhatsApp | `media/` beside the wacrawl archive (filled by `--copy-media`) and WhatsApp Desktop's own `Message/Media` |
+| Slack | `<cache_dir>/media` from slacrawl's config (default `~/.slacrawl/cache/media`) |
+| KakaoTalk | `<katok data dir>/media` (default `~/Library/Application Support/katok/media`; `connector.workspacePath` moves it) |
+
+AutoRAG does not download Telegram, WhatsApp, Slack or KakaoTalk files itself. Those folders fill when the crawler is run with its media option (`telecrawl import --fetch-media`, `wacrawl import --copy-media`, `slacrawl files fetch`, `lazykatok media backfill`).
+
+To add a datasource, implement the optional `DatasourceSkill.attachmentRoots()`, or add one entry to `ATTACHMENT_RESOLVERS` in `src/datasource/attachments.ts`. The factory, manifest and search tool need no other change.
