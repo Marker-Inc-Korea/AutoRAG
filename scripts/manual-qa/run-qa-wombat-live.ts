@@ -10,7 +10,7 @@
  * search -> agent narrowing -> incremental append (only the new turns are embedded) -> no-op re-sync (nothing is
  * embedded) -> delete -> local-index exclusion of the mirror.
  *
- * Prerequisites: `wombat` (>= 0.1.3) and `minsync` (>= 0.7.5) on PATH or at WOMBAT_BINARY / MINSYNC_BINARY.
+ * Prerequisites: `wombat` (>= 0.1.3) and `minsync` (>= 0.7.6) on PATH or at WOMBAT_BINARY / MINSYNC_BINARY.
  *
  * Run: bun scripts/manual-qa/run-qa-wombat-live.ts
  */

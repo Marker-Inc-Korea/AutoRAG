@@ -20,7 +20,7 @@
  * Everything lives in one temp root, and AUTORAG_HOME points inside it, so the shared `~/.autorag` is never
  * touched.
  *
- * Prerequisites: `minsync` 0.7.5 or newer on PATH and a running `inl serve --idle-timeout 0`.
+ * Prerequisites: `minsync` 0.7.6 or newer on PATH and a running `inl serve --idle-timeout 0`.
  *
  * Run: bun scripts/manual-qa/run-qa-refresh-search-live.ts
  */
