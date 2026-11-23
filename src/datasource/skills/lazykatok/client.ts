@@ -32,7 +32,7 @@ import {
 	DEFAULT_LAZYKATOK_TIMEOUT_MS,
 } from "./types.ts";
 
-const SAFE_INHERITED_ENV_KEYS = new Set(["HOME", "LANG", "LC_ALL", "PATH", "TMPDIR", "TMP", "TEMP"]);
+const SAFE_INHERITED_ENV_KEYS = new Set(["HOME", "LANG", "LC_ALL", "PATH", "TMPDIR", "TMP", "TEMP", "INL_CACHE_DIR"]);
 /**
  * Environment namespaces the child may see. lazykatok still publishes its
  * configuration through the historical `KATOK_*` namespace (`KATOK_EMBEDDER`,
@@ -174,7 +174,7 @@ export class LazykatokClient {
 				const endpoint = await this.options.embeddingEndpoint();
 				if (endpoint === undefined) {
 					return unavailable(
-						"no embedding endpoint is available: start `minsync serve` (docs/indexing/embedding-backends.md) or set minSync.embedder to a remote endpoint",
+						"no embedding endpoint is available: start `inl serve` (docs/indexing/embedding-backends.md) or set minSync.embedder to a remote endpoint",
 					);
 				}
 				const shared = lazykatokEmbeddingEnv(endpoint);

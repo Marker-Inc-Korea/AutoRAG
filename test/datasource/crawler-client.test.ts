@@ -70,6 +70,24 @@ async function settleWithin<T>(promise: Promise<T>, ms: number, what: string): P
 	}
 }
 
+describe("CrawlerCliClient environment", () => {
+	it("forwards the inl cache override to the crawler child", async () => {
+		const captured = join(root, "env.json");
+		writeScript(
+			`import { writeFileSync } from "node:fs";\nwriteFileSync(${JSON.stringify(captured)}, JSON.stringify({ cache: process.env.INL_CACHE_DIR ?? null }));\nconsole.log(JSON.stringify({ synced: 1 }));`,
+		);
+		const previous = process.env.INL_CACHE_DIR;
+		process.env.INL_CACHE_DIR = "/tmp/inl-cache";
+		try {
+			await new CrawlerCliClient(PROFILE, { binaryPath }).sync();
+			expect(JSON.parse(readFileSync(captured, "utf8"))).toEqual({ cache: "/tmp/inl-cache" });
+		} finally {
+			if (previous === undefined) delete process.env.INL_CACHE_DIR;
+			else process.env.INL_CACHE_DIR = previous;
+		}
+	});
+});
+
 describe.skipIf(process.platform === "win32")("CrawlerCliClient process lifecycle", () => {
 	it("settles and reaps a descendant that keeps the inherited stdio open after the direct child exits", {
 		timeout: 15_000,

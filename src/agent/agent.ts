@@ -828,7 +828,7 @@ export interface AutoRAGAgentOptions {
 	jev?: JevToolOptions;
 	/**
 	 * The embedder shared by memory and the datasources. Omitted, it is built from `minSync.embedder`: a
-	 * configured remote endpoint, else MinSync's `minsync serve` daemon, else MinSync's in-process engine.
+	 * configured remote endpoint, else the `inl serve` daemon, else MinSync's in-process engine.
 	 * `refresh` brings it up (starting the daemon when none runs); a search only reads from it.
 	 */
 	embedder?: ManagedEmbedder;
@@ -2107,7 +2107,7 @@ export class AutoRAGAgent {
 				createEmbeddingControls({
 					embedder: this.embedder,
 					remote: remoteEmbedderFromMinSync(this.minSyncEmbedderConfig) !== undefined,
-					resolveBinary: () =>
+					resolveMinSyncBinary: () =>
 						resolveMinSyncBinary({
 							root: this.workspaceProjectRoot,
 							...(this.minSyncBinaryPath === undefined ? {} : { binaryPath: this.minSyncBinaryPath }),
@@ -3172,6 +3172,7 @@ export class AutoRAGAgent {
 					return (agentSelf.searchFilterCache.get(datasourceId) ?? []).map((filter) => filter.name);
 				},
 				searchFilters: () => agentSelf.searchFilterCache.get(datasourceId) ?? [],
+				attachmentRoots: () => skill.attachmentRoots?.() ?? [],
 			});
 		}
 		return specs;
@@ -4630,7 +4631,7 @@ export class AutoRAGAgent {
 				message:
 					health.backend === "remote"
 						? `The configured remote embedding endpoint is not answering (${health.detail ?? "no response"}); semantic search is unavailable until it is back.`
-						: "No embedding backend is running, so semantic search is unavailable (keyword search still works). Start `minsync serve --idle-timeout 0` (docs/indexing/embedding-backends.md), press Ctrl+Shift+E in the TUI, or set minSync.embedder to a remote endpoint.",
+						: "No embedding backend is running, so semantic search is unavailable (keyword search still works). Start `inl serve --idle-timeout 0` (docs/indexing/embedding-backends.md), press Ctrl+Shift+E in the TUI, or set minSync.embedder to a remote endpoint.",
 				source: "embedding",
 			},
 		];

@@ -152,10 +152,13 @@ export function toToolDefinition<TParameters extends TSchema, TDetails>(
 		label: tool.label,
 		description: tool.description,
 		parameters: tool.parameters,
-		...(tool.prepareArguments === undefined ? {} : { prepareArguments: tool.prepareArguments }),
+		...(tool.prepareArguments === undefined
+			? {}
+			: { prepareArguments: tool.prepareArguments as ToolDefinition<TParameters, TDetails>["prepareArguments"] }),
 		...(tool.renderCall === undefined ? {} : { renderCall: tool.renderCall }),
 		...(tool.renderResult === undefined ? {} : { renderResult: tool.renderResult }),
-		execute: async (toolCallId, params, signal, onUpdate) => tool.execute(toolCallId, params, signal, onUpdate),
+		execute: async (toolCallId, params, signal, onUpdate) =>
+			tool.execute(toolCallId, params as Parameters<typeof tool.execute>[1], signal, onUpdate),
 	};
 	return adapted as unknown as ToolDefinition;
 }

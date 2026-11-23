@@ -69,6 +69,7 @@ const SAFE_WOMBAT_ENV_KEYS: Readonly<Record<string, true>> = {
 	KIRO_HOME: true,
 	HF_HOME: true,
 	HF_ENDPOINT: true,
+	INL_CACHE_DIR: true,
 	MINSYNC_SERVER: true,
 };
 /** An embedder id or endpoint that would ship session text off the machine is refused before the CLI starts. */

@@ -24,7 +24,7 @@ interface NativeAddon {
 export class NativeAddonMissingError extends Error {
 	constructor(cause: unknown) {
 		super(
-			`MinSync's in-process embedder (${NATIVE_ADDON_PACKAGE}) is not installed, so no embedding backend is available without a running \`minsync serve\`: ${
+			`MinSync's in-process embedder (${NATIVE_ADDON_PACKAGE}) is not installed, so no embedding backend is available without a running \`inl serve\`: ${
 				cause instanceof Error ? cause.message : String(cause)
 			}`,
 			{ cause },

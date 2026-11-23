@@ -2,10 +2,10 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { ensureMinSyncDaemon, stopMinSyncDaemon } from "../../src/embedding/daemon.ts";
+import { ensureInlDaemon, stopInlDaemon } from "../../src/embedding/daemon.ts";
 import type { InProcessEmbedder } from "../../src/embedding/in-process.ts";
 import { createManagedEmbedder } from "../../src/embedding/managed.ts";
-import { writeFakeMinSyncServe } from "../helpers/fake-minsync-serve.ts";
+import { writeFakeInlServe } from "../helpers/fake-inl-serve.ts";
 
 let home: string;
 let bin: string;
@@ -33,9 +33,9 @@ const inProcess = (calls: string[]): InProcessEmbedder => ({
 
 /** Starts the fake daemon the way an operator's launchd service would: AutoRAG is not involved. */
 async function startOperatorDaemon(): Promise<number | undefined> {
-	const daemon = await ensureMinSyncDaemon({
+	const daemon = await ensureInlDaemon({
 		home,
-		binaryPath: writeFakeMinSyncServe(bin, { dimension: 4 }),
+		launcher: { path: writeFakeInlServe(bin, { dimension: 4 }) },
 		env: { ...process.env, HOME: home },
 		readyTimeoutMs: 15_000,
 	});
@@ -73,8 +73,8 @@ describe("createManagedEmbedder (local)", () => {
 		expect(await embedder.health()).toMatchObject({ backend: "in-process" });
 		await startOperatorDaemon();
 		expect(await embedder.health()).toMatchObject({ backend: "daemon", alive: true });
-		// stopMinSyncDaemon resolves only once the server no longer answers, so the next probe is deterministic.
-		expect(await stopMinSyncDaemon({ home })).toBeDefined();
+		// stopInlDaemon resolves only once the server no longer answers, so the next probe is deterministic.
+		expect(await stopInlDaemon({ home })).toBeDefined();
 		expect((await embedder.health()).backend).toBe("in-process");
 		expect(await embedder.embed(["after"])).toEqual([[9, 9, 9, 9]]);
 		expect(calls).toEqual(["after"]);
@@ -89,7 +89,7 @@ describe("createManagedEmbedder (local)", () => {
 		});
 		expect(await embedder.health()).toMatchObject({ backend: "none", alive: false });
 		expect((await embedder.health()).detail).toMatch(/addon not installed/);
-		await expect(embedder.embed(["x"])).rejects.toThrow(/Start `minsync serve`/);
+		await expect(embedder.embed(["x"])).rejects.toThrow(/Start `inl serve`/);
 	});
 });
 

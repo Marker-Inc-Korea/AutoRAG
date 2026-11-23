@@ -82,7 +82,7 @@ export class MinSyncClient {
 
 	/**
 	 * What MinSync is told to embed with. No `id`, or a `native:` id, is MinSync's own Qwen3 engine, which
-	 * MinSync provisions and runs (in-process, or through a `minsync serve` daemon it finds on its own).
+	 * MinSync provisions and runs (in-process, or through an im-not-llm `inl serve` daemon it finds on its own).
 	 * {@link SPARSE_ONLY_EMBEDDER_ID} is a sparse-only index: only the id is passed on, since a dimension or an
 	 * endpoint left over from a dense setup would describe vectors MinSync no longer builds.
 	 * Anything else is an endpoint the operator configured, passed through untouched.

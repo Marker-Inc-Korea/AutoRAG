@@ -30,7 +30,7 @@ describe("discrawlEmbeddingRuntimeFor", () => {
 
 	it("names a placeholder key variable for the keyless daemon, because discrawl refuses an empty one", () => {
 		// discrawl leaves `openai_compatible` embeddings off ("requires API key env ...") unless its key
-		// variable is non-empty, and `minsync serve` ignores the value. AutoRAG supplies a fixed
+		// variable is non-empty, and `inl serve` ignores the value. AutoRAG supplies a fixed
 		// non-secret placeholder under a variable name of its own, so no real credential is involved.
 		const runtime = discrawlEmbeddingRuntimeFor(daemon);
 		expect(runtime?.apiKeyEnv).toBe(LOCAL_EMBEDDING_KEY_ENV);

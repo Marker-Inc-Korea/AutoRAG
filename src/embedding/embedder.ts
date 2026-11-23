@@ -1,6 +1,6 @@
 /**
  * The contract every semantic consumer in AutoRAG codes against. AutoRAG does not run an embedding model:
- * vectors come from MinSync (the `minsync serve` daemon, or MinSync's in-process engine) or from a
+ * vectors come from MinSync (the `inl serve` daemon, or MinSync's in-process engine) or from a
  * remote endpoint the operator configured.
  */
 
@@ -56,7 +56,7 @@ export interface EmbedderEndpoint {
 
 /**
  * An {@link Embedder} that reports where it embeds. AutoRAG never starts or stops a server: the operator
- * runs `minsync serve` or configures a remote endpoint, and `health` / `describeEndpoint` only look.
+ * runs `inl serve` or configures a remote endpoint, and `health` / `describeEndpoint` only look.
  */
 export interface ManagedEmbedder extends Embedder {
 	/** Probes the backend now: the daemon's or the remote's `GET /health`. Never starts anything. */

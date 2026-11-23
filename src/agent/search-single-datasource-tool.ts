@@ -1,7 +1,8 @@
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
+import { formatAttachmentRoots } from "../datasource/attachments.ts";
 import { datasourceSearchToolName } from "../datasource/tool-naming.ts";
-import type { SearchFilterSpec } from "../datasource/types.ts";
+import type { DatasourceAttachmentRoot, SearchFilterSpec } from "../datasource/types.ts";
 import { resultContextSuffix } from "../retrieval/chunk-location.ts";
 import type { RetrievalDiagnostic, RetrievalResult, RetrievalWindowReport } from "../retrieval/types.ts";
 import { EvidenceLedger } from "./evidence-ledger.ts";
@@ -53,6 +54,8 @@ export interface SingleDatasourceToolSpec {
 	 * its description). Absent or empty: the description names none and the datasource validates a value itself.
 	 */
 	readonly searchFilters?: () => readonly SearchFilterSpec[];
+	/** Folders of this connection's saved attachments; listed after search results so the agent can open a referenced file. */
+	readonly attachmentRoots?: () => readonly DatasourceAttachmentRoot[];
 }
 
 export interface SingleDatasourceSearchProvider {
@@ -240,7 +243,14 @@ function createTool(
 				options.recordCut,
 			);
 			return {
-				content: [{ type: "text", text: datasourceResultsText(text, results.length, diagnostics, windowReport) }],
+				content: [
+					{
+						type: "text",
+						text:
+							datasourceResultsText(text, results.length, diagnostics, windowReport) +
+							attachmentNotice(spec, results.length),
+					},
+				],
 				details: {
 					method: "datasource",
 					datasource: spec.datasourceId,
@@ -253,6 +263,14 @@ function createTool(
 			};
 		},
 	};
+}
+
+/** Where this connection keeps saved attachments; only worth the tokens when something matched. */
+function attachmentNotice(spec: SingleDatasourceToolSpec, resultCount: number): string {
+	if (resultCount === 0) return "";
+	const roots = spec.attachmentRoots?.() ?? [];
+	if (roots.length === 0) return "";
+	return `\n\nAttachment folders for this datasource (files a message mentions may be saved here):\n${formatAttachmentRoots(roots)}`;
 }
 
 function datasourceResultsText(

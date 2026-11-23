@@ -30,6 +30,7 @@ appendFileSync(${JSON.stringify(logPath)}, JSON.stringify({
   args: process.argv.slice(2),
   dataDir: process.env.MAILCRAWL_DATA_DIR ?? null,
   openai: process.env.OPENAI_API_KEY ?? null,
+  inlCache: process.env.INL_CACHE_DIR ?? null,
   embeddingEnv
 }) + "\\n");
 process.stdout.write(${JSON.stringify(output)});
@@ -42,6 +43,7 @@ function calls(): readonly {
 	readonly args: readonly string[];
 	readonly dataDir: string | null;
 	readonly openai: string | null;
+	readonly inlCache: string | null;
 	readonly embeddingEnv: Record<string, string>;
 }[] {
 	if (!existsSync(logPath)) return [];
@@ -52,6 +54,20 @@ function calls(): readonly {
 }
 
 describe("MailcrawlClient", () => {
+	it("forwards the inl cache override to mailcrawl", async () => {
+		writeFake(JSON.stringify({ added: 1, updated: 0, unchanged: 0, chunksAdded: 1, archiveRevision: "r1" }));
+		const previous = process.env.INL_CACHE_DIR;
+		process.env.INL_CACHE_DIR = "/tmp/inl-cache";
+		try {
+			const client = new MailcrawlClient({ binaryPath, account: "personal", mailbox: "INBOX" });
+			await client.sync();
+			expect(calls()[0]?.inlCache).toBe("/tmp/inl-cache");
+		} finally {
+			if (previous === undefined) delete process.env.INL_CACHE_DIR;
+			else process.env.INL_CACHE_DIR = previous;
+		}
+	});
+
 	it("runs sync and search through mailcrawl's native store by default", async () => {
 		writeFake(JSON.stringify({ added: 2, updated: 1, unchanged: 4, chunksAdded: 3, archiveRevision: "r1" }));
 		const client = new MailcrawlClient({

@@ -11,7 +11,7 @@ This page covers MinSync's SPLADE sparse retrieval, how to run a sparse-only wor
 
 MinSync replaced its BM25 full-text index with learned-sparse retrieval: `nlpai-lab/KURE-Sparse-nano` (Apache-2.0) encodes every chunk and every query into weighted vocabulary terms. The keyword half of local search (the `sparse` mode, and the sparse side of `hybrid`) runs through it. It needs no tokenizer library: Korean inflected forms (`인증서를` → `인증서`) match without Kiwi, which AutoRAG no longer probes for, and MinSync no longer takes `--language` at init.
 
-MinSync downloads the 299 MB sparse model into `~/.cache/minsync/models` on first use (sha256-verified) and runs it in-process on Metal or CPU. AutoRAG does not start a `minsync serve --sparse` daemon.
+MinSync downloads the 299 MB sparse model into `~/.cache/im-not-llm/models` on first use (sha256-verified) and runs it in-process on Metal or CPU. AutoRAG does not start an `inl serve --sparse` daemon.
 
 The known limit, from MinSync's release notes: exact strings such as error codes, hashes, and version strings among many look-alike documents match far less reliably than with BM25. For exact lookups, use a bounded `grep`.
 
@@ -23,7 +23,7 @@ A dense index cannot become sparse-only in place, or back: the vector column's d
 
 ## Upgrading a BM25 workspace
 
-AutoRAG requires MinSync 0.7.4 or newer and installs 0.7.4. A `minsync` on `PATH` or in the workspace cache that reports an older version is never run: one later on `PATH` is used instead, a cached one is replaced by the next install (`autorag refresh` with `minSync.autoInstall`), and a query with no usable binary fails with a `MinSyncRequiredError` naming the version and path it found. A binary whose `--version` does not print a MinSync version line (a custom build) is not gated. MinSync 0.7.4 needs rustc 1.94 or newer for `cargo install`; with an older toolchain the install fails and AutoRAG falls back to the GitHub release binary.
+AutoRAG requires MinSync 0.7.5 or newer and installs 0.7.5. A `minsync` on `PATH` or in the workspace cache that reports an older version is never run: one later on `PATH` is used instead, a cached one is replaced by the next install (`autorag refresh` with `minSync.autoInstall`), and a query with no usable binary fails with a `MinSyncRequiredError` naming the version and path it found. A binary whose `--version` does not print a MinSync version line (a custom build) is not gated. MinSync 0.7.5 needs rustc 1.94 or newer for `cargo install`; with an older toolchain the install fails and AutoRAG falls back to the GitHub release binary.
 
 On the first `autorag refresh` after the upgrade, AutoRAG removes the `[lexical]` table from MinSync's config file and MinSync migrates the index in place: the BM25 index and `lexical_text` column are dropped and sparse vectors are encoded for every chunk; dense vectors are kept. This is a one-time cost that grows with the corpus. On an Apple M4 Max, a 5,394-file workspace with 52,851 chunks took 38 minutes (45,361 chunks encoded, 7,490 reused) with a 2.7 GB peak memory footprint, and the store grew from 0.65 GB to 2.3 GB.
 

@@ -41,7 +41,7 @@ const DEFAULT_SEARCH_TIMEOUT_MS = 60_000;
 const DEFAULT_INDEX_TIMEOUT_MS = DEFAULT_CONNECTOR_SYNC_TIMEOUT_MS;
 const DEFAULT_MAX_BUFFER_BYTES = 1_048_576;
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]", "::1"]);
-const SAFE_ENV_KEYS = new Set(["HOME", "LANG", "LC_ALL", "PATH", "TMPDIR", "TMP", "TEMP", "NO_COLOR"]);
+const SAFE_ENV_KEYS = new Set(["HOME", "LANG", "LC_ALL", "PATH", "TMPDIR", "TMP", "TEMP", "NO_COLOR", "INL_CACHE_DIR"]);
 const SAFE_MAILCRAWL_ENV_KEYS = new Set([
 	"MAILCRAWL_DATA_DIR",
 	"MAILCRAWL_EMBEDDER",
@@ -210,7 +210,7 @@ export class MailcrawlClient implements MailcrawlSearchClient {
 						reason: "embedding-unavailable",
 						stdout: "",
 						stderr:
-							"no embedding endpoint is available: start `minsync serve` (docs/indexing/embedding-backends.md) or set minSync.embedder to a remote endpoint",
+							"no embedding endpoint is available: start `inl serve` (docs/indexing/embedding-backends.md) or set minSync.embedder to a remote endpoint",
 						code: null,
 					};
 				}
