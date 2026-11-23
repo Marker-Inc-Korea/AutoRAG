@@ -22,6 +22,7 @@ import type {
 import { buildDatasourceSkills } from "../../../../src/datasource/skills/factory.ts";
 import { RetrievalEngine } from "../../../../src/retrieval/engine.ts";
 import type { RetrievalMethod, RetrievalResult } from "../../../../src/retrieval/types.ts";
+import { unwrapAttachments } from "../../../helpers/attachments.ts";
 
 const OLD_MESSAGE = "1513467741523415161";
 const OLD_SOURCE = `/discord/work/chunks/${OLD_MESSAGE}`;
@@ -149,7 +150,7 @@ describe("Discord ranking through the public retrieval paths", () => {
 			},
 			root,
 		);
-		const skill = skills[0];
+		const skill = unwrapAttachments(skills[0]);
 		if (!(skill instanceof AliasedDatasourceSkill)) throw new Error("Expected a connection alias");
 		// The alias has no close hook; release the underlying test-owned archive.
 		opened.push((skill as unknown as { skill: DiscrawlSkill }).skill);

@@ -3172,6 +3172,7 @@ export class AutoRAGAgent {
 					return (agentSelf.searchFilterCache.get(datasourceId) ?? []).map((filter) => filter.name);
 				},
 				searchFilters: () => agentSelf.searchFilterCache.get(datasourceId) ?? [],
+				attachmentRoots: () => skill.attachmentRoots?.() ?? [],
 			});
 		}
 		return specs;
