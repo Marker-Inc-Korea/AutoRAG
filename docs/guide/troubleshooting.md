@@ -124,7 +124,7 @@ ls ~/.cache/im-not-llm/serve/* 2>/dev/null
 autorag setup --format json
 ```
 
-AutoRAG never starts the daemon. Run `inl serve --idle-timeout 0` by hand (or as a launchd/systemd service), read its own error, or press Ctrl+Shift+E in the TUI. The daemon stops itself after `--idle-timeout` seconds (default 300), so a semantic failure after a quiet spell usually means it timed out. Stop an orphaned daemon by the pid from `~/.cache/im-not-llm/serve/<instance>/pid` only after confirming no live refresh holds it.
+AutoRAG never starts the daemon. Run `inl serve --idle-timeout 0` by hand (or as a launchd/systemd service), read its own error, or press Ctrl+Shift+E in the TUI. `inl serve` stops itself only if started with `--idle-timeout N`; inl-server 0.3.3 and older (and `minsync serve` for now) default to 300 s, so with those a semantic failure after a quiet spell usually means it timed out. Stop an orphaned daemon by the pid from `~/.cache/im-not-llm/serve/<instance>/pid` only after confirming no live refresh holds it.
 
 Index locks are owned by their engines: MinSync/tantivy locks under `<workspace>/.autorag/`, per-CLI locks such as `<workspace>/.autorag/datasources/discrawl/.discrawl-sync.lock`. Delete one only after confirming no owning process is alive.
 

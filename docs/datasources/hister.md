@@ -77,7 +77,7 @@ hister doctor                # the line server.index.embeddings must be ok
 - `--sync-hister` edits only the six keys `enable`, `embedding_endpoint`, `embedding_model`, `dimensions`, `query_prefix`, and `document_prefix` in Hister's own `config.yml`, keeping a `config.yml.bak.<time>` next to it. Every other byte is preserved.
 - It restarts the service with `brew services restart hister`, waits until the server answers, and runs `hister reindex` only when a changed key makes stored vectors stale (the query prefix alone does not). It is idempotent.
 - It refuses, and says why, for a remote shared backend (browsing text would leave the machine and Hister's config would have to hold the key) and for MinSync's in-process engine (Hister cannot reach it): start `inl serve --idle-timeout 0` first (see [Embedding backends](../indexing/embedding-backends.md)).
-- The daemon's port is chosen when it starts, so run `autorag setup --sync-hister` again after restarting the daemon. If the report says `restartRequired` or `reindexRequired`, run `brew services restart hister` and `hister reindex` yourself.
+- Hister's config holds the daemon's URL. inl-server 0.3.4 and later bring a restarted daemon back on the same port, so the URL stays valid; an older daemon picks a new port on every start, so run `autorag setup --sync-hister` again after restarting it. `autorag setup` reports `embedding_endpoint` as out of sync when the URL no longer matches. If the report says `restartRequired` or `reindexRequired`, run `brew services restart hister` and `hister reindex` yourself.
 
 ## Running it day to day
 
