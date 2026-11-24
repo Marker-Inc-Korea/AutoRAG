@@ -17,7 +17,7 @@ import { FileeCliError, type FileeCliOptions, resolveFileeExecutable } from "./c
  * Filee's own engines (FFmpeg, Pandoc, LibreOffice, ...) are fetched by
  * filee-cli itself on first use.
  */
-export const FILEE_CLI_VERSION = "2.0.0-3";
+export const FILEE_CLI_VERSION = "2.5.0-1";
 
 export interface FileeCliAsset {
 	readonly name: string;
@@ -34,11 +34,11 @@ function asset(suffix: string, sha256: string): FileeCliAsset {
 
 /** SHA-256 values come from the release's `SHA256SUMS`. Keyed by `<platform>-<arch>`. */
 export const FILEE_CLI_ASSETS: Readonly<Record<string, FileeCliAsset>> = {
-	"darwin-arm64": asset("osx-arm64.tar.gz", "e5e277e02a200001b2d7e0f63b5039497b1be99354f32e9ff534a4b0286088cc"),
-	"darwin-x64": asset("osx-x64.tar.gz", "255d3f06d7df4ad367d99d63cbe542c2cda8b86fef071141c5cf52be973939de"),
-	"linux-arm64": asset("linux-arm64.tar.gz", "07123e5cab6fb15a07c493e819635906c0eb4a50cfa54aea53b32b1cb557ce7c"),
-	"linux-x64": asset("linux-x64.tar.gz", "3388a2a33b5dea7eec97a35e180073e3e395c52749e0933d8d7bb5709a05b463"),
-	"win32-x64": asset("win-x64.zip", "73601ebaa185f047949c031da8ee3eb560ea3a7973a7f067c18e4dbcc0afdabe"),
+	"darwin-arm64": asset("osx-arm64.tar.gz", "822fe13e88a3fd0ea1f6306c30d4aa79462a0c54ed5c6a69cb9077ea9ea9ad4d"),
+	"darwin-x64": asset("osx-x64.tar.gz", "deb33ebebae9d8b42b422098ad8d04a86ad3acda41043b6969b70bd2901336ba"),
+	"linux-arm64": asset("linux-arm64.tar.gz", "f5520ab8dc39b80c8c464d9f8519aebb3090edffbe21009fb681a8be683e6b08"),
+	"linux-x64": asset("linux-x64.tar.gz", "8bb8220be2a9e206560659491d486f4680d2ddf2e384ce35d1fe542d4f541a9a"),
+	"win32-x64": asset("win-x64.zip", "40cd534f07f5b68e9671927fbef791de87374307013a6d3ca88b93a68f362336"),
 };
 
 export class FileeInstallError extends Error {

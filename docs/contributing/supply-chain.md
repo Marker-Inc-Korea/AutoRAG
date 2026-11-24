@@ -70,7 +70,7 @@ AutoRAG stands on other open-source projects:
 - **[FSearch](https://github.com/cboxdoerfer/fsearch)** and **[fsearch-cli](https://github.com/NomaDamas/fsearch-mac)** — Everything-style file-name search for macOS/Linux (GPL-2.0-or-later), never bundled or linked.
 - **[Hister](https://github.com/asciimoo/hister)** — self-hosted browser web-history search (AGPL-3.0-or-later), never bundled, linked, copied, or modified.
 - **[dupey](https://github.com/NomaDamas/dupey)** by NomaDamas — duplicate and near-duplicate document family detection.
-- **[Filee](https://github.com/KnifeLemon/Filee)** by KnifeLemon — offline conversion of 240+ file formats (MIT), downloaded as the separate `filee-cli` process.
+- **[Filee](https://github.com/KnifeLemon/Filee)** by KnifeLemon — offline conversion of 290+ file formats (MIT), downloaded as the separate `filee-cli` process.
 - **Federated CLI authors** — [`lazykatok`](https://github.com/changeroa/lazykatok), [`discrawl`](https://github.com/openclaw/discrawl), [`mailcrawl`](https://github.com/NomaDamas/mailcrawl), [`wacrawl`](https://github.com/openclaw/wacrawl), [`telecrawl`](https://github.com/openclaw/telecrawl), [`slacrawl`](https://github.com/openclaw/slacrawl), and [`notcrawl`](https://github.com/openclaw/notcrawl).
 - **[kordoc](https://github.com/chrisryugj/kordoc)** by chrisryugj — HWP/HWPX/HWPML, PDF, DOCX, and XLSX parsing with nested-table fidelity, used as AutoRAG's default document parser.
 
