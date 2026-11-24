@@ -467,6 +467,10 @@ export const LTR_SERVING_FEATURE_NAMES = [
 	"dense_max_score",
 	"dense_reciprocal_rank_sum",
 	"dense_hits",
+	"sparse_best_rank",
+	"sparse_max_score",
+	"sparse_reciprocal_rank_sum",
+	"sparse_hits",
 	"channel_count",
 	"query_hit_count",
 	"observation_count",
@@ -475,7 +479,6 @@ export const LTR_SERVING_FEATURE_NAMES = [
 	"text_question_coverage",
 	"content_chars_log",
 ] as const;
-
 const SERVING_FEATURE_INDICES = LTR_SERVING_FEATURE_NAMES.map((name) => LTR_FEATURE_NAMES.indexOf(name));
 
 export interface ServingRow {

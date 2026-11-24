@@ -122,6 +122,8 @@ describe("trainLtrModel (WASM XGBoost, no Python)", () => {
 		expect(result.status, result.reason).toBe("trained");
 		const [stored] = listLtrModels(ltrDirectory(memoryPath));
 		expect(stored?.passedGate).toBe(true);
+		expect(stored?.objective).toBe("rank:ndcg");
+		expect(stored?.featureNames).toContain("sparse_best_rank");
 		expect(stored?.holdout.model.mrr).toBeGreaterThan(stored?.holdout.baseline.mrr ?? 1);
 		expect(stored?.holdout.deltaMrrCi95[0]).toBeGreaterThan(0);
 		expect(stored?.holdout.deltaNdcg10Ci95).toBeDefined();

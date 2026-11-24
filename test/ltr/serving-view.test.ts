@@ -20,6 +20,45 @@ describe("serving view of a logged run", () => {
 		}
 		expect(LTR_SERVING_FEATURE_NAMES).toContain("rerank_score");
 		expect(LTR_SERVING_FEATURE_NAMES).toContain("dense_best_rank");
+		expect(LTR_SERVING_FEATURE_NAMES).toContain("sparse_best_rank");
+		expect(LTR_SERVING_FEATURE_NAMES).toContain("sparse_max_score");
+		expect(LTR_SERVING_FEATURE_NAMES).toContain("sparse_reciprocal_rank_sum");
+		expect(LTR_SERVING_FEATURE_NAMES).toContain("sparse_hits");
+	});
+
+	it("populates sparse_* serving features from minsync-sparse prefetch observations and leaves missing channels NaN", () => {
+		const { recorder, pool } = recordedRun("r-sparse", 3_000, { poolSize: 4 });
+		const sparseFirst = pool[2];
+		const sparseSecond = pool[0];
+		if (sparseFirst === undefined || sparseSecond === undefined) throw new Error("pool too small");
+		recorder.retrieved({
+			surface: "minsync",
+			query: "sparse prefetch",
+			results: [
+				hit(sparseFirst.source, sparseFirst.content, 14.5, "minsync-sparse"),
+				hit(sparseSecond.source, sparseSecond.content, 8.2, "minsync-sparse"),
+			],
+		});
+		const rows = servingRows(
+			recorder.finish({ finalCitationKeys: [], finishedAt: 3_010, origin: () => "local files" }),
+		);
+		const idx = (name: (typeof LTR_SERVING_FEATURE_NAMES)[number]) => LTR_SERVING_FEATURE_NAMES.indexOf(name);
+		const rowFor = (source: string) => {
+			const found = rows.find((row) => row.source === source);
+			if (found === undefined) throw new Error(`missing row for ${source}`);
+			return found.features;
+		};
+		const first = rowFor(sparseFirst.source);
+		expect(first[idx("sparse_best_rank")]).toBe(1);
+		expect(first[idx("sparse_max_score")]).toBeCloseTo(14.5, 6);
+		expect(first[idx("sparse_reciprocal_rank_sum")]).toBeCloseTo(1, 6);
+		expect(first[idx("sparse_hits")]).toBe(1);
+
+		const absent = rowFor(pool[1]!.source);
+		expect(Number.isNaN(absent[idx("sparse_best_rank")])).toBe(true);
+		expect(Number.isNaN(absent[idx("sparse_max_score")])).toBe(true);
+		expect(absent[idx("sparse_reciprocal_rank_sum")]).toBe(0);
+		expect(absent[idx("sparse_hits")]).toBe(0);
 	});
 
 	it("scores only the candidates the reranker returned", () => {
