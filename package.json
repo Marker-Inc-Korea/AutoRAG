@@ -54,6 +54,11 @@
   "engines": {
     "node": ">=24.0.0"
   },
+  "os": [
+    "darwin",
+    "linux",
+    "win32"
+  ],
   "dependencies": {
     "@bubblyworld/xgboost-ts": "1.0.0",
     "@earendil-works/pi-agent-core": "^1.5.2",

@@ -30,7 +30,7 @@ confirm it is enabled, then `hermes pm install --extra mcp`. The MCP server read
 its config when it starts: after the first setup, run `/reload-mcp` (or open a new
 session) once.
 
-Requires Node.js 24 or newer.
+Supports macOS, Linux, and Windows. Requires Node.js 24 or newer (and Python 3.9+ for the optional skill helper scripts).
 
 ## What it exposes
 
@@ -122,13 +122,13 @@ Telegram."
 
 The helper
 [`skills/automate/scripts/autorag_automation.py`](https://github.com/Marker-Inc-Korea/AutoRAG/blob/main/plugins/hermes/skills/automate/scripts/autorag_automation.py)
-(Python standard library only) writes a rule to `~/.autorag/automations.json`
-(backed up first), a generated `fire.sh` under
+(Python standard library only, macOS/Linux/Windows) writes a rule to `~/.autorag/automations.json`
+(backed up first), a generated `fire.py` under
 `$HERMES_HOME/plugin-data/autorag/automations/`, and a gate script in
-`$HERMES_HOME/scripts/`. `fire.sh` runs `hermes cron run` for that job. The daemon
-is registered with launchd or systemd `--user` only if you run
-`autorag automate install`. Nothing is created at install time, and `remove`
-deletes everything the helper made.
+`$HERMES_HOME/scripts/`. `fire.py` runs `hermes cron run` for that job. The daemon
+is registered with launchd (macOS), systemd `--user` (Linux), or Task Scheduler
+(Windows) only if you run `autorag automate install`. Nothing is created at
+install time, and `remove` deletes everything the helper made.
 
 ## Configuration
 

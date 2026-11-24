@@ -5,7 +5,7 @@ description: "What AutoRAG Agent is: a personal librarian that searches local fi
 
 # Overview
 
-AutoRAG Agent is a personal librarian agent that finds, reads, and cites what is on your computer. This page explains what the engine does, which surfaces it runs on, and what stays on your machine.
+AutoRAG Agent is a personal librarian agent that finds, reads, and cites what is on your computer. It runs on **macOS, Linux, and Windows**. This page explains what the engine does, which surfaces it runs on, and what stays on your machine.
 
 ## What the librarian does
 

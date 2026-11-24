@@ -101,6 +101,8 @@ launchctl bootout gui/$(id -u)/dev.im-not-llm.inl-serve        # stop and unload
 
 **Linux (systemd user unit).** Create `~/.config/systemd/user/inl-serve.service` with `ExecStart=%h/.cargo/bin/inl serve --idle-timeout 0` and `Restart=always`, then run `systemctl --user enable --now inl-serve`.
 
+**Windows (Task Scheduler).** Register a user-level logon task that runs `inl serve --idle-timeout 0` (for example with `schtasks /Create /TN inl-serve /SC ONLOGON /TR "inl serve --idle-timeout 0"`), or start it in a terminal.
+
 **Without a service manager**, run `inl serve --idle-timeout 0` in a terminal, or press **Ctrl+Shift+E** / type `/embedding on` in `autorag tui`. If you do not have `inl`, `minsync serve --idle-timeout 0` serves the same state root.
 
 ## TUI footer and the /embedding command

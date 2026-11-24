@@ -2,7 +2,7 @@
 name: schedule
 description: Keep the AutoRAG index fresh and watch for duplicate files on their own, using Hermes cron. Use when the user wants indexing to run automatically ("re-index every night", "only while charging", "only between 10pm and 7am") or wants to be told when duplicate documents appear ("check my Documents for duplicates every morning"), or wants to list or remove such schedules. Not for one-off searches (use the search skill), not for first-time setup (use the setup skill), and not for reacting to a file the moment it appears (use the automate skill).
 license: Apache-2.0
-compatibility: Needs Node.js >= 24, a running Hermes gateway (or `hermes cron tick`), and macOS or Linux with Python 3.9+ for the helper script.
+compatibility: Needs Node.js >= 24, a running Hermes gateway (or `hermes cron tick`), and Python 3.9+ for the helper script (macOS, Linux, or Windows).
 ---
 
 # Scheduled indexing and duplicate checks for Hermes
