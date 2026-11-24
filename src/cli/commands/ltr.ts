@@ -102,7 +102,7 @@ function patchConfig(ctx: CommandContext, configPath: string | undefined, patch:
 
 function formatModel(model: LtrModelMeta): string {
 	const { holdout } = model;
-	return `${model.id}  ${model.passedGate ? "passed" : "rejected"}  holdout ${holdout.queries} queries  MRR ${holdout.baseline.mrr.toFixed(3)} -> ${holdout.model.mrr.toFixed(3)}  trained on ${model.trainedOnRuns} runs`;
+	return `${model.id}  ${model.passedGate ? "passed" : "rejected"}  holdout ${holdout.queries} queries  MRR ${holdout.baseline.mrr.toFixed(3)} -> ${holdout.model.mrr.toFixed(3)}  nDCG@10 ${holdout.baseline.ndcg10.toFixed(3)} -> ${holdout.model.ndcg10.toFixed(3)}  trained on ${model.trainedOnRuns} runs`;
 }
 
 function formatStatus(status: LtrStatus): string {
