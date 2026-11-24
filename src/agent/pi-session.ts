@@ -24,6 +24,7 @@ import { getKeybindings, type KeyId, matchesKey } from "@earendil-works/pi-tui";
 import type { TSchema } from "typebox";
 import { PROVIDER_ID as DAZZI_PROVIDER_ID } from "../cloud/config.ts";
 import { registerDazziProvider } from "../cloud/provider.ts";
+import { redactMessages, redactSecrets, secretRedactionEnabled } from "../privacy/index.ts";
 import { createContextTokenGuardedTransform, withBoundedOutput } from "./context-token-guard.ts";
 import { runtimeContextAddendum } from "./environment-prompt.ts";
 import { registerIntentTracing } from "./intent-tracing.ts";
@@ -244,13 +245,12 @@ function guardContext(
 			.map(({ name, description, parameters }) => ({ name, description, parameters }));
 		const fixedOverheadTokens =
 			estimateTextTokens(ctx.getSystemPrompt()) + estimateTextTokens(JSON.stringify(toolDeclarations));
-		return {
-			messages: await createContextTokenGuardedTransform(
-				ctx.model,
-				contextTransform,
-				() => fixedOverheadTokens,
-			)(event.messages),
-		};
+		const guarded = await createContextTokenGuardedTransform(
+			ctx.model,
+			contextTransform,
+			() => fixedOverheadTokens,
+		)(event.messages);
+		return { messages: redactMessages(guarded) };
 	});
 }
 
@@ -261,8 +261,9 @@ function createAutoRAGExtension(
 ): ExtensionFactory {
 	return (pi) => {
 		pi.on("before_agent_start", (event) => ({
-			systemPrompt:
+			systemPrompt: (secretRedactionEnabled() ? redactSecrets : (s: string) => s)(
 				getSystemPrompt() + mcpPromptAddendum(event.systemPromptOptions.sections) + runtimeContextAddendum(cwd),
+			),
 		}));
 		guardContext(pi, contextTransform);
 		enforceRequestLimits(pi);
@@ -338,8 +339,9 @@ function createAutoRAGInteractiveExtension(
 ): ExtensionFactory {
 	return (pi) => {
 		pi.on("before_agent_start", (event) => ({
-			systemPrompt:
+			systemPrompt: (secretRedactionEnabled() ? redactSecrets : (s: string) => s)(
 				getSystemPrompt() + mcpPromptAddendum(event.systemPromptOptions.sections) + runtimeContextAddendum(cwd),
+			),
 		}));
 		guardContext(pi, contextTransform);
 		enforceRequestLimits(pi);

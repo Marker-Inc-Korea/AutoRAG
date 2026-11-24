@@ -1,3 +1,4 @@
+import { redactSecrets, secretRedactionEnabled } from "../privacy/index.ts";
 import type { Embedder, EmbeddingIdentity } from "./embedder.ts";
 
 export type EmbeddingProtocol = "openai" | "tei";
@@ -77,10 +78,11 @@ export function createHttpEmbedder(options: HttpEmbedderOptions): Embedder {
 	let probing: Promise<void> | undefined;
 
 	async function request(batch: readonly string[]): Promise<number[][]> {
+		const outbound = secretRedactionEnabled() ? batch.map(redactSecrets) : batch;
 		const response = await fetchImpl(endpoint(options), {
 			method: "POST",
 			headers: headers(options),
-			body: requestBody(options, batch),
+			body: requestBody(options, outbound),
 			signal: AbortSignal.timeout(options.timeoutMs ?? DEFAULT_TIMEOUT_MS),
 		});
 		if (!response.ok) {

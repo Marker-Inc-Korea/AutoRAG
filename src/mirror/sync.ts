@@ -27,6 +27,7 @@ import { ocrImageTooSmallMessage } from "../parser/ocr-engines.ts";
 import type { ParserRegistry } from "../parser/registry.ts";
 import { normalizeMarkdown } from "../parser/text.ts";
 import type { ParseOutput } from "../parser/types.ts";
+import { redactSecrets, secretRedactionEnabled } from "../privacy/index.ts";
 import { abortReason } from "../process/abort-reason.ts";
 import { writeFileAtomic } from "./atomic-write.ts";
 import { CloudGate } from "./cloud.ts";
@@ -810,7 +811,8 @@ async function syncWithRegistry(
 						);
 						continue;
 					}
-					const markdown = normalizeMarkdown(parsed.markdown);
+					const normalized = normalizeMarkdown(parsed.markdown);
+					const markdown = secretRedactionEnabled() ? redactSecrets(normalized) : normalized;
 					try {
 						await withTransientRetry(
 							() => writeFileAtomic(outputPath, markdown),

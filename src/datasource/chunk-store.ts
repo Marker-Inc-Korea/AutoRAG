@@ -11,6 +11,7 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { redactSecrets, redactValue, secretRedactionEnabled } from "../privacy/index.ts";
 import { bm25Scores, tokenize } from "../retrieval/bm25.ts";
 import { inTimeWindow, type TimeWindow } from "../retrieval/time-window.ts";
 import type { ConnectorDocument } from "./connector.ts";
@@ -202,10 +203,14 @@ function buildChunks(
 	seenIds = new Set<string>(),
 ): StoredChunk[] {
 	const chunks: StoredChunk[] = [];
+	const redact = secretRedactionEnabled();
 	for (const document of documents) {
 		const docSegment = sanitizeIdSegment(document.docId);
 		const hierarchy = (document.hierarchy ?? []).map(sanitizeIdSegment).filter((segment) => segment.length > 0);
-		const parts = splitContent(document.content, maxChunkChars);
+		const content = redact ? redactSecrets(document.content) : document.content;
+		const title = document.title !== undefined && redact ? redactSecrets(document.title) : document.title;
+		const metadata = redact ? redactValue({ ...(document.metadata ?? {}) }) : { ...(document.metadata ?? {}) };
+		const parts = splitContent(content, maxChunkChars);
 		for (const [index, part] of parts.entries()) {
 			let chunkId = parts.length === 1 ? docSegment : `${docSegment}-p${index + 1}`;
 			while (seenIds.has(chunkId)) chunkId = `${chunkId}x`;
@@ -214,10 +219,10 @@ function buildChunks(
 				chunkId,
 				docId: document.docId,
 				hierarchy,
-				...(document.title !== undefined ? { title: document.title } : {}),
+				...(title !== undefined ? { title } : {}),
 				content: part,
 				...(document.publishedAt !== undefined ? { publishedAt: document.publishedAt } : {}),
-				metadata: { ...(document.metadata ?? {}) },
+				metadata,
 			});
 		}
 	}

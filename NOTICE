@@ -9,19 +9,19 @@ Third-party production dependencies:
 @bubblyworld/xgboost-ts@1.0.0
 License: Apache-2.0
 
-@earendil-works/pi-agent-core@1.5.2
+@earendil-works/pi-agent-core@1.4.0
 License: MIT
 
-@earendil-works/pi-ai@1.5.2
+@earendil-works/pi-ai@1.4.0
 License: MIT
 
-@earendil-works/pi-coding-agent@1.5.2
+@earendil-works/pi-coding-agent@1.4.0
 License: MIT
 
-@earendil-works/pi-tui@1.5.2
+@earendil-works/pi-tui@1.4.0
 License: MIT
 
-@llblab/pi-telegram@0.59.1
+@llblab/pi-telegram@0.58.3
 License: MIT
 
 @modelcontextprotocol/server@2.4.0
@@ -36,7 +36,7 @@ License: MIT
 discord.js@14.27.0
 License: Apache-2.0
 
-fast-xml-parser@5.12.1
+fast-xml-parser@5.11.2
 License: MIT
 
 gpt-tokenizer@4.1.0
@@ -92,6 +92,11 @@ licenses/everything-MIT-and-PCRE-BSD.txt
 ES 1.1.0.38 command-line interface (voidtools)
 License: MIT
 licenses/es-MIT.txt
+
+Ported secret-detection rule patterns (src/privacy/redact.ts):
+Gitleaks (https://github.com/gitleaks/gitleaks, Zachary Rice and Gitleaks contributors)
+License: MIT
+licenses/gitleaks-MIT.txt
 
 Separate programs AutoRAG talks to (not bundled, not distributed, not linked):
 Hister (https://github.com/asciimoo/hister, asciimoo and Hister contributors)

@@ -1,5 +1,6 @@
 import type { Api, AssistantMessage, Model } from "@earendil-works/pi-ai";
 import { completeSimple } from "@earendil-works/pi-ai/compat";
+import { redactSecrets, secretRedactionEnabled } from "../privacy/index.ts";
 
 /** Hard cap on search queries one question may decompose into. */
 export const MAX_DECOMPOSED_QUERIES = 5;
@@ -96,7 +97,15 @@ export function createModelDecompositionCompleter(
 	return async (prompt) => {
 		const result: AssistantMessage = await completeSimple(
 			target.model,
-			{ messages: [{ role: "user", content: prompt, timestamp: Date.now() }] },
+			{
+				messages: [
+					{
+						role: "user",
+						content: secretRedactionEnabled() ? redactSecrets(prompt) : prompt,
+						timestamp: Date.now(),
+					},
+				],
+			},
 			{
 				...(target.apiKey !== undefined ? { apiKey: target.apiKey } : {}),
 				...(signal !== undefined ? { signal } : {}),

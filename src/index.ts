@@ -51,4 +51,5 @@ export * from "./memory/index.ts";
 export * from "./minsync/index.ts";
 export * from "./mirror/index.ts";
 export * from "./parser/index.ts";
+export * from "./privacy/index.ts";
 export * from "./retrieval/index.ts";
