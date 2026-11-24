@@ -1,5 +1,5 @@
 {
-  "lockfileVersion": 2,
+  "lockfileVersion": 3,
   "configVersion": 1,
   "workspaces": {
     "": {
@@ -41,6 +41,14 @@
         "vitest": "^5.0.5",
         "yaml": "^2.9.1",
       },
+    },
+  },
+  "overrides": {
+    "@discordjs/rest": {
+      "undici": "^6.29.1",
+    },
+    "discord.js": {
+      "undici": "^6.29.1",
     },
   },
   "packages": {

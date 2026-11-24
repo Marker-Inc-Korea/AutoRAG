@@ -287,6 +287,46 @@ describe("PerplexityProvider (anonymous ask)", () => {
 		expect(result.details.response.provider).toBe("parallel");
 		expect(result.details.response.sources.map((source) => source.url)).toEqual(["https://example.com/real"]);
 	});
+
+	it("bounds memory against an SSE peer sending excessive data lines without event separators (CVE-2026-109924 defense-in-depth)", async () => {
+		const encoder = new TextEncoder();
+		const stream = new ReadableStream<Uint8Array>({
+			start(controller) {
+				const line = encoder.encode("data: x\n");
+				for (let index = 0; index < 20_000; index += 1) {
+					controller.enqueue(line);
+				}
+				controller.close();
+			},
+		});
+		const fetchImpl: FetchImpl = async () =>
+			new Response(stream, { status: 200, headers: { "content-type": "text/event-stream" } });
+		await expect(new PerplexityProvider().search({ query: "q", fetch: fetchImpl })).rejects.toMatchObject({
+			name: "SearchProviderError",
+			provider: "perplexity",
+			status: 500,
+		});
+	});
+
+	it("bounds memory against an SSE peer sending a single unterminated line across many chunks (CVE-2026-109924 defense-in-depth)", async () => {
+		const encoder = new TextEncoder();
+		const chunk = encoder.encode("a".repeat(64 * 1024));
+		const stream = new ReadableStream<Uint8Array>({
+			start(controller) {
+				for (let index = 0; index < 100; index += 1) {
+					controller.enqueue(chunk);
+				}
+				controller.close();
+			},
+		});
+		const fetchImpl: FetchImpl = async () =>
+			new Response(stream, { status: 200, headers: { "content-type": "text/event-stream" } });
+		await expect(new PerplexityProvider().search({ query: "q", fetch: fetchImpl })).rejects.toMatchObject({
+			name: "SearchProviderError",
+			provider: "perplexity",
+			status: 500,
+		});
+	});
 });
 
 describe("ParallelProvider (keyless MCP)", () => {
