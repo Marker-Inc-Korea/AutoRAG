@@ -36,7 +36,7 @@ Side effects of the update on this machine: `hermes update` stopped the running 
 it. I restarted it with `hermes gateway ensure`. Any open desktop session was interrupted. A backup of
 `config.yaml` and `auth.json` was taken first under `~/.hermes/backup/pre-autorag-plugin-*`.
 
-Not verified: Windows and Linux, a second Hermes version, `hermes plugins validate --install-deps`
+Not verified yet on live Hermes installs: Linux and Windows end-to-end runs (the plugin package, MCP server, Desktop backend, and Python skill helpers are written for macOS, Linux, and Windows), a second Hermes version, `hermes plugins validate --install-deps`
 (portable package, no Python deps), the catalog CI job itself (it only runs on the upstream PR), and a
 second setup run (the 12 min figure is one sample on a loaded machine; cargo was present so `minsync`
 compiled, which dominated it). In that run the model also hit two problems the skill did not cover and
@@ -84,9 +84,9 @@ Discord staying keyword-only because discrawl's own config has embeddings off.
 >
 > - Surfaces used: stdio MCP server (`@autorag/librarian@2.13.12`, pinned), skills, and a Hermes Desktop pane with a small
 >   backend router (`dashboard/plugin_api.py`). No hooks, no middleware, no core overrides. Three skills bundle a
->   standard-library Python helper that the agent runs only when the user asks (macOS/Linux): `setup` (a read-only
+>   standard-library Python helper that the agent runs only when the user asks (macOS, Linux, and Windows): `setup` (a read-only
 >   folder inventory: lists and stats files, never opens or writes them), `automate` (writes an AutoRAG automation rule and
->   two small scripts so a file event runs a Hermes cron job), and `schedule` (creates no-agent Hermes cron jobs that
+>   two small Python scripts so a file event runs a Hermes cron job), and `schedule` (creates no-agent Hermes cron jobs that
 >   refresh the index or report new duplicate files). Nothing is created at install time.
 > - The Desktop backend runs `npm install` of the same pinned `@autorag/librarian` once into
 >   `$HERMES_HOME/plugin-data/autorag/runtime` (no lifecycle scripts) and then runs `autorag lite find` with `node`.

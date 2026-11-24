@@ -2,7 +2,7 @@
 name: search
 description: Answer questions from the user's own files and chat/mail archives through the AutoRAG MCP tools. Use when the user asks to find, summarize, compare, or verify something in local documents (PDF, DOCX, PPTX, XLSX, HWP/HWPX, Markdown, email) or in connected Slack, Discord, Telegram, WhatsApp, KakaoTalk, email, Notion, or Obsidian archives. Not for web search and not for first-time setup (use the setup skill).
 license: Apache-2.0
-compatibility: Needs the autorag MCP server from this plugin (Node.js >= 24, npx on PATH).
+compatibility: Needs the autorag MCP server from this plugin (Node.js >= 24, npx on PATH). macOS, Linux, or Windows.
 ---
 
 # AutoRAG search

@@ -38,7 +38,7 @@ Timing on a machine with no cargo and an empty cache: about 40 s to download
 the pinned package, then about 2.5 minutes for the first index of a small
 folder (it downloads about 1.5 GB of local models). If `cargo` is installed,
 AutoRAG compiles one helper itself (`minsync`), which added about 6 minutes on
-the test machine. Later refreshes are incremental. Requires Node.js 24 or newer.
+the test machine. Later refreshes are incremental. Supports macOS, Linux, and Windows (Node.js 24 or newer).
 
 Without the setup skill:
 
@@ -178,11 +178,12 @@ variable names, never values.
   any search whose results your model reads.
 - **File automations (opt-in, only when you ask for one).** The `automate` skill's helper
   (`skills/automate/scripts/autorag_automation.py`, Python standard library) writes a rule to
-  `~/.autorag/automations.json` (backed up first), a generated `fire.sh` under
-  `$HERMES_HOME/plugin-data/autorag/automations/`, and a gate script in `$HERMES_HOME/scripts/`. `fire.sh` runs
-  `hermes cron run` for that job. The daemon is registered with launchd or systemd `--user` only if you run
-  `autorag automate install`. Nothing is created at install time, and `remove` deletes everything the helper made.
-  File paths (not contents) are passed to your Hermes model for the job you define.
+  `~/.autorag/automations.json` (backed up first), a generated `fire.py` under
+  `$HERMES_HOME/plugin-data/autorag/automations/`, and a gate script in `$HERMES_HOME/scripts/`. `fire.py` runs
+  `hermes cron run` for that job. The daemon is registered with launchd (macOS), systemd `--user` (Linux), or
+  Task Scheduler (Windows) only if you run `autorag automate install`. Nothing is created at install time, and
+  `remove` deletes everything the helper made. File paths (not contents) are passed to your Hermes model for
+  the job you define.
 
 ## Develop and verify
 
