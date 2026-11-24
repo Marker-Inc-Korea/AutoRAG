@@ -20,6 +20,10 @@ import { classifyProviderHttpError, readLimitedText, withHardTimeout } from "./u
 const PERPLEXITY_ASK_URL = "https://www.perplexity.ai/rest/sse/perplexity_ask";
 const API_VERSION = "2.18";
 const MAX_ERROR_BYTES = 8 * 1024;
+const MAX_SSE_LINE_CHARS = 1024 * 1024;
+const MAX_SSE_DATA_LINES_PER_EVENT = 4096;
+const MAX_SSE_EVENT_CHARS = 4 * 1024 * 1024;
+const MAX_SSE_STREAM_BYTES = 16 * 1024 * 1024;
 const ANONYMOUS_USER_AGENT =
 	"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
@@ -74,10 +78,17 @@ async function* readSseJson(body: ReadableStream<Uint8Array>, signal?: AbortSign
 	const decoder = new TextDecoder();
 	let buffer = "";
 	let dataLines: string[] = [];
+	let eventChars = 0;
+	let streamBytes = 0;
+	const failLimit = async (reason: string): Promise<never> => {
+		await reader.cancel().catch(() => undefined);
+		throw new SearchProviderError("perplexity", `Perplexity ask SSE stream exceeded safety limit: ${reason}`, 500);
+	};
 	const dispatch = function* (): Generator<unknown> {
 		if (dataLines.length === 0) return;
 		const data = dataLines.join("\n").trim();
 		dataLines = [];
+		eventChars = 0;
 		if (data === "[DONE]" || data.length === 0) return;
 		try {
 			yield JSON.parse(data) as unknown;
@@ -90,9 +101,16 @@ async function* readSseJson(body: ReadableStream<Uint8Array>, signal?: AbortSign
 			if (signal?.aborted) return;
 			const { done, value } = await reader.read();
 			if (done) break;
+			streamBytes += value.byteLength;
+			if (streamBytes > MAX_SSE_STREAM_BYTES) {
+				await failLimit(`total stream exceeded ${MAX_SSE_STREAM_BYTES} bytes`);
+			}
 			buffer += decoder.decode(value, { stream: true });
 			let newline = buffer.indexOf("\n");
 			while (newline !== -1) {
+				if (newline > MAX_SSE_LINE_CHARS) {
+					await failLimit(`line exceeded ${MAX_SSE_LINE_CHARS} chars`);
+				}
 				const line = buffer.slice(0, newline).replace(/\r$/, "");
 				buffer = buffer.slice(newline + 1);
 				newline = buffer.indexOf("\n");
@@ -100,7 +118,20 @@ async function* readSseJson(body: ReadableStream<Uint8Array>, signal?: AbortSign
 					yield* dispatch();
 					continue;
 				}
-				if (line.startsWith("data:")) dataLines.push(line.slice(5).trim());
+				if (line.startsWith("data:")) {
+					const payload = line.slice(5).trim();
+					eventChars += payload.length;
+					if (dataLines.length >= MAX_SSE_DATA_LINES_PER_EVENT) {
+						await failLimit(`event exceeded ${MAX_SSE_DATA_LINES_PER_EVENT} data lines`);
+					}
+					if (eventChars > MAX_SSE_EVENT_CHARS) {
+						await failLimit(`event exceeded ${MAX_SSE_EVENT_CHARS} chars`);
+					}
+					dataLines.push(payload);
+				}
+			}
+			if (buffer.length > MAX_SSE_LINE_CHARS) {
+				await failLimit(`unterminated line exceeded ${MAX_SSE_LINE_CHARS} chars`);
 			}
 		}
 		yield* dispatch();

@@ -1,4 +1,6 @@
+import { once } from "node:events";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { createServer as createRawServer } from "node:net";
 import iconv from "iconv-lite";
 import { afterEach, describe, expect, it } from "vitest";
 import { loadPage } from "../../src/web/fetch/page-loader.ts";
@@ -93,5 +95,31 @@ describe("loadPage", () => {
 		const result = await loadPage(base);
 		expect(result.content).toBe(body);
 		expect(result.contentType).toBe(contentType);
+	});
+
+	it("handles a malicious server returning >5 Content-Encoding values and closing early without crashing the process (CVE-2026-109869)", async () => {
+		const rawServer = createRawServer((socket) => {
+			socket.once("data", () => {
+				socket.write(
+					"HTTP/1.1 200 OK\r\n" +
+						"Content-Type: text/plain\r\n" +
+						"Content-Encoding: gzip, gzip, gzip, gzip, gzip, gzip\r\n" +
+						"Content-Length: 100\r\n" +
+						"\r\n",
+				);
+				socket.destroy();
+			});
+		});
+		rawServer.listen(0, "127.0.0.1");
+		await once(rawServer, "listening");
+		try {
+			const address = rawServer.address();
+			if (!address || typeof address === "string") throw new Error("raw server did not bind");
+			const result = await loadPage(`http://127.0.0.1:${address.port}`, { timeout: 5 });
+			expect(result.ok).toBe(false);
+		} finally {
+			rawServer.close();
+			await once(rawServer, "close");
+		}
 	});
 });
