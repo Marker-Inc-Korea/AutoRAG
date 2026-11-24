@@ -2,9 +2,9 @@ import { DMatrix, XGBoost } from "@bubblyworld/xgboost-ts";
 
 /**
  * Trains the learning-to-rank model with XGBoost compiled to WebAssembly (`@bubblyworld/xgboost-ts`): no Python, no
- * native addon, nothing to install at run time. The ranker is `rank:pairwise` with early stopping on the validation
- * queries' nDCG@10, and the result is the same XGBoost JSON model `parseXgboostModel` serves.
- *
+ * native addon, nothing to install at run time. The ranker defaults to `rank:ndcg` (LambdaMART, directly optimizing
+ * top-heavy nDCG over graded labels) with early stopping on the validation queries' nDCG@10, and the result is the
+ * same XGBoost JSON model `parseXgboostModel` serves.
  * The package does not document ranking groups. It exposes the C API's `XGDMatrixSetFloatInfo`, and XGBoost accepts a
  * per-row `qid` through it, which is how a row is assigned to its query here. `test/ltr/wasm-trainer.test.ts` pins
  * this against numbers produced by the Python xgboost library, so an upgrade that changes the behavior fails there.
@@ -17,16 +17,24 @@ export interface RankingMatrix {
 	readonly groups: readonly number[];
 }
 
+export type LtrObjective = "rank:ndcg" | "rank:pairwise";
+
+/** Default XGBoost ranking objective: LambdaMART optimizing nDCG over graded labels. */
+export const DEFAULT_LTR_OBJECTIVE: LtrObjective = "rank:ndcg";
+
 export interface TrainRankerInput {
 	readonly train: RankingMatrix;
 	readonly valid: RankingMatrix;
 	readonly featureNames: readonly string[];
 	readonly seed: number;
+	readonly objective?: LtrObjective;
 }
 
 export interface TrainedRanker {
 	/** XGBoost JSON model holding exactly the first {@link rounds} trees. */
 	readonly modelJson: string;
+	/** XGBoost ranking objective used to fit the model. */
+	readonly objective: LtrObjective;
 	/** Boosting rounds kept: the best validation round. */
 	readonly rounds: number;
 	/** Rounds actually run, including the ones that waited for early stopping to give up. */
@@ -36,13 +44,12 @@ export interface TrainedRanker {
 	/** xgboost version compiled into the WASM binary. */
 	readonly xgboostVersion: string;
 }
-
 const MAX_ROUNDS = 600;
 const EARLY_STOPPING_ROUNDS = 50;
 
-function trainParams(seed: number): Readonly<Record<string, string>> {
+function trainParams(seed: number, objective: LtrObjective): Readonly<Record<string, string>> {
 	return {
-		objective: "rank:pairwise",
+		objective,
 		eval_metric: "ndcg@10",
 		eta: "0.05",
 		max_depth: "4",
@@ -91,9 +98,10 @@ function validNdcg10(report: string): number {
 	return value;
 }
 
-/** Fit a pairwise ranker with early stopping and return it as a servable XGBoost JSON model. */
+/** Fit a ranking model with early stopping and return it as a servable XGBoost JSON model. */
 export async function trainRanker(input: TrainRankerInput): Promise<TrainedRanker> {
 	const { train, valid, featureNames, seed } = input;
+	const objective = input.objective ?? DEFAULT_LTR_OBJECTIVE;
 	check("training", train, featureNames.length);
 	check("validation", valid, featureNames.length);
 
@@ -109,7 +117,7 @@ export async function trainRanker(input: TrainRankerInput): Promise<TrainedRanke
 		const newBooster = (cache: readonly DMatrix[]): number => {
 			const booster = xgb.createBooster(cache.map((matrix) => matrix.handle));
 			boosters.push(booster);
-			for (const [name, value] of Object.entries(trainParams(seed))) xgb.setParam(booster, name, value);
+			for (const [name, value] of Object.entries(trainParams(seed, objective))) xgb.setParam(booster, name, value);
 			return booster;
 		};
 
@@ -141,6 +149,7 @@ export async function trainRanker(input: TrainRankerInput): Promise<TrainedRanke
 		const { major, minor, patch } = xgb.version();
 		return {
 			modelJson,
+			objective,
 			rounds: bestRound,
 			roundsRun,
 			validNdcg10: best,

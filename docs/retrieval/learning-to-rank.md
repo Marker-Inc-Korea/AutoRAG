@@ -134,7 +134,7 @@ model = lgb.train({"objective": "lambdarank", "metric": "ndcg", "eval_at": [1, 3
 ## Training
 
 ```bash
-autorag ltr train            # fits an XGBoost rank:pairwise model on the ranking log
+autorag ltr train            # fits an XGBoost rank:ndcg model on the ranking log
 autorag ltr status           # logged runs, models, whether serving or retraining is due
 autorag ltr list
 ```
@@ -145,11 +145,12 @@ candidates, only the serving features (`LTR_SERVING_FEATURE_NAMES`), split by wh
 nothing was cited teach nothing and are skipped).
 
 Training runs in the AutoRAG process, with no Python and nothing to install: XGBoost compiled to WebAssembly
-(`@bubblyworld/xgboost-ts`, pinned exactly; `src/ltr/wasm-trainer.ts`). It fits `rank:pairwise` (eta 0.05, depth 4,
-subsample and column sample 0.8, early stopping on validation nDCG@10, one thread so the result does not depend on the
-machine) once per seed in `TRAINING_SEEDS` (5) and averages the seed models into the one model that is stored. One
-fit alone depends on its seed (on a 944-run log, five seeds moved the holdout MRR between 0.759 and 0.783), so the
-verdict is about the ensemble that is served, not whichever seed ran first. The package does not document ranking
+(`@bubblyworld/xgboost-ts`, pinned exactly; `src/ltr/wasm-trainer.ts`). It fits `rank:ndcg` (LambdaMART; eta 0.05,
+depth 4, subsample and column sample 0.8, early stopping on validation nDCG@10, one thread so the result does not
+depend on the machine) over both dense and SPLADE sparse channel features (`LTR_SERVING_FEATURE_NAMES`) once per seed
+in `TRAINING_SEEDS` (5) and averages the seed models into the one model that is stored. One fit alone depends on its
+seed (on a 944-run log, five seeds moved the holdout MRR between 0.759 and 0.783), so the verdict is about the
+ensemble that is served, not whichever seed ran first. The package does not document ranking
 groups; the trainer passes each row's query as XGBoost's `qid` through the C API, and
 `test/ltr/wasm-trainer.test.ts` pins that against numbers the Python xgboost library produced on the same data
 (`scripts/ltr/make-train-parity-fixture.py`): same rounds, same validation score, same margins. An upgrade that changes

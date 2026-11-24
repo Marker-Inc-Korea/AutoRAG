@@ -42,6 +42,7 @@ describe("trainRanker (WASM XGBoost)", () => {
 				valid: matrix(parity.valid),
 				featureNames: names,
 				seed,
+				objective: "rank:pairwise",
 			});
 			expect(trained.rounds).toBe(expected.rounds);
 			expect(trained.validNdcg10).toBeCloseTo(expected.bestScore, 6);
@@ -64,6 +65,21 @@ describe("trainRanker (WASM XGBoost)", () => {
 		});
 		expect(trained.roundsRun).toBeGreaterThan(trained.rounds);
 		expect(parseXgboostModel(trained.modelJson).treeCount).toBe(trained.rounds);
+	});
+
+	it("defaults to rank:ndcg and trains a servable rank:ndcg model", async () => {
+		const trained = await trainRanker({
+			train: matrix(parity.train),
+			valid: matrix(parity.valid),
+			featureNames: names,
+			seed: 0,
+		});
+		expect(trained.objective).toBe("rank:ndcg");
+		const parsed = JSON.parse(trained.modelJson) as { learner: { objective: { name: string } } };
+		expect(parsed.learner.objective.name).toBe("rank:ndcg");
+		const model = parseXgboostModel(trained.modelJson);
+		expect(model.treeCount).toBe(trained.rounds);
+		expect(model.featureNames).toEqual(names);
 	});
 
 	it("is deterministic for a seed and different seeds can pick different models", async () => {

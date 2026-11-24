@@ -15,7 +15,14 @@ import {
 	saveLtrModel,
 	writeLtrState,
 } from "./model-store.ts";
-import { averageRankers, type RankingMatrix, type TrainedRanker, trainRanker } from "./wasm-trainer.ts";
+import {
+	averageRankers,
+	DEFAULT_LTR_OBJECTIVE,
+	type LtrObjective,
+	type RankingMatrix,
+	type TrainedRanker,
+	trainRanker,
+} from "./wasm-trainer.ts";
 import { parseXgboostModel } from "./xgboost-model.ts";
 
 /** nDCG@10 may fall this far below the baseline and still pass: it is a noisy metric, and the MRR interval decides. */
@@ -141,8 +148,8 @@ export interface TrainOptions {
 	readonly memoryPath: string;
 	readonly now?: () => number;
 	readonly signal?: AbortSignal;
+	readonly objective?: LtrObjective;
 }
-
 function toMatrix(split: ServingSplit): RankingMatrix {
 	return {
 		rows: split.rows.map((row) => row.features),
@@ -196,6 +203,7 @@ export async function trainLtrModel(options: TrainOptions): Promise<TrainResult>
 	}
 
 	options.signal?.throwIfAborted();
+	const objective = options.objective ?? DEFAULT_LTR_OBJECTIVE;
 	const fitted: TrainedRanker[] = [];
 	try {
 		for (const seed of TRAINING_SEEDS) {
@@ -205,6 +213,7 @@ export async function trainLtrModel(options: TrainOptions): Promise<TrainResult>
 					valid: toMatrix(dataset.valid),
 					featureNames: dataset.featureNames,
 					seed,
+					objective,
 				}),
 			);
 			options.signal?.throwIfAborted();
@@ -238,7 +247,7 @@ export async function trainLtrModel(options: TrainOptions): Promise<TrainResult>
 		id: `xgb-${new Date(now()).toISOString().replace(/[-:T]/gu, "").slice(0, 14)}-${randomUUID().slice(0, 6)}`,
 		createdAt: now(),
 		featureNames: [...LTR_SERVING_FEATURE_NAMES],
-		objective: "rank:pairwise",
+		objective,
 		trainedOnRuns: dataset.train.groups.length + dataset.valid.groups.length,
 		loggedRunsAtTraining: runs.length,
 		holdout,
