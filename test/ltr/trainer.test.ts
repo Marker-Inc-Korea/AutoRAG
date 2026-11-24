@@ -52,28 +52,47 @@ describe("evaluateRanking", () => {
 });
 
 describe("holdoutPasses", () => {
-	const verdict = (base: number, model: number, ci: [number, number], ndcgBase = 0.8, ndcgModel = 0.8) => ({
+	const verdict = (
+		base: number,
+		model: number,
+		ci: [number, number],
+		ndcgBase = 0.8,
+		ndcgModel = 0.8,
+		ndcgCi?: [number, number],
+	) => ({
 		queries: 100,
 		baseline: { ndcg10: ndcgBase, mrr: base },
 		model: { ndcg10: ndcgModel, mrr: model },
 		deltaMrrCi95: ci,
+		...(ndcgCi !== undefined ? { deltaNdcg10Ci95: ndcgCi } : {}),
 	});
 
 	it("passes a significant MRR gain, even when nDCG@10 moved by float noise", () => {
 		expect(holdoutPasses(verdict(0.765, 0.783, [0.004, 0.032], 0.79816, 0.79813))).toBe(true);
 	});
 
-	it("rejects a gain whose interval includes zero: a point estimate above baseline is not evidence", () => {
+	it("passes a significant nDCG@10 gain when MRR is flat or within tolerance", () => {
+		expect(holdoutPasses(verdict(0.764, 0.761, [-0.012, 0.006], 0.625, 0.642, [0.004, 0.03]))).toBe(true);
+		expect(holdoutPasses(verdict(0.764, 0.759, [-0.015, 0.005], 0.625, 0.642, [0.004, 0.03]))).toBe(true);
+	});
+
+	it("rejects a significant nDCG@10 gain that costs real MRR beyond tolerance", () => {
+		expect(holdoutPasses(verdict(0.764, 0.75, [-0.03, 0.002], 0.625, 0.645, [0.005, 0.035]))).toBe(false);
+	});
+
+	it("rejects a gain whose intervals both include zero: a point estimate above baseline is not evidence", () => {
+		expect(holdoutPasses(verdict(0.765, 0.783, [-0.01, 0.045], 0.8, 0.815, [-0.005, 0.035]))).toBe(false);
+		// Older meta.json records without deltaNdcg10Ci95 still follow the MRR-only path cleanly.
 		expect(holdoutPasses(verdict(0.765, 0.783, [-0.01, 0.045]))).toBe(false);
 	});
 
 	it("rejects a significant MRR gain that costs real nDCG@10", () => {
-		expect(holdoutPasses(verdict(0.7, 0.75, [0.01, 0.09], 0.8, 0.77))).toBe(false);
+		expect(holdoutPasses(verdict(0.7, 0.75, [0.01, 0.09], 0.8, 0.77, [-0.05, -0.01]))).toBe(false);
 	});
 
 	it("rejects an empty holdout and a model that is worse", () => {
-		expect(holdoutPasses({ ...verdict(0.7, 0.8, [0.01, 0.2]), queries: 0 })).toBe(false);
-		expect(holdoutPasses(verdict(0.8, 0.7, [-0.2, -0.01]))).toBe(false);
+		expect(holdoutPasses({ ...verdict(0.7, 0.8, [0.01, 0.2], 0.7, 0.8, [0.01, 0.2]), queries: 0 })).toBe(false);
+		expect(holdoutPasses(verdict(0.8, 0.7, [-0.2, -0.01], 0.8, 0.7, [-0.2, -0.01]))).toBe(false);
 	});
 });
 
@@ -105,6 +124,8 @@ describe("trainLtrModel (WASM XGBoost, no Python)", () => {
 		expect(stored?.passedGate).toBe(true);
 		expect(stored?.holdout.model.mrr).toBeGreaterThan(stored?.holdout.baseline.mrr ?? 1);
 		expect(stored?.holdout.deltaMrrCi95[0]).toBeGreaterThan(0);
+		expect(stored?.holdout.deltaNdcg10Ci95).toBeDefined();
+		expect(stored?.holdout.deltaNdcg10Ci95?.[0]).toBeGreaterThan(0);
 		expect(stored?.trainer?.xgboost).toMatch(/^\d+\.\d+\.\d+$/u);
 		expect(stored?.seeds).toEqual(TRAINING_SEEDS.length);
 		expect(JSON.parse(readFileSync(join(ltrDirectory(memoryPath), "state.json"), "utf-8")).lastAttemptRuns).toBe(

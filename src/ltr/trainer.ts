@@ -18,19 +18,27 @@ import {
 import { averageRankers, type RankingMatrix, type TrainedRanker, trainRanker } from "./wasm-trainer.ts";
 import { parseXgboostModel } from "./xgboost-model.ts";
 
-/** nDCG@10 may fall this far below the baseline and still pass: it is a noisy metric, and the MRR interval decides. */
-const NDCG_TOLERANCE = 0.005;
+/** The companion metric may fall this far below the baseline and still pass when the other metric's 95% CI clears zero. */
+const COMPANION_TOLERANCE = 0.005;
 
 /**
- * The training gate. A model passes only when its MRR gain over the reranker's own order on the holdout is
- * statistically distinguishable from zero (the 95% bootstrap interval of the per-query difference lies above 0) and
- * it does not give up real nDCG@10. A point estimate above baseline is not enough: on a few hundred queries it is
- * as often luck as signal.
+ * The training gate. A model passes when either:
+ * - its MRR gain over the reranker's own order on the holdout is statistically distinguishable from zero
+ *   (95% bootstrap CI lower bound > 0) and nDCG@10 does not drop beyond tolerance, OR
+ * - its nDCG@10 gain on the holdout is statistically distinguishable from zero (95% bootstrap CI lower bound > 0)
+ *   and MRR does not drop beyond tolerance.
+ *
+ * A point estimate above baseline is not enough: on a few hundred queries it is as often luck as signal.
  */
 export function holdoutPasses(holdout: LtrHoldoutMetrics): boolean {
 	if (holdout.queries === 0) return false;
-	if (!(holdout.deltaMrrCi95[0] > 0)) return false;
-	return holdout.model.ndcg10 >= holdout.baseline.ndcg10 - NDCG_TOLERANCE;
+	const mrrPasses =
+		holdout.deltaMrrCi95[0] > 0 && holdout.model.ndcg10 >= holdout.baseline.ndcg10 - COMPANION_TOLERANCE;
+	const ndcgPasses =
+		holdout.deltaNdcg10Ci95 !== undefined &&
+		holdout.deltaNdcg10Ci95[0] > 0 &&
+		holdout.model.mrr >= holdout.baseline.mrr - COMPANION_TOLERANCE;
+	return mrrPasses || ndcgPasses;
 }
 
 /** Labelled search runs (after dropping runs that teach nothing) below which AutoRAG does not train. */
@@ -226,12 +234,14 @@ export async function trainLtrModel(options: TrainOptions): Promise<TrainResult>
 		const single = parseXgboostModel(entry.modelJson);
 		return evaluateRanking(score(dataset.holdout.rows, (row) => single.predict(row.features))).mrr;
 	});
-	const deltas = served.perQueryMrr.map((value, index) => value - (baseline.perQueryMrr[index] as number));
+	const mrrDeltas = served.perQueryMrr.map((value, index) => value - (baseline.perQueryMrr[index] as number));
+	const ndcgDeltas = served.perQueryNdcg10.map((value, index) => value - (baseline.perQueryNdcg10[index] as number));
 	const holdout: LtrHoldoutMetrics = {
 		queries: served.queries,
 		baseline: { ndcg10: baseline.ndcg10, mrr: baseline.mrr },
 		model: { ndcg10: served.ndcg10, mrr: served.mrr },
-		deltaMrrCi95: bootstrapCi95(deltas),
+		deltaMrrCi95: bootstrapCi95(mrrDeltas),
+		deltaNdcg10Ci95: bootstrapCi95(ndcgDeltas),
 	};
 	const passedGate = holdoutPasses(holdout);
 	const meta: LtrModelMeta = {

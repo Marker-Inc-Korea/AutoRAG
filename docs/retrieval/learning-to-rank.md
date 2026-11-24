@@ -156,10 +156,12 @@ groups; the trainer passes each row's query as XGBoost's `qid` through the C API
 the learning fails there.
 
 The finished model is scored in TypeScript, with the same predictor that serves it, on the holdout runs it never saw,
-against the reranker's own order. It carries `passedGate` only when the 95% bootstrap interval of the per-query MRR
-difference lies entirely above zero (a point estimate above baseline is not enough on a few hundred queries) and
-nDCG@10 has not dropped by more than 0.005. The verdict, the holdout query count, the interval and each seed's own
-holdout MRR are stored in `meta.json`. A rejected model is kept so it can be inspected, but `latest` never selects it.
+against the reranker's own order. It carries `passedGate` when **either** the 95% bootstrap interval of the per-query
+MRR difference lies entirely above zero (with nDCG@10 not dropping by more than 0.005) **or** the 95% bootstrap
+interval of the per-query nDCG@10 difference lies entirely above zero (with MRR not dropping by more than 0.005). A
+point estimate above baseline is not enough on a few hundred queries. Both intervals (`deltaMrrCi95`,
+`deltaNdcg10Ci95`), the holdout query count, and each seed's own holdout MRR are stored in `meta.json`. A rejected
+model is kept so it can be inspected, but `latest` never selects it.
 
 Models live in `<memoryPath>.ltr/models/<id>/{model.json,meta.json}` beside the memory file, with `state.json`
 (retrain bookkeeping) and `train.lock`. Nothing is created until a train runs.
