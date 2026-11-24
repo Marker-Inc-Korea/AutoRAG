@@ -34,7 +34,7 @@ export function holdoutPasses(holdout: LtrHoldoutMetrics): boolean {
 }
 
 /** Labelled search runs (after dropping runs that teach nothing) below which AutoRAG does not train. */
-export const MIN_TRAINING_RUNS = 100;
+export const MIN_TRAINING_RUNS = 300;
 /** Share of the newest eligible runs used for early stopping and for judging the finished model. */
 const VALID_FRACTION = 0.15;
 const HOLDOUT_FRACTION = 0.2;
