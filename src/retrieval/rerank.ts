@@ -14,6 +14,7 @@
 
 import { API_PATH, PROVIDER_ID as DAZZI_PROVIDER_ID, resolveBaseUrl } from "../cloud/config.ts";
 import { DAZZI_LOGIN_REQUIRED_MESSAGE, readDazziLoginToken } from "../cloud/credential.ts";
+import { redactSecrets, secretRedactionEnabled } from "../privacy/index.ts";
 import type { RetrievalResult } from "./types.ts";
 
 /** OpenRouter's production API root. */
@@ -325,6 +326,7 @@ export class OpenRouterReranker implements Reranker {
 			return options.topN === undefined ? [...results] : results.slice(0, options.topN);
 		}
 
+		const redact = secretRedactionEnabled();
 		const requestBody: {
 			model: string;
 			query: string;
@@ -332,8 +334,8 @@ export class OpenRouterReranker implements Reranker {
 			topN?: number;
 		} = {
 			model: this.model,
-			query,
-			documents,
+			query: redact ? redactSecrets(query) : query,
+			documents: redact ? documents.map(redactSecrets) : documents,
 		};
 		if (options.topN !== undefined) requestBody.topN = options.topN;
 

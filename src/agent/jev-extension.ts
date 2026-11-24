@@ -5,6 +5,7 @@ import { Jev, type JevBackend, type Judgment, type Question, type State } from "
 import { type Static, Type } from "typebox";
 import { isDazziSignedIn } from "../cloud/credential.ts";
 import { DazziJevBackend } from "../cloud/jev-backend.ts";
+import { withSecretRedaction } from "../privacy/index.ts";
 import { DECISION_PROVIDER_ORDER, PiDecisionBackend } from "./decision-backends.ts";
 import { toToolDefinition } from "./pi-session.ts";
 import { SLLM_BACKEND, SllmDecisionBackend, type SllmDecisionModel } from "./sllm-decision.ts";
@@ -106,7 +107,7 @@ export function createJevJudge(options: JevJudgeOptions = {}): JevJudge {
 	let client: Jev | undefined;
 	return async (state, questions, callOptions = {}) => {
 		client ??= new Jev({
-			backend: resolveBackend(options),
+			backend: withSecretRedaction(resolveBackend(options)),
 			...(options.model !== undefined ? { model: options.model } : {}),
 			...(options.confidenceThreshold !== undefined ? { confidenceThreshold: options.confidenceThreshold } : {}),
 		});
