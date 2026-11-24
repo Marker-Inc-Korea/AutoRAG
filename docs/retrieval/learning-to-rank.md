@@ -141,7 +141,7 @@ autorag ltr list
 
 `train` builds a serving dataset from the log (`buildServingDataset`): only runs where the baseline reranker returned
 candidates, only the serving features (`LTR_SERVING_FEATURE_NAMES`), split by whole run in time order into train
-(oldest), validation (early stopping) and **holdout (newest 20%)**. It needs at least 100 usable runs (runs where
+(oldest), validation (early stopping) and **holdout (newest 20%)**. It needs at least 300 usable runs (runs where
 nothing was cited teach nothing and are skipped).
 
 Training runs in the AutoRAG process, with no Python and nothing to install: XGBoost compiled to WebAssembly

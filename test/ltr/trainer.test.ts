@@ -7,6 +7,7 @@ import {
 	evaluateRanking,
 	holdoutPasses,
 	MIN_TRAINING_RUNS,
+	shouldRetrain,
 	TRAINING_SEEDS,
 	trainLtrModel,
 } from "../../src/ltr/trainer.ts";
@@ -83,6 +84,16 @@ describe("trainLtrModel (WASM XGBoost, no Python)", () => {
 		expect(result.status).toBe("insufficient-data");
 		expect(result.reason).toContain(String(MIN_TRAINING_RUNS));
 		expect(listLtrModels(ltrDirectory(memoryPath))).toHaveLength(0);
+	});
+
+	it("requires at least 300 usable runs: 299 is refused, 300 is trained on", async () => {
+		expect(MIN_TRAINING_RUNS).toBe(300);
+		seedLog(299);
+		const refused = await trainLtrModel({ memoryPath });
+		expect(refused.status).toBe("insufficient-data");
+		expect(refused.eligibleRuns).toBe(299);
+		expect(shouldRetrain({ loggedRuns: 299, lastAttemptRuns: undefined, minNewRuns: 1 })).toBe(false);
+		expect(shouldRetrain({ loggedRuns: 300, lastAttemptRuns: undefined, minNewRuns: 1 })).toBe(true);
 	});
 
 	it("learns a pattern that beats the reranker and stores a model that passed the gate", async () => {
