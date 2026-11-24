@@ -70,6 +70,10 @@ export const DEFAULT_MIRROR_BATCH_SIZE = 25;
  */
 const PRODUCT_ARTIFACT_FILE_NAMES = new Set([".jikji_agent_map.md"]);
 
+function isOfficeLockFile(name: string): boolean {
+	return name.startsWith("~$");
+}
+
 const SKIP_DIR_NAMES = new Set([
 	".autorag",
 	".git",
@@ -599,11 +603,16 @@ async function syncWithRegistry(
 		diagnostics.push({ ...diagnostic, source: entry.virtualPath });
 		if (reason === "parser-skipped")
 			await session.skip(mirrorStageKey(entry.virtualPath), versions.get(entry.virtualPath)!, reason);
-		else
-			await session.fail(mirrorStageKey(entry.virtualPath), versions.get(entry.virtualPath)!, diagnostic.code, {
+		else {
+			const stageError =
+				diagnostic.code === "source-read-failed" && diagnostic.reason
+					? `${diagnostic.code}:${diagnostic.reason}`
+					: diagnostic.code;
+			await session.fail(mirrorStageKey(entry.virtualPath), versions.get(entry.virtualPath)!, stageError, {
 				defer: reason === "parser-failed" || reason === "source-unreadable",
 				discard_output: true,
 			});
+		}
 	};
 	try {
 		const plan = await session.open({
@@ -976,14 +985,20 @@ export async function detectMirrorStaleness(options: ParsedMirrorSyncOptions): P
 		options.signal,
 	);
 	try {
-		const previous = mirrorIndexFromStage(
-			options.root,
-			await session.inspect({
-				stage: "parse",
-				source_id: "autorag-parsed-mirror",
-				output_root: join(parsedMirrorRoot(options.root), "files"),
-			}),
-		);
+		const inspect = await session.inspect({
+			stage: "parse",
+			source_id: "autorag-parsed-mirror",
+			output_root: join(parsedMirrorRoot(options.root), "files"),
+		});
+		const previous = mirrorIndexFromStage(options.root, inspect);
+		const readFailures = new Map<string, string | undefined>();
+		for (const item of inspect.failed) {
+			if (item.error === "source-read-failed") {
+				readFailures.set(item.key, undefined);
+			} else if (item.error.startsWith("source-read-failed:")) {
+				readFailures.set(item.key, item.error.slice("source-read-failed:".length) || undefined);
+			}
+		}
 		const recordedDuplicates = options.reuseRecordedDuplicateExclusions
 			? recordedDuplicateSources(previous, current)
 			: undefined;
@@ -1009,11 +1024,26 @@ export async function detectMirrorStaleness(options: ParsedMirrorSyncOptions): P
 		);
 		const diagnostics: ParsedMirrorDiagnostic[] = [];
 		for (const entry of current) {
-			if (omitted.has(entry.virtualPath) || !work.has(mirrorStageKey(entry.virtualPath))) continue;
+			const key = mirrorStageKey(entry.virtualPath);
+			if (omitted.has(entry.virtualPath) || !work.has(key)) continue;
 			const prev = previous.entries[entry.virtualPath];
 			const skip = previous.skipped?.[entry.virtualPath];
 			const known =
 				prev ?? (skip?.reason === "user-excluded" || skip?.reason === "source-unreadable" ? undefined : skip);
+			if (known === undefined && readFailures.has(key)) {
+				const readFailureErrno = readFailures.get(key);
+				diagnostics.push({
+					code: "stale-index",
+					severity: "warning",
+					source: entry.virtualPath,
+					reason: "source-read-failed",
+					message:
+						readFailureErrno !== undefined
+							? `Source ${entry.virtualPath} failed to read (${readFailureErrno}) during the last refresh; fix file readability before refreshing.`
+							: `Source ${entry.virtualPath} failed to read during the last refresh; fix file readability before refreshing.`,
+				});
+				continue;
+			}
 			const parser = registry.getForVirtualPath(entry.virtualPath)!;
 			const parserChanged =
 				prev !== undefined &&
@@ -1267,6 +1297,7 @@ async function collectFiles(state: WalkState, directory: string, depth: number):
 				continue;
 			}
 			if (!entry.isFile()) continue;
+			if (isOfficeLockFile(entry.name)) continue;
 			const extension = normalizeExtension(extname(entry.name));
 			if (!state.supportedExtensions.has(extension)) continue;
 			let fileStat: Awaited<ReturnType<typeof stat>>;
