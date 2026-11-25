@@ -51,9 +51,8 @@ export interface ReviseAnswerToolOptions {
 	readonly unsupported: (text: string) => Promise<readonly string[]>;
 }
 
-/** The standing order the verification prompt repeats: a correction of the first answer is an act, not prose. */
-export const REVISE_ANSWER_PROMPT_RULE = `Correct the first answer the user already read with ${REVISE_ANSWER_TOOL_NAME}, one claim at a time, never by rewriting it in your reply: retract or replace what is factually wrong, unsupported or outdated, and add what is new and verified and not already in it (a source or date for a claim it already makes is not new). The user sees each correction struck through next to its reason, so a correction must change what the claim says: rephrasing the same fact, a different word, unit format, translation choice or style is not a correction, and a claim that is right needs no call.`;
-
+/** Concise verification-turn rule for correcting an already-delivered first answer. */
+export const REVISE_ANSWER_PROMPT_RULE = `Apply corrections to the first answer via ${REVISE_ANSWER_TOOL_NAME} (one claim at a time) rather than rewriting it in your reply: retract or replace only factually wrong, unsupported, or outdated claims, and add only genuinely new verified findings (not extra citations or phrasing tweaks for claims already stated).`;
 function reply(text: string, details: ReviseAnswerDetails, isError = false): AgentToolResult<ReviseAnswerDetails> {
 	return { content: [{ type: "text", text }], details, ...(isError ? { isError: true } : {}) };
 }

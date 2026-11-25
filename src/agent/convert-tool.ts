@@ -48,7 +48,7 @@ export function createConvertFilesTool(
 		name: CONVERT_FILES_TOOL_NAME,
 		label: "Convert Files",
 		description:
-			"Convert local files to another format offline with the Filee command line (documents, spreadsheets, slides, HWP/HWPX, images, e-books, archives, audio, video, data, subtitles; 290+ formats). Works on any path. Examples: docx/hwp/hwpx/md/html/pdf convert among themselves and to epub, txt, png; pdf/docx/html tables to xlsx/csv; xlsx/csv to json/yaml/xml/pdf; images to pdf/webp/docx; mp4 to mp3/gif/srt; zip to 7z/tar/iso. The system prompt holds the full route table: when no direct route exists, chain two conversions through an intermediate format written to a scratch outputDir. Reports each output path and whether dupey sees the converted copy as the same document as its source.",
+			"Convert local files to another format offline with Filee (documents, spreadsheets, slides, HWP/HWPX, images, e-books, archives, audio, video, data, subtitles; 290+ formats) on any path. Examples: docx/hwp/hwpx/md/html/pdf convert among themselves and to epub, txt, png; pdf/docx/html tables to xlsx/csv; xlsx/csv to json/yaml/xml/pdf; images to pdf/webp/docx; mp4 to mp3/gif/srt; zip to 7z/tar/iso. Use list_file_conversions when unsure of a route; when no direct route exists, chain two conversions via a scratch outputDir. Reports each output path and dupey's relation to the source.",
 		parameters: convertFilesSchema,
 		async execute(_id, params, signal): Promise<AgentToolResult<ConvertFilesDetails>> {
 			const details = await provider.convertFiles(params, signal);

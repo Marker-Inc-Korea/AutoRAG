@@ -10,12 +10,11 @@ import {
 
 export const CALCULATOR_TOOL_NAME = "calculator";
 
-/** The standing order every prompt repeats: calculations belong to the tool, never to the model. */
-export const CALCULATOR_PROMPT_RULE = `Never do arithmetic, date, time, or time zone math yourself: use ${CALCULATOR_TOOL_NAME} for every sum, percentage, average, unit conversion, day count, date offset, weekday, and "what time is it in…", and copy its result unchanged. The current date in your instructions is a starting point, not a substitute for the tool.`;
+/** Standing rule for calculation accuracy. */
+export const CALCULATOR_PROMPT_RULE = `Use ${CALCULATOR_TOOL_NAME} for all arithmetic, date, time, and time-zone calculations rather than mental math, and report its output unchanged.`;
 
-/** The fast phase forbids tools; this carves out the one that reads no sources and cannot slow the answer down. */
-export const CALCULATOR_FAST_PHASE_RULE = `${CALCULATOR_TOOL_NAME} is allowed: ${CALCULATOR_PROMPT_RULE}`;
-
+/** Fast-phase carve-out for the calculator tool. */
+export const CALCULATOR_FAST_PHASE_RULE = `${CALCULATOR_TOOL_NAME} is allowed for any arithmetic, date, time, or time-zone calculation.`;
 export interface CalculatorToolOptions {
 	/** The instant "now" and "today" mean. Tests pin it; the default reads the system clock on every call. */
 	readonly now?: () => Date;

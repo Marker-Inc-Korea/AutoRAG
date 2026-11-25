@@ -33,9 +33,7 @@ function escapeXml(value: string): string {
 /** The `<available_skills>` listing, in pi's progressive-disclosure format. */
 function formatSkillsListing(skills: readonly DatasourceAgentSkill[]): string {
 	const lines = [
-		"The following skills provide specialized instructions for specific tasks.",
-		"Read the full skill file when the task matches its description.",
-		"When a skill file references a relative path, resolve it against the skill directory (parent of SKILL.md / dirname of the path) and use that absolute path in tool commands.",
+		"Load a skill with `load_datasource_skill` when the task matches its description.",
 		"",
 		"<available_skills>",
 	];

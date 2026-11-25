@@ -143,29 +143,14 @@ import { executeWebSearch } from "../web/search/index.ts";
 import { type ModelNativeSearchAuth, modelNativeAuthFromAgentModel } from "../web/search/model-auth.ts";
 import { citedChunkKey, citedChunks, deriveResultsFromAnswer } from "./answer-citations.ts";
 import {
-	ANSWER_BULLET_RULE,
-	ANSWER_CITATION_RULE,
 	ANSWER_DELIVERABLE_DELTA_RULE,
-	ANSWER_DELIVERABLE_RULE,
-	ANSWER_EMPHASIS_RULE,
 	ANSWER_IMAGE_DELTA_RULE,
-	ANSWER_IMAGE_EMBED_RULE,
-	ANSWER_LANGUAGE_RULE,
-	ANSWER_LEAD_RULE,
-	ANSWER_RELEVANCE_RULE,
-	ANSWER_UNCERTAINTY_RULE,
 	ANSWER_UNCONFIRMED_FAST_RULE,
-	ANSWER_UNCONFIRMED_FINAL_RULE,
 } from "./answer-guidelines.ts";
 import { AnswerRevisionSession, type Revision, type RevisionCitations, splitClaims } from "./answer-revision.ts";
 import { ASK_USER_TOOL_NAME, resolveAskUserExtensionPath } from "./ask-user.ts";
 import { createManageAutomationsTool, MANAGE_AUTOMATIONS_TOOL_NAME } from "./automation-tool.ts";
-import {
-	CALCULATOR_FAST_PHASE_RULE,
-	CALCULATOR_PROMPT_RULE,
-	CALCULATOR_TOOL_NAME,
-	createCalculatorTool,
-} from "./calculator-tool.ts";
+import { CALCULATOR_FAST_PHASE_RULE, CALCULATOR_TOOL_NAME, createCalculatorTool } from "./calculator-tool.ts";
 import { createCitationLinks } from "./citation-links.ts";
 import { CitationNumbers } from "./citation-numbers.ts";
 import { CITATION_RELEVANCE_FLOOR, judgeCitationRelevance } from "./citation-relevance.ts";
@@ -3956,58 +3941,40 @@ export class AutoRAGAgent {
 	}
 
 	/**
-	 * Sentence for the phase prompts that forbid tool calls: `ask_user` is not a search tool, and a request
-	 * that hinges on a choice only the user can make must be asked, not guessed. Empty when the session does
-	 * not offer the tool.
+	 * Exception for the fast phase: `ask_user` is allowed only when nothing in hand can settle a choice
+	 * that belongs to the user. Empty when the session does not offer the tool.
 	 */
 	private askUserException(): string {
 		return this.askUserOffered
-			? `This rule does not cover ${ASK_USER_TOOL_NAME}: use it only when nothing you already have can settle something or the choice is the user's alone, and then ask through it instead of in plain text; never guess. `
+			? ` ${ASK_USER_TOOL_NAME} is allowed only when a choice belongs solely to the user and cannot be verified; never guess.`
 			: "";
 	}
 
 	/**
-	 * Fast-phase exception to the no-tools rule, naming only the web tools this
-	 * session actually registered. Empty when web tools are off, so the prompt
-	 * never mentions a tool the model does not have.
+	 * Fast-phase exception for web tools when enabled, for public facts the baseline lacks.
 	 */
 	private fastPhaseWebHint(): string {
 		const names = new Set(this.tools.map((tool) => tool.name));
 		if (!names.has(WEB_SEARCH_TOOL_NAME)) return "";
-		const fetch = names.has(WEB_FETCH_TOOL_NAME) ? ` or ${WEB_FETCH_TOOL_NAME}` : "";
-		return ` ${WEB_SEARCH_TOOL_NAME}${fetch} is allowed: when the question concerns public facts that may be recent or that changed since your training and the baseline lacks them, call it before answering.`;
+		const fetch = names.has(WEB_FETCH_TOOL_NAME) ? ` / ${WEB_FETCH_TOOL_NAME}` : "";
+		return ` ${WEB_SEARCH_TOOL_NAME}${fetch} is allowed if current public facts are needed and missing from the baseline.`;
 	}
 
 	/**
-	 * Fast-phase prompt for two-phase searches. The baseline retrieval context
-	 * is already gathered, so the model answers immediately with minimal thinking,
-	 * as plain text, without further retrieval; the web tools are the only
-	 * exception, for public facts the baseline cannot settle.
+	 * Fast-phase prompt for two-phase searches: give the best immediate answer from
+	 * the prefetched baseline with minimal latency, without local retrieval calls.
 	 */
 	buildFastAnswerPrompt(query: string, options: RetrievalOptions, baseline: string): string {
 		const limit = typeof options.topK === "number" ? ` Cite at most ${options.topK} sources.` : "";
-		const scope = options.scope ? ` Restrict search to virtual path scope ${options.scope}.` : "";
+		const scope = options.scope ? ` Restrict scope to ${options.scope}.` : "";
 		return (
-			`Answer this original query immediately: ${query}${limit}${scope}\n\n` +
-			`Baseline retrieval evidence (already gathered for you):\n${baseline}\n\n` +
-			`Produce the best complete, self-contained answer you can RIGHT NOW from this evidence. Do NOT call any local search, retrieval, datasource, or file-reading tool and do NOT wait for more evidence.${this.fastPhaseWebHint()} ${CALCULATOR_FAST_PHASE_RULE} ${this.askUserException()}` +
-			`If the query is answerable from general knowledge alone, answer directly.\n\n` +
-			`Formatting and content rules for the answer:\n` +
-			`- Unless the user explicitly requests a different format or length, provide the core answer to the user's question in at most 5 bullet points. If additional explanation is necessary, append it after the bullet points.\n` +
-			`- ${ANSWER_LEAD_RULE}\n` +
-			`- ${ANSWER_BULLET_RULE}\n` +
-			`- ${ANSWER_EMPHASIS_RULE}\n` +
-			`- ${ANSWER_LANGUAGE_RULE}\n` +
-			`- Unless the user explicitly requests otherwise, answer the question directly. Do not include specific file paths, datasource descriptions, or retrieval mechanics in the answer text.\n` +
-			`- ${ANSWER_DELIVERABLE_RULE}\n` +
-			`- ${ANSWER_CITATION_RULE}\n` +
-			`- ${ANSWER_IMAGE_EMBED_RULE}\n` +
-			`- Do not report per-source negative findings (e.g. "no information found in Slack" or "checked Drive but found nothing").\n` +
-			`- When evidence conflicts, treat the freshest (most recent) information as the correct source of truth.\n` +
-			`- ${ANSWER_RELEVANCE_RULE}\n` +
+			`Query: ${query}${limit}${scope}\n\n` +
+			`Baseline retrieval evidence:\n${baseline}\n\n` +
+			`Goal: provide the best complete, immediate first answer you can from this baseline (or from stable general knowledge if no records are needed).\n` +
+			`Constraints for this fast pass:\n` +
+			`- Do not call local retrieval, datasource, or file-reading tools (a verification pass will search deeper if needed).${this.fastPhaseWebHint()} ${CALCULATOR_FAST_PHASE_RULE}${this.askUserException()}\n` +
 			`- ${ANSWER_UNCONFIRMED_FAST_RULE}\n` +
-			`- ${ANSWER_UNCERTAINTY_RULE}\n\n` +
-			`Write the answer as your reply, then stop.`
+			`- End with your reply as plain text.`
 		);
 	}
 
@@ -4023,96 +3990,32 @@ export class AutoRAGAgent {
 
 	/**
 	 * Prompt for a request Jev routed to `organize`: act on files and folders
-	 * (move, rename, convert, sort). No route changes the active tools any more,
-	 * so the prompt names the tools the task uses and the ones it must not, and
-	 * carries the loaded organize skill with the rules. No retrieval ran and no
-	 * verification follows; the model's plain final message is the answer.
+	 * safely and report every change for reversibility.
 	 */
 	buildOrganizePrompt(query: string, skill: PackagedAgentSkill): string {
 		return (
-			`The user asks you to organize files and folders: ${query}\n\n` +
-			`${this.organizeToolScope()}\n\n` +
+			`Goal: carry out the user's file/folder organization request on disk: ${query}\n\n` +
+			`Scope: this is a local file-action task, not a document or web search — stay off content-retrieval, datasource, and web tools.\n\n` +
 			`${formatSkillInvocation(skill)}\n\n` +
-			`Finish with a short report as your final message, with no tool call: every change as old path → new path (one per line), what you skipped and why, and anything that needs the user. Write in the language of the request.`
+			`Finish with a concise report in the user's language (no tool call): every change as \`old path → new path\`, anything skipped and why, and any follow-up needed.`
 		);
 	}
 
 	/**
-	 * The tool-scope sentence of an `organize` turn: the tools the task uses and
-	 * the content-retrieval and web tools it must not call. Every route keeps the
-	 * whole tool set now, so the prompt is what scopes the turn; both lists name
-	 * only tools this agent actually registered, so the prompt never points the
-	 * model at a tool the session does not have.
-	 */
-	private organizeToolScope(): string {
-		const registered = new Set(this.tools.map((tool) => tool.name));
-		const discovery = [JIKJI_FIND_TOOL_NAME, EVERYTHING_SEARCH_TOOL_NAME, FSEARCH_SEARCH_TOOL_NAME].filter((name) =>
-			registered.has(name),
-		);
-		const usable = [
-			"bash",
-			"read",
-			"edit",
-			"write",
-			"ls",
-			...[CONVERT_FILES_TOOL_NAME, LIST_FILE_CONVERSIONS_TOOL_NAME, SCAN_DUPLICATE_DOCUMENTS_TOOL_NAME].filter(
-				(name) => registered.has(name),
-			),
-			...discovery,
-		];
-		const forbidden = this.tools
-			.map((tool) => tool.name)
-			.filter(
-				(name) =>
-					!discovery.includes(name) &&
-					(this.searchToolNames.has(name) || name === WEB_SEARCH_TOOL_NAME || name === WEB_FETCH_TOOL_NAME),
-			);
-		return (
-			`This is a file-organization task, not a document search: work with ${usable.join(", ")}` +
-			`${forbidden.length === 0 ? "" : `, and do NOT call the retrieval, datasource, or web tools (${forbidden.join(", ")})`}.`
-		);
-	}
-
-	/**
-	 * Prompt for a request Jev routed to `extra`: no branch had a confident
-	 * non-local verdict, and handling it needs no search of the user's records
-	 * first. Nothing was retrieved and nothing follows this turn — no fast
-	 * answer, follow-up check, or verification — so the single tool-capable
-	 * turn either answers the question or carries the task out. No tool is
-	 * forbidden: the model looks facts up itself when they are not its own.
+	 * Prompt for a request Jev routed to `extra`: complete the request in one turn
+	 * with full tool access (knowledge answer, targeted lookup, or execution task).
 	 */
 	buildExtraPrompt(query: string): string {
-		const registered = new Set(this.tools.map((tool) => tool.name));
-		// Name the tools that can settle a question this turn cannot answer from
-		// memory alone: the retrieval tools this agent registered, plus the web
-		// tools when they are on. Never name a tool the model does not have.
-		const lookups = [...registered].filter(
-			(name) => this.searchToolNames.has(name) || name === WEB_SEARCH_TOOL_NAME || name === WEB_FETCH_TOOL_NAME,
-		);
-		const lookupHint = lookups.length === 0 ? "" : ` (${lookups.join(", ")})`;
 		const askUser = this.askUserOffered
-			? `ask through ${ASK_USER_TOOL_NAME} rather than guessing`
-			: "say so in the reply rather than guessing";
+			? `ask via ${ASK_USER_TOOL_NAME} rather than guessing`
+			: "state the missing detail rather than guessing";
 		return (
-			`Handle this request now, in this one turn, with the tools you have: ${query}\n\n` +
-			`Nothing has been retrieved for you and no other turn follows: the message you end with is the final answer.\n\n` +
-			`How to handle it:\n` +
-			`- Answer from your own knowledge when that reliably settles the question: stable general knowledge, a definition, simple reasoning, or small talk.\n` +
-			`- Look it up first when the answer depends on the user's own records (their files, chats, mail, notes, calendar, or history) or on facts that may be recent, specific, or changed${lookupHint}.\n` +
-			`- Any arithmetic, date, time, or time zone question: ${CALCULATOR_PROMPT_RULE}\n` +
-			`- Otherwise carry the task out with the tools.\n\n` +
-			`Rules for your reply:\n` +
-			`- ${ANSWER_LEAD_RULE}\n` +
-			`- ${ANSWER_BULLET_RULE}\n` +
-			`- ${ANSWER_EMPHASIS_RULE}\n` +
-			`- ${ANSWER_LANGUAGE_RULE}\n` +
-			`- ${ANSWER_RELEVANCE_RULE}\n` +
-			`- ${ANSWER_UNCONFIRMED_FINAL_RULE}\n` +
-			`- ${ANSWER_UNCERTAINTY_RULE}\n` +
-			`- ${ANSWER_CITATION_RULE}\n` +
-			`- When you did work instead of answering a question, reply with a short report as your final message, with no tool call: what you did, the result, and anything that still needs the user. The answer-format rules above do not apply to a report; write it in the language of the request.\n` +
-			`- When something you need is not available to you and only the user can settle it, ${askUser}.\n\n` +
-			`Write the answer or the report as your final message, then stop.`
+			`Goal: handle this request completely in this single turn (no prefetched retrieval and no follow-up turn): ${query}\n\n` +
+			`- Answer directly from stable general knowledge when that reliably settles it.\n` +
+			`- Look up the user's records or current public facts with your tools whenever the answer depends on them.\n` +
+			`- For action/coding/command tasks, execute the work with your tools and end with a concise outcome report.\n` +
+			`- If a required choice belongs only to the user, ${askUser}.\n` +
+			`- End with your final answer or report as plain text.`
 		);
 	}
 
@@ -4143,31 +4046,10 @@ export class AutoRAGAgent {
 		return finalAnswerText(transcript());
 	}
 
-	/** Discovery-tool hint naming only the registered discovery tools; empty when none. */
-	private discoveryHint(sentence: (tools: string) => string): string {
-		const names = this.tools
-			.map((tool) => tool.name)
-			.filter((name) => name === JIKJI_FIND_TOOL_NAME || name === EVERYTHING_SEARCH_TOOL_NAME);
-		return names.length === 0 ? "" : sentence(names.join(" and "));
-	}
-
 	/**
-	 * Verification-phase nudge toward the internet, for when the web was not
-	 * selected before the fast answer or its evidence fell short: when local
-	 * evidence is missing, thin, or possibly stale, the agent searches the web. Empty when web tools are off.
-	 */
-	private webFallbackHint(): string {
-		const names = new Set(this.tools.map((tool) => tool.name));
-		if (!names.has(WEB_SEARCH_TOOL_NAME)) return "";
-		const fetch = names.has(WEB_FETCH_TOOL_NAME) ? ` (and ${WEB_FETCH_TOOL_NAME} to read a promising page)` : "";
-		return `When local evidence is missing, thin, or possibly outdated — or the question concerns current events, recent releases, prices, or other public facts — use ${WEB_SEARCH_TOOL_NAME}${fetch} to confirm or correct claims and fill gaps; use URLs as result sources for web-derived evidence. `;
-	}
-
-	/**
-	 * Verification-phase prompt for two-phase searches. The fast answer, when a
-	 * consumer already received it, is embedded verbatim so the model can diff
-	 * against it; the model then verifies with thinking on and ends with the
-	 * final answer as a plain reply, returning only the delta.
+	 * Verification-phase prompt for two-phase searches. Focuses on verifying
+	 * factual accuracy, freshness, and completeness, applying claim-level edits
+	 * via `revise_answer` when the fast answer already reached the user.
 	 */
 	buildRefinementPrompt(
 		query: string,
@@ -4178,77 +4060,27 @@ export class AutoRAGAgent {
 		jikjiStartingPoints: readonly string[] = [],
 	): string {
 		const limit = typeof options.topK === "number" ? ` Cite at most ${options.topK} sources.` : "";
-		const scope = options.scope ? ` Restrict search to virtual path scope ${options.scope}.` : "";
+		const scope = options.scope ? ` Restrict scope to ${options.scope}.` : "";
 		const firstAnswer = formatFirstAnswerContext(fastAnswer, fastAnswerDelivered);
-		const answerRules = fastAnswerDelivered
-			? `Rules for your reply (CORRECTIONS ARE TOOL CALLS; the system prompt's answer guidelines still apply):\n` +
+		const jikjiBlock =
+			jikjiStartingPoints.length === 0
+				? ""
+				: `Jikji candidate files (unverified starting points):\n${jikjiStartingPoints.map((path) => `- ${path}`).join("\n")}\n\n`;
+		const modeInstructions = fastAnswerDelivered
+			? `Delivery mode (first answer already shown to the user):\n` +
 				`- ${REVISE_ANSWER_PROMPT_RULE}\n` +
-				`- Correct a claim only with evidence you retrieved or a file you opened: cite it with its [eN] id in the text you pass. A claim you cannot support is retracted, not reworded. Give a short reason in the user's language.\n` +
-				`- Your reply after the last ${REVISE_ANSWER_TOOL_NAME} call is ONE short line, not a new answer: say what changed, or that the first answer held up (if the first answer said the answer was not confirmed yet, say it still could not be confirmed). Do not restate the claims, and give no account of where or how you searched.\n` +
-				`- Do not include specific file paths, datasource descriptions, or retrieval mechanics in the answer text.\n` +
-				`- ${ANSWER_LANGUAGE_RULE}\n` +
-				`- Leave out unrelated or merely adjacent findings.\n` +
+				`- Support every replacement or addition with a cited \`[eN]\` or \`[file:<abs path>]\` source and a short reason in the user's language; retract unsupported claims.\n` +
 				`- ${ANSWER_DELIVERABLE_DELTA_RULE}\n` +
-				`- ${ANSWER_IMAGE_DELTA_RULE}`
-			: `Formatting and content rules for the final answer (COMPLETE — no first answer reached the caller):\n` +
-				`- Unless the user explicitly requests a different format or length, provide the core answer to the user's question in at most 5 bullet points. If additional explanation is necessary, append it after the bullet points.\n` +
-				`- ${ANSWER_LEAD_RULE}\n` +
-				`- ${ANSWER_BULLET_RULE}\n` +
-				`- ${ANSWER_EMPHASIS_RULE}\n` +
-				`- ${ANSWER_LANGUAGE_RULE}\n` +
-				`- ${ANSWER_UNCERTAINTY_RULE}\n` +
-				`- ${ANSWER_RELEVANCE_RULE}\n` +
-				`- ${ANSWER_UNCONFIRMED_FINAL_RULE}\n` +
-				`- Unless the user explicitly requests otherwise, answer the question directly. Do not include specific file paths, datasource descriptions, or retrieval mechanics in the answer text.\n` +
-				`- ${ANSWER_DELIVERABLE_RULE}${fastAnswer !== undefined ? ` ${ANSWER_DELIVERABLE_DELTA_RULE}` : ""}\n` +
-				`- ${ANSWER_CITATION_RULE}\n` +
-				`- ${ANSWER_IMAGE_EMBED_RULE}\n` +
-				`- Do not report per-source negative findings (e.g. "no information found in Slack").\n` +
-				`- When evidence conflicts, treat the freshest (most recent) information as the correct source of truth.`;
+				`- ${ANSWER_IMAGE_DELTA_RULE}\n` +
+				`- End with ONE short line summarizing what changed (or confirming the first answer held up / remains unconfirmed) — do not restate unchanged claims or describe how you searched.`
+			: `Delivery mode (no first answer reached the user): write the complete final answer following the system prompt's Answer Guidelines.${fastAnswer !== undefined ? ` ${ANSWER_DELIVERABLE_DELTA_RULE}` : ""}`;
 		return (
 			`Original query: ${query}${limit}${scope}\n\n` +
 			`${firstAnswer}\n\n` +
 			formatSteerContext(steers) +
-			(jikjiStartingPoints.length === 0
-				? ""
-				: `Jikji's file discovery found these local files for the query. They are unverified candidates, not evidence: start exploring from them.\n${jikjiStartingPoints.map((path) => `- ${path}`).join("\n")}\n\n`) +
-			`Now verify it rigorously. ${this.discoveryHint((tools) => `Actively use ${tools} when discovering or exploring local files and folders. `)}Check important claims against source files with bash when needed, correct anything wrong or unsupported, fill gaps with retrieval tools, and resolve conflicts and freshness. ${this.webFallbackHint()} ${CALCULATOR_PROMPT_RULE} Recompute every number or date in the first answer with it when you have not already.\n\n` +
-			`${answerRules}\n\n` +
-			`Do not use broad grep/find or recursive filesystem scans: only inspect a path or narrow neighborhood surfaced by retrieval, and only when evidence clearly points there. ` +
-			`Avoid spinning repeated near-identical queries against the same datasource; once additional attempts stop surfacing new evidence, conclude from the evidence available. ` +
-			`When finished, reply with the final answer and no tool call: that last reply is what the user receives, so keep progress notes out of it.`
-		);
-	}
-
-	buildSearchPrompt(query: string, options: RetrievalOptions, initialRetrievalContext?: string): string {
-		const limit = typeof options.topK === "number" ? ` Cite at most ${options.topK} sources.` : "";
-		const scope = options.scope ? ` Restrict search to virtual path scope ${options.scope}.` : "";
-		return (
-			`Find and curate information for this original query: ${query}${limit}${scope}\n\n` +
-			`Start by deciding whether this is answerable from general knowledge or memory. If it is a generic, stable question, answer it immediately without retrieval. ` +
-			`Otherwise, baseline MinSync and Jikji retrieval is already running in parallel; do not give the final answer until its next message arrives.\n\n` +
-			`Baseline retrieval context:\n${initialRetrievalContext ?? "Pending; continue only with a brief progress statement."}\n\n` +
-			`Treat candidates as unverified evidence, verify important claims against source files when needed, and use additional tools when needed. ` +
-			`Judge relevance, conflicts, freshness, and sufficiency in this agent loop.\n\n` +
-			`Formatting and content rules for the answer:\n` +
-			`- Unless the user explicitly requests a different format or length, provide the core answer to the user's question in at most 5 bullet points. If additional explanation is necessary, append it after the bullet points.\n` +
-			`- ${ANSWER_LEAD_RULE}\n` +
-			`- ${ANSWER_BULLET_RULE}\n` +
-			`- ${ANSWER_EMPHASIS_RULE}\n` +
-			`- ${ANSWER_LANGUAGE_RULE}\n` +
-			`- Unless the user explicitly requests otherwise, answer the question directly. Do not include specific file paths, datasource descriptions, or retrieval mechanics in the answer text.\n` +
-			`- ${ANSWER_DELIVERABLE_RULE}\n` +
-			`- ${ANSWER_CITATION_RULE}\n` +
-			`- ${ANSWER_IMAGE_EMBED_RULE}\n` +
-			`- Do not report per-source negative findings (e.g. "no information found in Slack").\n` +
-			`- When evidence conflicts, treat the freshest (most recent) information as the correct source of truth.\n` +
-			`- ${ANSWER_RELEVANCE_RULE}\n` +
-			`- ${ANSWER_UNCONFIRMED_FINAL_RULE}\n` +
-			`- ${ANSWER_UNCERTAINTY_RULE}\n\n` +
-			`${CALCULATOR_PROMPT_RULE}\n` +
-			`${this.discoveryHint((tools) => `When exploring local files and folders, actively use ${tools} rather than exploratory bash commands. `)}Do not use broad grep/find or recursive filesystem scans: only inspect a path or narrow neighborhood surfaced by retrieval, and only when evidence clearly points there. ` +
-			`Avoid spinning repeated near-identical queries against the same datasource; once additional attempts stop surfacing new evidence, conclude from the evidence available. ` +
-			`When finished, reply with the final answer and no tool call: that last reply is what the user receives, so keep progress notes out of it.`
+			jikjiBlock +
+			`Goal: rigorously verify the answer against primary sources, fill any evidence gaps with your tools, resolve conflicts in favor of the freshest facts, and verify any numbers or dates with \`${CALCULATOR_TOOL_NAME}\`.\n\n` +
+			`${modeInstructions}`
 		);
 	}
 
