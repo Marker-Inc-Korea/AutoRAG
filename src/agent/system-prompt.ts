@@ -68,8 +68,8 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 		? `- **File automations**: when asked to trigger actions on folder/file changes, configure, test with synthetic \`events\`, and ensure the daemon is installed via \`manage_automations\` instead of describing manual steps.\n`
 		: "";
 	const discoveryLine = discoveryList
-		? `- **Local discovery**: prefer ${discoveryList} over exploratory \`bash\` / \`grep\` / \`find\` to locate local files and folders; reserve \`bash\` for targeted reading of identified files (or user-requested file organization). Never recursively scan or grep a whole search root (Downloads, Documents, Desktop, or /): it stalls and times out the search loop — limit \`grep\`/\`find\` to a single narrow directory already surfaced by retrieval.\n`
-		: `- **Local reading**: reserve \`bash\` for targeted reading of identified files (or user-requested file organization). Never recursively scan or grep a whole search root (Downloads, Documents, Desktop, or /): it stalls and times out the search loop — limit \`grep\`/\`find\` to a single narrow directory already surfaced by retrieval.\n`;
+		? `- **Local discovery**: prefer ${discoveryList} over exploratory \`bash\` / \`grep\` / \`find\` / \`ls\` to locate local files and folders; reserve \`bash\` for targeted reading of identified files (or user-requested file organization). Never recursively scan a whole search root (Downloads, Documents, Desktop, or /) or enumerate/walk its subfolders to prove absence — it stalls the search loop; limit \`grep\`/\`find\` to a narrow directory already surfaced by retrieval.\n`
+		: `- **Local reading**: reserve \`bash\` for targeted reading of identified files (or user-requested file organization). Never recursively scan a whole search root (Downloads, Documents, Desktop, or /) or enumerate/walk its subfolders to prove absence — it stalls the search loop; limit \`grep\`/\`find\` to a narrow directory already surfaced by retrieval.\n`;
 
 	sections.push(
 		`## Working Principles\n\n` +
