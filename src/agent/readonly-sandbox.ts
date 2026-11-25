@@ -1,29 +1,39 @@
 import { spawn, spawnSync } from "node:child_process";
-import { constants, mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { constants, existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { access as fsAccess } from "node:fs/promises";
 import { constants as osConstants, tmpdir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import type { BashOperations } from "@earendil-works/pi-coding-agent";
+import {
+	buildWindowsLowIlInvocation,
+	prepareWindowsReadOnlySandbox,
+	type WindowsSandboxPrepareOptions,
+} from "./readonly-sandbox-win.ts";
 
 /**
- * OS-level read-only filesystem enforcement for `bash` commands in `readonly` permission mode.
+ * OS-level read-only filesystem enforcement for `bash` (and Windows `powershell`) commands in `readonly`
+ * permission mode.
  *
  * The goal is a real kernel boundary, not a command-name denylist: any program a shell spawns
- * (shell redirects, `rm`, `mv`, `sed -i`, `python3`, `perl`, `node`, `/usr/bin/trash`, compiled binaries)
- * is prevented from modifying or deleting files on disk, except inside a dedicated scratch temp directory
- * (plus standard virtual devices such as `/dev/null`).
+ * (shell redirects, `rm`, `mv`, `sed -i`, `python3`, `perl`, `node`, `/usr/bin/trash`, `cmd /c del`,
+ * compiled binaries) is prevented from modifying or deleting files on disk, except inside a dedicated
+ * scratch temp directory (plus standard virtual devices such as `/dev/null`).
  *
  * Platform backends:
  * - macOS (`darwin`): `/usr/bin/sandbox-exec` (Seatbelt) with `(deny file-write*)` and explicit
  *   `(allow file-write* (subpath <scratchDir>))` + `/dev/null`, `/dev/zero`, `/dev/tty`, `/dev/fd/*`, `/dev/ttys*`.
  * - Linux (`linux`): `bwrap` (bubblewrap) with `--ro-bind / /`, `--dev /dev`, `--proc /proc`, and
  *   `--bind <scratchDir> <scratchDir>` (recursively read-only root with writable scratch dir).
- * - Windows (`win32`) or hosts without an available OS read-only sandbox: fail closed — refuse
- *   unsandboxed `bash` execution in `readonly` mode with an explicit diagnostic explaining why and
- *   how to switch to `full` mode.
+ * - Windows (`win32`): Win32 Mandatory Integrity Control (Low Integrity `S-1-16-4096`) + Restricted Token
+ *   (`CreateRestrictedToken(DISABLE_MAX_PRIVILEGE | LUA_TOKEN)`) + Job Object (`KILL_ON_JOB_CLOSE`), with
+ *   only the session scratch directory (and any trusted paths) labeled Low Integrity `(OI)(CI)L` via
+ *   `icacls.exe`. Windows evaluates No-Write-Up before DACLs, blocking writes and deletes to all Medium/High
+ *   Integrity files and folders without admin privileges.
+ * - Hosts without an available OS read-only sandbox: fail closed — refuse unsandboxed shell execution in
+ *   `readonly` mode with an explicit diagnostic explaining why and how to switch to `full` mode.
  */
 
-export type ReadOnlySandboxBackend = "seatbelt" | "bwrap" | "unavailable";
+export type ReadOnlySandboxBackend = "seatbelt" | "bwrap" | "windows-low-il" | "unavailable";
 
 export interface ReadOnlySandboxInfo {
 	readonly backend: ReadOnlySandboxBackend;
@@ -33,13 +43,15 @@ export interface ReadOnlySandboxInfo {
 
 export interface ReadOnlySandbox {
 	readonly backend: ReadOnlySandboxBackend;
-	/** Dedicated temp directory the sandbox allows writes into (and sets `TMPDIR` to). */
+	/** Dedicated temp directory the sandbox allows writes into (and sets `TMPDIR`/`TEMP`/`TMP` to). */
 	readonly scratchDir: string;
 	/** Present when {@link backend} is `"unavailable"`. */
 	readonly unavailableReason?: string;
-	/** Execute a shell command under the read-only filesystem boundary. */
+	/** Execute a bash command under the read-only filesystem boundary. */
 	readonly operations: BashOperations;
-	/** Remove the dedicated scratch directory. Safe to call multiple times. */
+	/** Execute a PowerShell command under the read-only filesystem boundary (Windows). */
+	readonly powerShellOperations: BashOperations;
+	/** Remove the dedicated scratch directory (and any helper files). Safe to call multiple times. */
 	dispose(): void;
 }
 
@@ -50,8 +62,10 @@ export interface ReadOnlySandboxOptions {
 	readonly scratchDir?: string;
 	/** Override shell binary path (passed through to the inner shell). */
 	readonly shellPath?: string;
-	/** Override binary lookup for tests (e.g. simulating missing `sandbox-exec` or `bwrap`). */
+	/** Override binary lookup for tests (e.g. simulating missing `sandbox-exec`, `bwrap`, `powershell.exe`, `icacls.exe`). */
 	readonly probeBinary?: (name: string) => string | undefined;
+	/** Override command runner for Windows `icacls` setup in tests. */
+	readonly runWindowsSetupCommand?: WindowsSandboxPrepareOptions["runCommand"];
 	/**
 	 * Extra writable file/dir paths (for example trusted config files). Kept empty by default so
 	 * `readonly` truly blocks every disk write outside the scratch dir.
@@ -117,12 +131,15 @@ function canonicalVariants(path: string): string[] {
 }
 
 function defaultProbeBinary(name: string): string | undefined {
-	if (isAbsolute(name)) {
+	if (isAbsolute(name) || /^[A-Za-z]:[\\/]/u.test(name)) {
+		if (process.platform === "win32") {
+			return existsSync(name) ? name : undefined;
+		}
 		const probe = spawnSync(name, ["--help"], { stdio: "ignore", timeout: 3000 });
 		return probe.error === undefined ? name : undefined;
 	}
 	const locator = process.platform === "win32" ? "where" : "which";
-	const res = spawnSync(locator, [name], { encoding: "utf8", timeout: 3000 });
+	const res = spawnSync(locator, [name], { encoding: "utf8", timeout: 3000, windowsHide: true });
 	if (res.status !== 0 || !res.stdout) return undefined;
 	const first = res.stdout.trim().split(/\r?\n/)[0]?.trim();
 	return first && first.length > 0 ? first : undefined;
@@ -140,8 +157,27 @@ function probeBwrapUsable(bwrapPath: string): { ok: true } | { ok: false; reason
 	return { ok: false, reason: `bwrap (${bwrapPath}) cannot create a read-only mount namespace: ${detail}` };
 }
 
-function resolveShell(customShellPath?: string): { shell: string; args: readonly string[] } {
+function resolveBashShell(
+	platform: NodeJS.Platform,
+	customShellPath?: string,
+	probeBinary: (name: string) => string | undefined = defaultProbeBinary,
+): { shell: string; args: readonly string[] } {
 	if (customShellPath) return { shell: customShellPath, args: ["-c"] };
+	if (platform === "win32") {
+		const candidates: string[] = [];
+		if (process.env.ProgramFiles) candidates.push(join(process.env.ProgramFiles, "Git", "bin", "bash.exe"));
+		if (process.env["ProgramFiles(x86)"]) {
+			candidates.push(join(process.env["ProgramFiles(x86)"], "Git", "bin", "bash.exe"));
+		}
+		for (const candidate of candidates) {
+			if (probeBinary(candidate) !== undefined) return { shell: candidate, args: ["-c"] };
+		}
+		const onPath = probeBinary("bash.exe");
+		if (onPath !== undefined) return { shell: onPath, args: ["-c"] };
+		throw new Error(
+			"No bash shell found on Windows. Install Git for Windows or configure shellPath in settings.json.",
+		);
+	}
 	for (const candidate of ["/bin/bash", "/usr/bin/bash", "/bin/sh"]) {
 		const probe = spawnSync(candidate, ["-c", ":"], { stdio: "ignore", timeout: 2000 });
 		if (probe.status === 0) return { shell: candidate, args: ["-c"] };
@@ -149,19 +185,47 @@ function resolveShell(customShellPath?: string): { shell: string; args: readonly
 	return { shell: "sh", args: ["-c"] };
 }
 
+const WINDOWS_PS_ARGS = ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command"] as const;
+
+function resolvePowerShellBinary(probeBinary: (name: string) => string | undefined = defaultProbeBinary): {
+	shell: string;
+	args: readonly string[];
+} {
+	const pwsh = probeBinary("pwsh.exe");
+	if (pwsh !== undefined) return { shell: pwsh, args: WINDOWS_PS_ARGS };
+	if (process.env.ProgramFiles) {
+		const pwsh7 = join(process.env.ProgramFiles, "PowerShell", "7", "pwsh.exe");
+		if (probeBinary(pwsh7) !== undefined) return { shell: pwsh7, args: WINDOWS_PS_ARGS };
+	}
+	const systemRoot = process.env.SystemRoot || "C:\\Windows";
+	const winPs = join(systemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+	const found = probeBinary(winPs) ?? probeBinary("powershell.exe");
+	if (found !== undefined) return { shell: found, args: WINDOWS_PS_ARGS };
+	throw new Error("No PowerShell executable found on Windows.");
+}
+
+interface SandboxWrappedInvocation {
+	readonly bin: string;
+	readonly args: readonly string[];
+	readonly env?: Readonly<Record<string, string>>;
+}
+
 function resolveSandboxInvocation(
 	platform: NodeJS.Platform,
 	scratchDir: string,
 	extraWritablePaths: readonly string[],
 	probeBinary: (name: string) => string | undefined,
+	runWindowsSetupCommand?: WindowsSandboxPrepareOptions["runCommand"],
 ): {
 	readonly backend: ReadOnlySandboxBackend;
 	readonly unavailableReason?: string;
+	readonly cleanupPaths?: readonly string[];
 	readonly wrap?: (
 		shell: string,
 		shellArgs: readonly string[],
 		command: string,
-	) => { readonly bin: string; readonly args: readonly string[] };
+		cwd: string,
+	) => SandboxWrappedInvocation;
 } {
 	if (platform === "darwin") {
 		const bin = probeBinary(SEATBELT_BIN);
@@ -226,6 +290,34 @@ function resolveSandboxInvocation(
 		};
 	}
 
+	if (platform === "win32") {
+		const prepared = prepareWindowsReadOnlySandbox({
+			scratchDir,
+			extraWritablePaths,
+			probeBinary,
+			...(runWindowsSetupCommand === undefined ? {} : { runCommand: runWindowsSetupCommand }),
+		});
+		if (!prepared.ok) {
+			return {
+				backend: "unavailable",
+				unavailableReason: prepared.reason,
+			};
+		}
+		return {
+			backend: "windows-low-il",
+			cleanupPaths: [dirname(prepared.launcherScriptPath)],
+			wrap: (shell, shellArgs, command, cwd) =>
+				buildWindowsLowIlInvocation(
+					prepared.powershellPath,
+					prepared.launcherScriptPath,
+					shell,
+					shellArgs,
+					command,
+					cwd,
+				),
+		};
+	}
+
 	return {
 		backend: "unavailable",
 		unavailableReason: `OS-level read-only filesystem sandboxing for bash is not available on platform "${platform}". Use read-only tools (read, grep, find, ls, search tools) or switch to \`full\` permission mode.`,
@@ -259,11 +351,11 @@ function killProcessTree(pid: number): void {
 }
 
 /**
- * Create a session-scoped OS read-only filesystem sandbox for `bash` execution.
+ * Create a session-scoped OS read-only filesystem sandbox for shell execution (`bash` and Windows `powershell`).
  *
  * A fresh temp directory is allocated (unless `scratchDir` is provided) and exported as `TMPDIR`/`TEMP`/`TMP`
  * inside the sandboxed process so pipelines and tools that need temporary files keep working while every
- * other path on disk rejects writes with `EPERM` / `EROFS`.
+ * other path on disk rejects writes and deletes at the kernel level.
  */
 export function createReadOnlySandbox(options: ReadOnlySandboxOptions = {}): ReadOnlySandbox {
 	const platform = options.platform ?? process.platform;
@@ -275,30 +367,40 @@ export function createReadOnlySandbox(options: ReadOnlySandboxOptions = {}): Rea
 	const scratchDir = realpathSync(rawScratch);
 	const extraWritablePaths = options.extraWritablePaths ?? [];
 
-	const resolved = resolveSandboxInvocation(platform, scratchDir, extraWritablePaths, probeBinary);
+	const resolved = resolveSandboxInvocation(
+		platform,
+		scratchDir,
+		extraWritablePaths,
+		probeBinary,
+		options.runWindowsSetupCommand,
+	);
 
-	const operations: BashOperations = {
+	const makeOperations = (kind: "bash" | "powershell"): BashOperations => ({
 		exec: async (command, cwd, { onData, signal, timeout, env }) => {
 			if (signal?.aborted) throw new Error("aborted");
 			if (resolved.backend === "unavailable" || resolved.wrap === undefined) {
 				throw new Error(
-					`Read-only mode blocked bash execution: ${resolved.unavailableReason ?? "no OS read-only sandbox available"}`,
+					`Read-only mode blocked ${kind} execution: ${resolved.unavailableReason ?? "no OS read-only sandbox available"}`,
 				);
 			}
 			try {
 				await fsAccess(cwd, constants.F_OK);
 			} catch {
-				throw new Error(`Working directory does not exist: ${cwd}\nCannot execute bash commands.`);
+				throw new Error(`Working directory does not exist: ${cwd}\nCannot execute ${kind} commands.`);
 			}
 
-			const { shell, args: shellArgs } = resolveShell(options.shellPath);
-			const wrapped = resolved.wrap(shell, shellArgs, command);
+			const { shell, args: shellArgs } =
+				kind === "powershell"
+					? resolvePowerShellBinary(probeBinary)
+					: resolveBashShell(platform, options.shellPath, probeBinary);
+			const wrapped = resolved.wrap(shell, shellArgs, command, cwd);
 			const childEnv: NodeJS.ProcessEnv = {
 				...(env ?? process.env),
 				TMPDIR: scratchDir,
 				TEMP: scratchDir,
 				TMP: scratchDir,
 				AUTORAG_READONLY_SCRATCH: scratchDir,
+				...(wrapped.env ?? {}),
 			};
 
 			const child = spawn(wrapped.bin, [...wrapped.args], {
@@ -350,7 +452,10 @@ export function createReadOnlySandbox(options: ReadOnlySandboxOptions = {}): Rea
 				if (signal !== undefined) signal.removeEventListener("abort", onAbort);
 			}
 		},
-	};
+	});
+
+	const operations = makeOperations("bash");
+	const powerShellOperations = makeOperations("powershell");
 
 	let disposed = false;
 	return {
@@ -358,9 +463,17 @@ export function createReadOnlySandbox(options: ReadOnlySandboxOptions = {}): Rea
 		scratchDir,
 		...(resolved.unavailableReason === undefined ? {} : { unavailableReason: resolved.unavailableReason }),
 		operations,
+		powerShellOperations,
 		dispose() {
 			if (disposed) return;
 			disposed = true;
+			for (const extraPath of resolved.cleanupPaths ?? []) {
+				try {
+					rmSync(extraPath, { recursive: true, force: true });
+				} catch {
+					// Best-effort helper cleanup.
+				}
+			}
 			if (ownedScratch) {
 				try {
 					rmSync(scratchDir, { recursive: true, force: true });

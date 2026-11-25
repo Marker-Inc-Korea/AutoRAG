@@ -3,6 +3,8 @@ import {
 	type BashOperations,
 	createBashToolDefinition,
 	createLocalBashOperations,
+	createLocalPowerShellOperations,
+	createPowerShellToolDefinition,
 	type ExtensionAPI,
 	type ExtensionContext,
 	type ExtensionFactory,
@@ -165,9 +167,6 @@ export function describeReadOnlyBlock(
 		if (action === "status") return undefined;
 		return `manage_ltr (${action || "mutate"})`;
 	}
-	if (toolName === "powershell") {
-		return "powershell";
-	}
 	return undefined;
 }
 
@@ -181,14 +180,15 @@ function readOnlyBlockedReason(action: string): string {
 
 /**
  * pi extension enforcing binary `readonly` / `full` permissions with OS-level filesystem read-only
- * sandboxing for `bash`. No decision model (Jev) and no per-call approval dialogs.
+ * sandboxing for `bash` (and Windows `powershell`). No decision model (Jev) and no per-call approval dialogs.
  *
- * - Overrides the built-in `bash` tool with a mode-aware wrapper: in `readonly`, commands execute inside
- *   the OS read-only sandbox (`sandbox-exec` on macOS, `bwrap` on Linux, fail-closed otherwise) with a
- *   dedicated writable scratch dir (`$TMPDIR`); in `full`, commands execute via pi's standard local bash.
+ * - Overrides the built-in `bash` (and on Windows, `powershell`) tool with a mode-aware wrapper: in `readonly`,
+ *   commands execute inside the OS read-only sandbox (`sandbox-exec` on macOS, `bwrap` on Linux, Low-Integrity
+ *   Restricted Token + Job Object on Windows, fail-closed otherwise) with a dedicated writable scratch dir
+ *   (`$TMPDIR`/`%TEMP%`); in `full`, commands execute via pi's standard local shell.
  * - Intercepts `user_bash` (`!` shell escapes in the TUI) with the same read-only operations while in `readonly`.
  * - Blocks write-capable tools (`write`, `edit`, `convert_files`, `manage_automations` mutations, `manage_ltr`
- *   mutations, `powershell`) in `tool_call` while in `readonly`.
+ *   mutations) in `tool_call` while in `readonly`.
  * - Adds `/permissions [readonly|full]` and Shift+Tab toggling in the TUI, with live footer status
  *   (`permissions: read-only` vs `permissions: full`).
  */
@@ -204,6 +204,7 @@ export function createPermissionGate(options: PermissionGateOptions): ExtensionF
 		let sandbox: ReadOnlySandbox | undefined;
 		let localOps: BashOperations | undefined;
 		let localShellPath: string | undefined;
+		let localPowerShellOps: BashOperations | undefined;
 
 		const ensureSandbox = (): ReadOnlySandbox => {
 			if (sandbox === undefined) {
@@ -244,6 +245,13 @@ export function createPermissionGate(options: PermissionGateOptions): ExtensionF
 			return localOps;
 		};
 
+		const getLocalPowerShellOps = (): BashOperations => {
+			if (localPowerShellOps === undefined) {
+				localPowerShellOps = createLocalPowerShellOperations();
+			}
+			return localPowerShellOps;
+		};
+
 		// Mode-aware BashOperations shared by the overridden `bash` tool and `user_bash`.
 		const modeAwareBashOps: BashOperations = {
 			exec: (command, cwd, execOptions) => {
@@ -256,8 +264,19 @@ export function createPermissionGate(options: PermissionGateOptions): ExtensionF
 			},
 		};
 
-		// Override pi's built-in `bash` tool so every model bash call routes through modeAwareBashOps
-		// while preserving pi's schema, truncation, streaming output, and TUI renderers.
+		// Mode-aware PowerShellOperations for Windows sessions.
+		const modeAwarePowerShellOps: BashOperations = {
+			exec: (command, cwd, execOptions) => {
+				if (controller.isReadOnly) {
+					return ensureSandbox().powerShellOperations.exec(command, cwd, execOptions);
+				}
+				return getLocalPowerShellOps().exec(command, cwd, execOptions);
+			},
+		};
+
+		// Override pi's built-in `bash` (and `powershell` on Windows) tool so every model shell call routes
+		// through the OS read-only sandbox in `readonly` mode while preserving pi's schema, truncation,
+		// streaming output, and TUI renderers.
 		// Note: `pi.getSettings()` is an action method unavailable during extension load, so shell settings
 		// are resolved lazily inside `modeAwareBashOps.exec`.
 		if (typeof pi.registerTool === "function") {
@@ -265,6 +284,12 @@ export function createPermissionGate(options: PermissionGateOptions): ExtensionF
 				operations: modeAwareBashOps,
 			});
 			pi.registerTool(bashToolDef);
+			if ((options.sandboxOptions?.platform ?? process.platform) === "win32") {
+				const psToolDef = createPowerShellToolDefinition(process.cwd(), {
+					operations: modeAwarePowerShellOps,
+				});
+				pi.registerTool(psToolDef);
+			}
 		}
 
 		// Also route TUI `!cmd` user_bash through the read-only sandbox when in `readonly` mode.

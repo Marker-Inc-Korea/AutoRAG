@@ -14,25 +14,30 @@ decision model (Jev) and no per-call approval popups. Enforcement happens in the
 
 | Mode | Behavior |
 | --- | --- |
-| `readonly` (default) | The agent can read, search, and inspect freely, but cannot modify or delete files on disk. Every `bash` command (including TUI `!` escapes) runs inside an OS-level read-only filesystem sandbox that blocks all disk writes outside a dedicated session temp directory (`$TMPDIR`). Write-capable tools (`write`, `edit`, `convert_files`, `powershell`, and mutating actions of `manage_automations` and `manage_ltr`) are blocked. |
-| `full` | Unrestricted read and write access. `bash` runs directly without the read-only sandbox, and all file-modifying tools are enabled. |
+| `readonly` (default) | The agent can read, search, and inspect freely, but cannot modify or delete files on disk. Every `bash` command (including TUI `!` escapes, and Windows `powershell`) runs inside an OS-level read-only filesystem sandbox that blocks all disk writes outside a dedicated session temp directory (`$TMPDIR`/`%TEMP%`). Write-capable tools (`write`, `edit`, `convert_files`, and mutating actions of `manage_automations` and `manage_ltr`) are blocked. |
+| `full` | Unrestricted read and write access. Shell commands run directly without the read-only sandbox, and all file-modifying tools are enabled. |
 
 ## OS-level read-only enforcement
 
 In `readonly` mode, AutoRAG does not rely on command-name parsing or an LLM classifier to guess
 whether a shell command is safe. Instead, the operating system denies filesystem mutations at the
 kernel boundary for the shell and every child process it spawns (`rm`, `mv`, `sed -i`, shell
-redirects, `python3`, `perl`, `node`, `/usr/bin/trash`, compiled binaries, or symlink/hardlink
-escapes):
+redirects, `python3`, `perl`, `node`, `/usr/bin/trash`, `cmd /c del`, compiled binaries, or
+symlink/hardlink escapes):
 
 - **macOS (`darwin`)**: `/usr/bin/sandbox-exec` (Seatbelt) with `(deny file-write*)` and explicit
   write access only for the session's fresh scratch directory (`$TMPDIR`) and virtual devices
   (`/dev/null`, `/dev/zero`, `/dev/tty`, `/dev/fd/*`, `/dev/ttys*`).
 - **Linux (`linux`)**: `bwrap` (bubblewrap) with `--ro-bind / /`, `--dev /dev`, `--proc /proc`, and
   `--bind` for the session scratch directory.
-- **Windows or hosts without an available sandbox**: fails closed — `bash` refuses to run
-  unsandboxed in `readonly` mode and explains how to use read-only tools (`read`, `grep`, `find`,
-  `ls`, search tools) or switch to `full` mode.
+- **Windows (`win32`)**: Win32 Mandatory Integrity Control (Low Integrity `S-1-16-4096`) +
+  `CreateRestrictedToken(DISABLE_MAX_PRIVILEGE | LUA_TOKEN)` + kill-on-close Job Object, with only
+  the session scratch directory (and any explicitly trusted paths) labeled Low Integrity
+  `(OI)(CI)L` via `icacls.exe`. Windows evaluates No-Write-Up before DACLs, blocking writes and
+  deletes to all Medium/High Integrity files and folders without administrator privileges.
+- **Hosts without an available sandbox**: fails closed — shell execution refuses to run unsandboxed
+  in `readonly` mode and explains how to use read-only tools (`read`, `grep`, `find`, `ls`, search
+  tools) or switch to `full` mode.
 
 The session scratch directory is allocated fresh per session under the OS temp folder, exported as
 `TMPDIR`/`TEMP`/`TMP`, and removed when the session shuts down. Even writes to sibling directories

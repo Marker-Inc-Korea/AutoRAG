@@ -59,6 +59,12 @@ function fakeSandbox(scratchDir: string): {
 				return { exitCode: 0 };
 			},
 		},
+		powerShellOperations: {
+			exec: async (command) => {
+				execCalls.push(`ps:${command}`);
+				return { exitCode: 0 };
+			},
+		},
 		dispose() {
 			isDisposed = true;
 		},
@@ -197,14 +203,13 @@ describe("PermissionController", () => {
 });
 
 describe("describeReadOnlyBlock", () => {
-	it("blocks write, edit, convert_files, powershell, and mutating automation/ltr actions", () => {
+	it("blocks write, edit, convert_files, and mutating automation/ltr actions", () => {
 		const trusted = new Set<string>();
 		expect(describeReadOnlyBlock("write", { path: "a.txt" }, root, trusted, undefined)).toBe("write (a.txt)");
 		expect(describeReadOnlyBlock("edit", { path: "a.txt" }, root, trusted, undefined)).toBe("edit (a.txt)");
 		expect(describeReadOnlyBlock("convert_files", { inputs: ["a.pdf"], to: "md" }, root, trusted, undefined)).toBe(
 			"convert_files",
 		);
-		expect(describeReadOnlyBlock("powershell", { command: "ls" }, root, trusted, undefined)).toBe("powershell");
 		expect(describeReadOnlyBlock("manage_automations", { action: "save" }, root, trusted, undefined)).toBe(
 			"manage_automations (save)",
 		);
@@ -217,13 +222,14 @@ describe("describeReadOnlyBlock", () => {
 		);
 	});
 
-	it("allows read-only tools, listing/status queries, trusted paths, and scratch-dir writes", () => {
+	it("allows read-only tools, bash/powershell (sandboxed at OS level), listing/status queries, trusted paths, and scratch-dir writes", () => {
 		const configFile = join(root, "config.json");
 		const scratch = join(root, "scratch");
 		const trusted = new Set([configFile]);
 		expect(describeReadOnlyBlock("read", { path: "a.txt" }, root, trusted, scratch)).toBeUndefined();
 		expect(describeReadOnlyBlock("grep", { pattern: "x" }, root, trusted, scratch)).toBeUndefined();
 		expect(describeReadOnlyBlock("bash", { command: "ls" }, root, trusted, scratch)).toBeUndefined();
+		expect(describeReadOnlyBlock("powershell", { command: "Get-ChildItem" }, root, trusted, scratch)).toBeUndefined();
 		expect(describeReadOnlyBlock("search_all_documents", { query: "q" }, root, trusted, scratch)).toBeUndefined();
 		expect(describeReadOnlyBlock("manage_automations", { action: "list" }, root, trusted, scratch)).toBeUndefined();
 		expect(describeReadOnlyBlock("manage_ltr", { action: "status" }, root, trusted, scratch)).toBeUndefined();
@@ -259,6 +265,23 @@ describe("createPermissionGate extension", () => {
 
 		await h.shutdown();
 		expect(sb.disposed()).toBe(true);
+	});
+
+	it("also registers a mode-aware powershell tool override on Windows", () => {
+		const registeredTools = new Map<string, ToolDefinition>();
+		const pi = {
+			on: () => () => undefined,
+			registerTool: (tool: ToolDefinition) => void registeredTools.set(tool.name, tool),
+			registerCommand: () => undefined,
+			getSettings: () => ({}),
+		} as unknown as ExtensionAPI;
+		createPermissionGate({
+			controller: new PermissionController("readonly"),
+			sandboxOptions: { platform: "win32" },
+			createSandbox: () => fakeSandbox(join(root, "scratch")).sandbox,
+		})(pi);
+		expect(registeredTools.has("bash")).toBe(true);
+		expect(registeredTools.has("powershell")).toBe(true);
 	});
 
 	it("blocks write/edit/mutating tools in readonly and allows everything in full", async () => {

@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
 	buildSeatbeltProfile,
@@ -8,6 +8,12 @@ import {
 	escapeSeatbeltString,
 	type ReadOnlySandbox,
 } from "../../src/agent/readonly-sandbox.ts";
+import {
+	buildWindowsLowIlInvocation,
+	prepareWindowsReadOnlySandbox,
+	WINDOWS_LOW_INTEGRITY_SID,
+	WINDOWS_SANDBOX_LAUNCHER_PS1,
+} from "../../src/agent/readonly-sandbox-win.ts";
 
 let root: string;
 let sandboxes: ReadOnlySandbox[];
@@ -52,11 +58,11 @@ describe("buildSeatbeltProfile", () => {
 });
 
 describe("createReadOnlySandbox fail-closed behavior", () => {
-	it("reports unavailable and throws when platform has no sandbox backend (win32)", async () => {
-		const sb = createReadOnlySandbox({ platform: "win32" });
+	it("reports unavailable and throws when platform has no sandbox backend (freebsd)", async () => {
+		const sb = createReadOnlySandbox({ platform: "freebsd" });
 		sandboxes.push(sb);
 		expect(sb.backend).toBe("unavailable");
-		expect(sb.unavailableReason).toMatch(/win32/i);
+		expect(sb.unavailableReason).toMatch(/freebsd/i);
 		await expect(runIn(sb, "echo hi")).rejects.toThrow(/Read-only mode blocked bash execution/);
 	});
 
@@ -76,14 +82,120 @@ describe("createReadOnlySandbox fail-closed behavior", () => {
 		await expect(runIn(sb, "echo hi")).rejects.toThrow(/Read-only mode blocked bash execution/);
 	});
 
+	it("fails closed on win32 when PowerShell or icacls is absent or icacls fails", async () => {
+		const noPs = createReadOnlySandbox({ platform: "win32", probeBinary: () => undefined });
+		sandboxes.push(noPs);
+		expect(noPs.backend).toBe("unavailable");
+		expect(noPs.unavailableReason).toMatch(/PowerShell/i);
+		await expect(runIn(noPs, "echo hi")).rejects.toThrow(/Read-only mode blocked bash execution/);
+
+		const noIcacls = createReadOnlySandbox({
+			platform: "win32",
+			probeBinary: (name) => (name.toLowerCase().includes("powershell") ? "C:\\Windows\\powershell.exe" : undefined),
+		});
+		sandboxes.push(noIcacls);
+		expect(noIcacls.backend).toBe("unavailable");
+		expect(noIcacls.unavailableReason).toMatch(/icacls/i);
+
+		const icaclsFail = createReadOnlySandbox({
+			platform: "win32",
+			probeBinary: (name) => name,
+			runWindowsSetupCommand: () => ({ status: 5, stderr: "Access is denied." }),
+		});
+		sandboxes.push(icaclsFail);
+		expect(icaclsFail.backend).toBe("unavailable");
+		expect(icaclsFail.unavailableReason).toMatch(/Low Integrity label/i);
+		expect(icaclsFail.unavailableReason).toMatch(/Access is denied/);
+	});
+
 	it("disposes its owned scratch directory", () => {
-		const sb = createReadOnlySandbox({ platform: "win32" });
+		const sb = createReadOnlySandbox({ platform: "freebsd" });
 		const dir = sb.scratchDir;
 		expect(existsSync(dir)).toBe(true);
 		sb.dispose();
 		expect(existsSync(dir)).toBe(false);
 		// Safe to call twice.
 		sb.dispose();
+	});
+});
+
+describe("Windows Low-Integrity sandbox setup & invocation", () => {
+	it("labels scratch dir (OI)(CI)L and trusted files L, writes launcher outside scratch dir, and cleans up on dispose", () => {
+		const scratch = join(root, "scratch");
+		mkdirSync(scratch, { recursive: true });
+		const cfg = join(root, "config.json");
+		writeFileSync(cfg, "{}", "utf8");
+		const calls: { bin: string; args: readonly string[] }[] = [];
+
+		const prepared = prepareWindowsReadOnlySandbox({
+			scratchDir: scratch,
+			extraWritablePaths: [cfg],
+			probeBinary: (name) => {
+				if (name.toLowerCase().includes("powershell"))
+					return "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe";
+				if (name.toLowerCase().includes("icacls")) return "C:\\Windows\\System32\\icacls.exe";
+				return undefined;
+			},
+			runCommand: (bin, args) => {
+				calls.push({ bin, args });
+				return { status: 0, stdout: "Successfully processed 1 files" };
+			},
+		});
+
+		expect(prepared.ok).toBe(true);
+		if (!prepared.ok) return;
+		try {
+			expect(existsSync(prepared.launcherScriptPath)).toBe(true);
+			expect(prepared.launcherScriptPath.startsWith(scratch)).toBe(false);
+			expect(calls).toEqual([
+				{ bin: "C:\\Windows\\System32\\icacls.exe", args: [scratch, "/setintegritylevel", "(OI)(CI)L"] },
+				{ bin: "C:\\Windows\\System32\\icacls.exe", args: [cfg, "/setintegritylevel", "L"] },
+			]);
+
+			const inv = buildWindowsLowIlInvocation(
+				prepared.powershellPath,
+				prepared.launcherScriptPath,
+				"C:\\Program Files\\Git\\bin\\bash.exe",
+				["-c"],
+				"ls -la",
+				root,
+			);
+			expect(inv.bin).toBe(prepared.powershellPath);
+			expect(inv.args).toContain("-File");
+			expect(inv.args).toContain(prepared.launcherScriptPath);
+			expect(inv.env.AUTORAG_WIN_SB_EXE).toBe("C:\\Program Files\\Git\\bin\\bash.exe");
+			expect(JSON.parse(inv.env.AUTORAG_WIN_SB_ARGS_JSON)).toEqual(["-c", "ls -la"]);
+			expect(inv.env.AUTORAG_WIN_SB_CWD).toBe(root);
+		} finally {
+			rmSync(dirname(prepared.launcherScriptPath), { recursive: true, force: true });
+		}
+	});
+
+	it("wires windows-low-il backend on win32 and cleans up launcher dir on dispose", () => {
+		let launcherDir: string | undefined;
+		const sb = createReadOnlySandbox({
+			platform: "win32",
+			probeBinary: (name) => name,
+			runWindowsSetupCommand: () => ({ status: 0 }),
+		});
+		sandboxes.push(sb);
+		expect(sb.backend).toBe("windows-low-il");
+		expect(sb.unavailableReason).toBeUndefined();
+		// Verify launcher script uses Low Integrity SID, restricted token, DETACHED_PROCESS (never CREATE_NO_WINDOW in flags), and Job Object.
+		expect(WINDOWS_SANDBOX_LAUNCHER_PS1).toContain(WINDOWS_LOW_INTEGRITY_SID);
+		expect(WINDOWS_SANDBOX_LAUNCHER_PS1).toContain("CreateRestrictedToken");
+		expect(WINDOWS_SANDBOX_LAUNCHER_PS1).toContain("TokenIntegrityLevel");
+		expect(WINDOWS_SANDBOX_LAUNCHER_PS1).toContain(
+			"uint flags = DETACHED_PROCESS | CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT;",
+		);
+		expect(WINDOWS_SANDBOX_LAUNCHER_PS1).toContain("JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE");
+		expect(WINDOWS_SANDBOX_LAUNCHER_PS1).not.toMatch(/flags\s*=.*CREATE_NO_WINDOW/);
+
+		const scratch = sb.scratchDir;
+		expect(existsSync(scratch)).toBe(true);
+		sb.dispose();
+		expect(existsSync(scratch)).toBe(false);
+		expect(launcherDir).toBeUndefined();
 	});
 });
 
@@ -246,4 +358,52 @@ describe.skipIf(process.platform !== "linux")("Linux bwrap OS-level read-only en
 		expect(touchRes.exitCode).not.toBe(0);
 		expect(existsSync(join(sub, "x.txt"))).toBe(false);
 	});
+});
+
+describe.skipIf(process.platform !== "win32")("Windows Low-Integrity OS-level read-only enforcement", () => {
+	it("allows reading and writing inside %TEMP% scratch dir while blocking writes/deletes to Medium-IL files", async () => {
+		const file = join(root, "precious.txt");
+		writeFileSync(file, "original-win", "utf8");
+		const sb = createReadOnlySandbox();
+		sandboxes.push(sb);
+		expect(sb.backend).toBe("windows-low-il");
+
+		// Reading works via PowerShell and bash
+		let psReadOut = "";
+		const psRead = await sb.powerShellOperations.exec(`Get-Content -Raw '${file}'`, root, {
+			onData: (chunk) => {
+				psReadOut += chunk.toString("utf8");
+			},
+		});
+		expect(psRead.exitCode).toBe(0);
+		expect(psReadOut).toContain("original-win");
+
+		// Scratch temp write succeeds
+		let psTmpOut = "";
+		const psTmp = await sb.powerShellOperations.exec(
+			`Set-Content -Path (Join-Path $env:TEMP 'work.txt') -Value 'scratch-ok'; Get-Content (Join-Path $env:TEMP 'work.txt')`,
+			root,
+			{
+				onData: (chunk) => {
+					psTmpOut += chunk.toString("utf8");
+				},
+			},
+		);
+		expect(psTmp.exitCode).toBe(0);
+		expect(psTmpOut.trim()).toBe("scratch-ok");
+
+		// Overwrite, delete, and cmd /c del on Medium-IL file are blocked by kernel Mandatory Integrity Control
+		const psAttacks = [
+			`Set-Content -Path '${file}' -Value 'hacked'`,
+			`Remove-Item -Force '${file}'`,
+			`cmd.exe /c del /f /q "${file}"`,
+			`New-Item -ItemType File -Path '${join(root, "new-file.txt")}'`,
+		];
+		for (const cmd of psAttacks) {
+			await sb.powerShellOperations.exec(cmd, root, { onData: () => undefined });
+			expect(existsSync(file), `file deleted by: ${cmd}`).toBe(true);
+			expect(readFileSync(file, "utf8"), `file mutated by: ${cmd}`).toBe("original-win");
+		}
+		expect(existsSync(join(root, "new-file.txt"))).toBe(false);
+	}, 60_000);
 });
