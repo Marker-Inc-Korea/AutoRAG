@@ -262,8 +262,8 @@ export interface CliConfig {
 	 */
 	queryDecomposition?: QueryDecompositionConfig | false;
 	/**
-	 * Approval gate for file changes by the agent: `auto` (default for the TUI: Jev first, user as fallback; `full` for `search` and a bridged TUI), `ask`
-	 * (the user approves every file-capable call, Jev unused), or `full` (no gate). `--permission-mode` and `AUTORAG_PERMISSION_MODE` override the file.
+	 * Disk permission mode for the agent: `readonly` (default; OS-sandboxed read-only `bash` and write/edit/mutating
+	 * tools blocked) or `full` (unrestricted read/write). `--permission-mode` and `AUTORAG_PERMISSION_MODE` override the file.
 	 */
 	permissionMode?: PermissionMode;
 	/** Post-merge reranking. Absent ⇒ reranking disabled. `false` disables it. */
@@ -1202,8 +1202,8 @@ export function resolveConfigReadOnly(input: ResolveConfigInput): CliConfig {
 
 /**
  * Permission mode: `--permission-mode`, then `AUTORAG_PERMISSION_MODE`, then the config file, then the
- * command's own default (`auto` unless the command says otherwise). An unknown value is an error from any
- * source, never a silent fallback to a weaker gate.
+ * command's own default (`readonly` unless the command says otherwise). An unknown value is an error from any
+ * source, never a silent fallback to a weaker mode.
  */
 function resolvePermissionMode(
 	flags: Record<string, string | boolean | undefined>,

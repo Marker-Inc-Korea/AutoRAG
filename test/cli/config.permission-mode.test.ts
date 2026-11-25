@@ -25,8 +25,8 @@ function resolve(options: { file?: unknown; flags?: Record<string, string | bool
 }
 
 describe("permission mode resolution", () => {
-	it("defaults to auto", () => {
-		expect(resolve({}).permissionMode).toBe("auto");
+	it("defaults to readonly", () => {
+		expect(resolve({}).permissionMode).toBe("readonly");
 	});
 
 	it("takes a command's own default when nothing else says, and flag, env, and file still win over it", () => {
@@ -41,40 +41,46 @@ describe("permission mode resolution", () => {
 			}).permissionMode;
 		};
 		expect(withDefault({})).toBe("full");
-		expect(withDefault({ file: "ask" })).toBe("ask");
-		expect(withDefault({ file: "ask", env: { AUTORAG_PERMISSION_MODE: "auto" } })).toBe("auto");
-		expect(withDefault({ env: { AUTORAG_PERMISSION_MODE: "auto" }, flags: { "permission-mode": "ask" } })).toBe(
-			"ask",
+		expect(withDefault({ file: "readonly" })).toBe("readonly");
+		expect(withDefault({ file: "readonly", env: { AUTORAG_PERMISSION_MODE: "full" } })).toBe("full");
+		expect(withDefault({ env: { AUTORAG_PERMISSION_MODE: "full" }, flags: { "permission-mode": "readonly" } })).toBe(
+			"readonly",
 		);
 	});
 
 	it("reads the config file", () => {
-		expect(resolve({ file: "auto" }).permissionMode).toBe("auto");
+		expect(resolve({ file: "readonly" }).permissionMode).toBe("readonly");
+		expect(resolve({ file: "full" }).permissionMode).toBe("full");
 	});
 
 	it("prefers the environment over the file, and the flag over both", () => {
-		expect(resolve({ file: "ask", env: { AUTORAG_PERMISSION_MODE: "full" } }).permissionMode).toBe("full");
+		expect(resolve({ file: "readonly", env: { AUTORAG_PERMISSION_MODE: "full" } }).permissionMode).toBe("full");
 		expect(
 			resolve({
-				file: "ask",
+				file: "full",
 				env: { AUTORAG_PERMISSION_MODE: "full" },
-				flags: { "permission-mode": "auto" },
+				flags: { "permission-mode": "readonly" },
 			}).permissionMode,
-		).toBe("auto");
+		).toBe("readonly");
 	});
 
-	it("accepts any letter case", () => {
+	it("accepts any letter case and the read-only alias", () => {
 		expect(resolve({ flags: { "permission-mode": "FULL" } }).permissionMode).toBe("full");
+		expect(resolve({ flags: { "permission-mode": "READONLY" } }).permissionMode).toBe("readonly");
+		expect(resolve({ flags: { "permission-mode": "read-only" } }).permissionMode).toBe("readonly");
 	});
 
-	it("rejects an unknown mode from every source, naming the valid ones", () => {
+	it("rejects unknown or retired modes (auto, ask, yolo) from every source, naming the valid ones", () => {
 		expect(() => resolve({ file: "yolo" })).toThrow(ConfigError);
+		expect(() => resolve({ file: "auto" })).toThrow(/readonly, full/u);
+		expect(() => resolve({ file: "ask" })).toThrow(/readonly, full/u);
 		expect(() => resolve({ file: 3 })).toThrow(/permissionMode/u);
-		expect(() => resolve({ env: { AUTORAG_PERMISSION_MODE: "yolo" } })).toThrow(/ask, auto, full/u);
-		expect(() => resolve({ flags: { "permission-mode": "yolo" } })).toThrow(/--permission-mode/u);
+		expect(() => resolve({ env: { AUTORAG_PERMISSION_MODE: "auto" } })).toThrow(/readonly, full/u);
+		expect(() => resolve({ flags: { "permission-mode": "ask" } })).toThrow(/--permission-mode/u);
 	});
 
 	it("hands the mode to the agent", () => {
-		expect(buildAgentOptions(resolve({ flags: { "permission-mode": "auto" } })).permissionMode).toBe("auto");
+		expect(buildAgentOptions(resolve({ flags: { "permission-mode": "readonly" } })).permissionMode).toBe("readonly");
+		expect(buildAgentOptions(resolve({ flags: { "permission-mode": "full" } })).permissionMode).toBe("full");
 	});
 });

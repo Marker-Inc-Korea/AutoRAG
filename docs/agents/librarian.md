@@ -28,14 +28,14 @@ autorag search "What are our primary Q3 deliverables?"
 | `--scope <scope>` | Narrow retrieval to an opaque virtual-path scope. |
 | `--fast-thinking <lvl>` | Thinking level for the fast first answer. |
 | `--final-thinking <lvl>` | Thinking level for the verified final answer. |
-| `--permission-mode <m>` | Approval gate for file changes: `full` (the default for `search`), `auto`, or `ask`. See [Permission modes](permissions.md). |
+| `--permission-mode <m>` | Disk permission mode: `readonly` (default; OS-level read-only) or `full`. See [Permission modes](permissions.md). |
 
 Thinking levels are `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`. The two phases
 default to `minimal` (fast) and `high` (verification). Global flags such as `--json`, `--debug`,
 `--config`, `--search-paths`, `--workspace`, and `--model-provider` are accepted by every command;
 see [Global flags](../reference/cli.md#global-flags).
 
-`autorag search` has no terminal to ask on, so it defaults to `full` permission. An explicit
+`autorag search` defaults to `readonly` so unattended runs cannot modify files on disk. An explicit
 `--permission-mode`, `AUTORAG_PERMISSION_MODE`, or config value still wins.
 
 ### Exit codes

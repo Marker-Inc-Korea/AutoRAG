@@ -22,7 +22,7 @@ Every command accepts these flags. They resolve a value in the order **flag → 
 | `--memory-path <file>` | string | `$AUTORAG_HOME/memory.json` | Retrieval-memory file | `AUTORAG_MEMORY_PATH` |
 | `--model-provider <name>` | string | from config | Override the model provider where a model is resolved | `AUTORAG_MODEL_PROVIDER` |
 | `--model-id <id>` | string | from config | Override the model id where a model is resolved | `AUTORAG_MODEL_ID` |
-| `--permission-mode <m>` | `auto` \| `ask` \| `full` | `auto` | Approval gate for file changes by the agent | `AUTORAG_PERMISSION_MODE` |
+| `--permission-mode <m>` | `readonly` \| `full` | `readonly` | Disk permission mode for the agent | `AUTORAG_PERMISSION_MODE` |
 | `-h`, `--help` | boolean | — | Print command-specific usage | — |
 | `-V`, `--version` | boolean | — | Print the package version | — |
 
@@ -156,7 +156,7 @@ Runs the librarian agent loop: retrieval, reading, curation, numbered results. R
 | `--scope <scope>` | string | — | Narrow retrieval to a scope |
 | `--fast-thinking <lvl>` | `off,minimal,low,medium,high,xhigh,max` | minimal | Thinking level for the fast first answer |
 | `--final-thinking <lvl>` | same set | high | Thinking level for the verified answer |
-| `--permission-mode <m>` | `full` \| `auto` \| `ask` | `full` here (no terminal to approve) | Approval gate for file changes; `--permission-mode` and `AUTORAG_PERMISSION_MODE` override the config value |
+| `--permission-mode <m>` | `readonly` \| `full` | `readonly` | Disk permission mode; `--permission-mode` and `AUTORAG_PERMISSION_MODE` override the config value |
 
 Streaming output: tasks print progress lines, then the preliminary answer, then the final answer. Under `--json` each is a separate JSON line: `{"type":"progress","text":...}`, then the preliminary envelope, then the final envelope.
 
@@ -407,7 +407,7 @@ Opens Pi's interactive mode over the AutoRAG librarian. Pi owns the terminal UI,
 |---|---|---|---|
 | `--fast-thinking <lvl>` | thinking level | minimal | Thinking level for the fast first answer |
 | `--final-thinking <lvl>` | thinking level | high | Thinking level for the verified answer |
-| `--permission-mode <m>` | `auto` \| `ask` \| `full` | `auto` (or `full` with a bridge) | Approval gate; Shift+Tab or `/permissions` switches it in-session |
+| `--permission-mode <m>` | `readonly` \| `full` | `readonly` | Disk permission mode; Shift+Tab or `/permissions` toggles it in-session |
 | `--telegram` | boolean | off | Load the `@llblab/pi-telegram` bridge so a paired Telegram chat can ask, steer, and read answers |
 | `--whatsapp` | boolean | off | Control the session from WhatsApp (installs `whatsapp-pi`; pair once with `/whatsapp`) |
 | `--whatsapp-group <jid>` | string | — | With `--whatsapp`, answer only this WhatsApp group |
@@ -417,7 +417,7 @@ Typing while a search runs steers it: Enter applies a correction before the next
 
 ```bash
 autorag tui
-autorag tui --telegram --permission-mode ask
+autorag tui --telegram --permission-mode full
 ```
 
 ## models list

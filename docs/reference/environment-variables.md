@@ -19,7 +19,7 @@ Read in `src/cli/config.ts` (via `resolveConfig`) and `src/config/home.ts`.
 | `AUTORAG_WORKSPACE` | Directory that owns `.autorag` state (same as `--workspace`) | current directory |
 | `AUTORAG_MEMORY_PATH` | Retrieval-memory file (same as `--memory-path`) | `$AUTORAG_HOME/memory.json` |
 | `AUTORAG_LANGUAGES` | Comma-separated OCR/parser languages (same as `--languages`); also read by `autorag init` | `ko,en` |
-| `AUTORAG_PERMISSION_MODE` | Approval gate for file changes: `auto`, `ask`, or `full` (same as `--permission-mode`) | `auto` |
+| `AUTORAG_PERMISSION_MODE` | Disk permission mode: `readonly` or `full` (same as `--permission-mode`) | `readonly` |
 | `AUTORAG_MODEL_PROVIDER` | Model provider override (used with `AUTORAG_MODEL_ID`) | from config |
 | `AUTORAG_MODEL_ID` | Model id override (used with `AUTORAG_MODEL_PROVIDER`) | from config |
 

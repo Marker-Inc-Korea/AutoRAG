@@ -941,13 +941,13 @@ export interface AutoRAGAgentOptions {
 	 */
 	telegram?: boolean;
 	/**
-	 * Approval gate for what the agent does to existing files. `full` (the programmatic default) installs a
-	 * gate that never asks; `ask` and `auto` approve deletes, moves, renames, and in-place edits of originals
-	 * (copying and creating new files never ask). `auto` asks Jev first and only falls back to the user when
-	 * Jev will not approve. See {@link PermissionMode}.
+	 * Disk permission mode for the agent. `readonly` enforces OS-level read-only disk access for `bash`
+	 * (outside a dedicated session scratch directory) and blocks write/edit/mutating tools; `full` (the
+	 * programmatic default) allows unrestricted reads and writes. No decision model (Jev) is consulted.
+	 * See {@link PermissionMode}.
 	 */
 	permissionMode?: PermissionMode;
-	/** Share one controller (mode, session grants) with a host that switches modes itself. Wins over `permissionMode`. */
+	/** Share one controller (mode) with a host that switches modes itself. Wins over `permissionMode`. */
 	permissionController?: PermissionController;
 }
 
@@ -1438,9 +1438,7 @@ export class AutoRAGAgent {
 		this.permissions = options.permissionController ?? new PermissionController(options.permissionMode ?? "full");
 		this.permissionGate = createPermissionGate({
 			controller: this.permissions,
-			judge: this.jevJudge,
-			requests: this.userRequests,
-			// The self-configuration turn edits AutoRAG's own config at the user's request; that is never a gated original.
+			// The self-configuration turn edits AutoRAG's own config at the user's request.
 			...(this.selfConfig === undefined ? {} : { trustedPaths: [resolve(this.selfConfig.configPath)] }),
 		});
 		this.cloudRelease = createCloudReleaseExtension({

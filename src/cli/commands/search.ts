@@ -190,8 +190,8 @@ export async function runSearch(ctx: CommandContext, deps: SearchDeps = {}): Pro
 
 	let config: CliConfig;
 	try {
-		// Nobody is there to approve a gated call, so the default is no gate; --permission-mode still wins.
-		config = resolveConfig({ flags: ctx.flags, cwd: ctx.cwd, defaultPermissionMode: "full" });
+		// Default to read-only disk access; pass --permission-mode full (or config/env) to allow writes.
+		config = resolveConfig({ flags: ctx.flags, cwd: ctx.cwd });
 	} catch (error) {
 		ctx.stderr(renderError(error, { json: ctx.json, debug: ctx.debug }));
 		return 2;

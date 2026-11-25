@@ -465,7 +465,7 @@ export async function createAutoRAGPiSession(options: AutoRAGPiSessionOptions): 
 		sessionFile: session.sessionFile,
 		dispose: async () => {
 			try {
-				if (mcp !== undefined) await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" });
+				await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" });
 			} finally {
 				session.dispose();
 			}
