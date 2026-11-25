@@ -186,106 +186,47 @@ describe.skipIf(process.platform !== "darwin")("live E2E: OS-level read-only per
 });
 
 describe.skipIf(process.platform !== "win32")("live E2E (Windows): OS-level Low-IL read-only permission gate", () => {
-	it("blocks disk mutations via PowerShell, cmd /c del, and node while allowing reads, %TEMP% writes, and full-mode switch", async () => {
+	it("blocks disk mutations via bash (sh.exe/bash.exe), cmd /c del, and node while allowing reads, %TEMP% writes, and full-mode switch", async () => {
 		const target = join(root, "target.txt");
 		writeFileSync(target, "original-win", "utf8");
+		const posixTarget = target.replaceAll("\\", "/");
 		const deliverable = join(root, "deliverable.md");
 
-		const registration = registerFauxProvider({ api: `faux-win-live-${randomUUID()}`, models: [{ id: "live-win" }] });
-		registration.setResponses([
-			say("fast"),
-			fauxAssistantMessage(
-				[
-					fauxToolCall("powershell", {
-						command: `Set-Content -Path '${target}' -Value 'hacked'; Remove-Item -Force '${target}'; cmd.exe /c del /f /q "${target}"`,
-					}),
-				],
-				{ stopReason: "toolUse" },
+		const t = await openSession("readonly", [
+			bash(
+				`rm -f "${posixTarget}"; echo hacked > "${posixTarget}"; cmd.exe /c del /f /q "${target}"; node -e 'require("fs").writeFileSync(${JSON.stringify(target)}, "hacked")'`,
 			),
-			fauxAssistantMessage(
-				[
-					fauxToolCall("powershell", {
-						command: `Write-Output ("READ=" + (Get-Content -Raw '${target}').Trim()); $f = Join-Path $env:TEMP 'qa.txt'; Set-Content -Path $f -Value 'tmp-ok'; Write-Output ("TMP=" + (Get-Content -Raw $f).Trim())`,
-					}),
-				],
-				{ stopReason: "toolUse" },
+			bash(
+				`echo "READ=$(cat "${posixTarget}")"; echo "tmp-ok" > "$TMPDIR/qa.txt"; echo "TMP=$(cat "$TMPDIR/qa.txt")"`,
 			),
 			writeTool(deliverable, "blocked-in-readonly"),
 			say("checked"),
 			writeTool(deliverable, "written-in-full"),
 			say("written"),
 		]);
-		const agentDir = join(root, "agent");
-		mkdirSync(agentDir, { recursive: true });
-		const model = registration.getModel();
-		writeFileSync(
-			join(agentDir, "settings.json"),
-			JSON.stringify({ defaultProvider: model.provider, defaultModel: model.id }),
-		);
-		const agent = new AutoRAGAgent({
-			model,
-			apiKey: "unused",
-			searchPaths: [root],
-			workspacePath: root,
-			memoryPath: join(root, "memory.json"),
-			minSync: { autoInstall: false },
-			jikji: false,
-			piAgentDir: agentDir,
-			piSessionDir: join(root, "sessions"),
-			permissionMode: "readonly",
-			jev: baselineJev(),
-		});
-		const hosted = await agent.createPiInteractiveRuntime();
-		const statuses: (string | undefined)[] = [];
-		const noop = () => undefined;
-		await hosted.runtime.session.bindExtensions({
-			uiContext: {
-				select: async () => undefined,
-				confirm: async () => false,
-				input: async () => undefined,
-				notify: noop,
-				onTerminalInput: () => noop,
-				setStatus: (_key: string, text: string | undefined) => void statuses.push(text),
-				setWorkingMessage: noop,
-				setWorkingVisible: noop,
-				setWorkingIndicator: noop,
-				setHiddenThinkingLabel: noop,
-				setWidget: noop,
-				setFooter: noop,
-				setHeader: noop,
-				setTitle: noop,
-				theme: { fg: (_color: string, text: string) => text },
-			} as unknown as ExtensionUIContext,
-		});
-		const active = hosted.runtime.session.getActiveToolNames();
-		if (!active.includes("powershell")) {
-			hosted.runtime.session.setActiveToolsByName([...active, "powershell"]);
-		}
 		try {
-			expect(statuses.at(-1)).toBe("permissions: read-only");
-			await hosted.runtime.session.prompt("Inspect target.txt", { source: "interactive" });
-			await agent.waitForIdle();
+			expect(t.statuses.at(-1)).toBe("permissions: read-only");
+			await t.session.prompt("Inspect target.txt", { source: "interactive" });
+			await t.agent.waitForIdle();
 
 			expect(existsSync(target)).toBe(true);
 			expect(readFileSync(target, "utf8")).toBe("original-win");
 			expect(existsSync(deliverable)).toBe(false);
 
-			const psResults = hosted.runtime.session.messages.filter(
-				(m): m is Extract<typeof m, { role: "toolResult" }> =>
-					m.role === "toolResult" && m.toolName === "powershell",
+			const bashResults = t.session.messages.filter(
+				(m): m is Extract<typeof m, { role: "toolResult" }> => m.role === "toolResult" && m.toolName === "bash",
 			);
-			const readText = JSON.stringify(psResults[1]?.content ?? "");
+			const readText = JSON.stringify(bashResults[1]?.content ?? "");
 			expect(readText).toContain("READ=original-win");
 			expect(readText).toContain("TMP=tmp-ok");
 
-			agent.permissionControl.set("full");
-			expect(statuses.at(-1)).toBe("permissions: full");
-			await hosted.runtime.session.prompt("Now write deliverable.md", { source: "interactive" });
-			await agent.waitForIdle();
+			t.agent.permissionControl.set("full");
+			expect(t.statuses.at(-1)).toBe("permissions: full");
+			await t.session.prompt("Now write deliverable.md", { source: "interactive" });
+			await t.agent.waitForIdle();
 			expect(readFileSync(deliverable, "utf8")).toBe("written-in-full");
 		} finally {
-			await hosted.dispose();
-			registration.unregister();
+			await t.dispose();
 		}
 	}, 60_000);
 });
