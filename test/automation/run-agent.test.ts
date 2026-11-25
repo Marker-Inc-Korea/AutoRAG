@@ -69,7 +69,11 @@ function observe(context: TranscriptContext): Seen {
 	const user: string[] = [];
 	for (const message of context.messages) {
 		if (message.role === "user") {
-			user.push(typeof message.content === "string" ? message.content : JSON.stringify(message.content));
+			user.push(
+				typeof message.content === "string"
+					? message.content
+					: message.content.map((block) => (block.type === "text" ? block.text : "")).join("\n"),
+			);
 		}
 		if (message.role !== "system") continue;
 		prompt.push(text(message));
