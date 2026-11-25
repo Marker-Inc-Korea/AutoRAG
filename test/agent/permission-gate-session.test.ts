@@ -5,20 +5,11 @@ import { join } from "node:path";
 import { type FauxResponseStep, fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
 import { registerFauxProvider } from "@earendil-works/pi-ai/compat";
 import type { ExtensionUIContext } from "@earendil-works/pi-coding-agent";
-import type { JevBackend } from "jev-use";
-import type { BackendRequest, RawAnswer } from "jev-use/dist/backends/types.js";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
-import { createJevJudge } from "../../src/agent/jev-extension.ts";
 import { createPermissionGate, PermissionController, type PermissionMode } from "../../src/agent/permission-gate.ts";
-import {
-	PERMISSION_GATE_QUESTION_ID,
-	PERMISSION_KINDS,
-	type PermissionKind,
-	permissionKindQuestionId,
-} from "../../src/agent/permission-judgment.ts";
 import { createAutoRAGPiSession } from "../../src/agent/pi-session.ts";
-import { QUERY_ROUTE_QUESTION_ID } from "../../src/agent/query-routing.ts";
+import { baselineJev } from "../helpers/baseline-jev.ts";
 
 let root: string;
 
@@ -30,25 +21,15 @@ afterEach(() => {
 	rmSync(root, { recursive: true, force: true });
 });
 
-/** A promise and its resolver. tsconfig lib is ES2022, which predates Promise.withResolvers. */
-function deferred(): { promise: Promise<void>; resolve: () => void } {
-	let resolve: () => void = () => undefined;
-	const promise = new Promise<void>((done) => {
-		resolve = done;
-	});
-	return { promise, resolve };
-}
-
-/** The interactive UI surface the TUI binds, with no visible effect; only the dialogs are scripted. */
-function ui(select: ExtensionUIContext["select"]): ExtensionUIContext {
+function ui(statusLog: (string | undefined)[] = [], noticeLog: string[] = []): ExtensionUIContext {
 	const noop = () => undefined;
 	return {
-		select,
+		select: async () => undefined,
 		confirm: async () => false,
 		input: async () => undefined,
-		notify: noop,
+		notify: (message: string) => void noticeLog.push(message),
 		onTerminalInput: () => noop,
-		setStatus: noop,
+		setStatus: (_key: string, text: string | undefined) => void statusLog.push(text),
 		setWorkingMessage: noop,
 		setWorkingVisible: noop,
 		setWorkingIndicator: noop,
@@ -74,512 +55,188 @@ function ui(select: ExtensionUIContext["select"]): ExtensionUIContext {
 	} as unknown as ExtensionUIContext;
 }
 
-/** The model asks `bash` to run `command`, then answers `done`. */
-function bashThenDone(command: string): FauxResponseStep[] {
+function toolThenDone(toolName: string, args: Parameters<typeof fauxToolCall>[1]): FauxResponseStep[] {
 	return [
-		fauxAssistantMessage([fauxToolCall("bash", { command })], { stopReason: "toolUse" }),
+		fauxAssistantMessage([fauxToolCall(toolName, args)], { stopReason: "toolUse" }),
 		fauxAssistantMessage("done", { stopReason: "stop" }),
 	];
 }
 
-/** Toolresult text of the first bash call in a finished session. */
-function bashResult(messages: readonly { role: string; toolName?: string; content?: unknown }[]): string {
-	const result = messages.find((message) => message.role === "toolResult" && message.toolName === "bash");
-	return JSON.stringify(result?.content ?? "");
+function toolResultText(
+	messages: readonly { role: string; toolName?: string; content?: unknown; isError?: boolean }[],
+	toolName: string,
+): { text: string; isError: boolean } {
+	const result = messages.find((message) => message.role === "toolResult" && message.toolName === toolName);
+	return { text: JSON.stringify(result?.content ?? ""), isError: Boolean(result?.isError) };
 }
 
-// ---------------------------------------------------------------------------
-// A Jev double that classifies the way Jev would for the calls a test scripts.
-// ---------------------------------------------------------------------------
-
-interface ScriptedJev {
-	readonly backend: JevBackend;
-	/** The state of every permission request, in order. */
-	readonly states: string[];
-	/** How many permission requests Jev answered. */
-	readonly count: () => number;
-}
-
-/**
- * Jev that answers a query-routing question `extra` and a permission request by looking up the proposed call's
- * text in `rules`: the first rule whose `match` the state contains decides the categories (default: safe) and
- * whether it approves.
- */
-function scriptedJev(
-	rules: readonly { match: string; kinds?: Partial<Record<PermissionKind, number>>; approve?: boolean }[] = [],
-): ScriptedJev {
-	const states: string[] = [];
-	const answer = (request: BackendRequest, question: BackendRequest["questions"][number]): RawAnswer => {
-		const state = typeof request.state === "string" ? request.state : JSON.stringify(request.state);
-		const proposed = state.slice(state.lastIndexOf("Proposed tool call"));
-		const rule = rules.find((candidate) => proposed.includes(candidate.match));
-		if (question.id === PERMISSION_GATE_QUESTION_ID) {
-			const allow = rule?.approve === true;
-			return {
-				answer: allow ? "allow" : "deny",
-				distribution: allow ? { allow: 0.97, deny: 0.03 } : { allow: 0.03, deny: 0.97 },
-				confidence: 0.97,
-			};
-		}
-		if (question.id === QUERY_ROUTE_QUESTION_ID) {
-			return { answer: "extra", distribution: { local: 0.05, organize: 0.05, extra: 0.9 }, confidence: 0.9 };
-		}
-		for (const kind of PERMISSION_KINDS) {
-			if (question.id === permissionKindQuestionId(kind)) return { answer: rule?.kinds?.[kind] ?? 0.02 };
-		}
-		return { answer: 0.05 };
-	};
-	const backend: JevBackend = {
-		name: "scripted",
-		judge: async (request) => {
-			if (request.questions.some((question) => question.id === permissionKindQuestionId("delete"))) {
-				states.push(typeof request.state === "string" ? request.state : JSON.stringify(request.state));
-			}
-			return { answers: request.questions.map((question) => answer(request, question)) };
-		},
-	};
-	return { backend, states, count: () => states.length };
-}
-
-describe("gate inside a real pi session (headless)", () => {
-	async function run(mode: PermissionMode, command: string, jev: Pick<ScriptedJev, "backend"> = scriptedJev()) {
+describe("permission gate inside a real pi session (headless, no Jev)", () => {
+	async function run(mode: PermissionMode, steps: FauxResponseStep[], controller?: PermissionController) {
 		const registration = registerFauxProvider({ api: `faux-perm-${randomUUID()}`, models: [{ id: "perm" }] });
-		registration.setResponses(bashThenDone(command));
-		const controller = new PermissionController(mode);
+		registration.setResponses(steps);
+		const permController = controller ?? new PermissionController(mode);
 		const hosted = await createAutoRAGPiSession({
 			cwd: root,
 			agentDir: join(root, "agent"),
 			model: registration.getModel(),
 			getSystemPrompt: () => "system",
 			customTools: [],
-			extensionFactories: [createPermissionGate({ controller, judge: createJevJudge({ backend: jev.backend }) })],
+			extensionFactories: [createPermissionGate({ controller: permController })],
 		});
 		try {
-			await hosted.session.prompt("tidy up");
-			return bashResult(hosted.session.messages as never);
+			await hosted.session.prompt("go");
+			return hosted.session.messages as readonly {
+				role: string;
+				toolName?: string;
+				content?: unknown;
+				isError?: boolean;
+			}[];
 		} finally {
 			await hosted.dispose();
 			registration.unregister();
 		}
 	}
 
-	it("blocks a flagged call and the file survives", async () => {
-		const file = join(root, "keep.txt");
-		writeFileSync(file, "precious");
-		const result = await run("auto", `rm ${file}`, scriptedJev([{ match: "rm ", kinds: { delete: 0.97 } }]));
-		expect(existsSync(file)).toBe(true);
-		expect(result).toMatch(/approval/i);
-	});
+	it("blocks write and edit tools in readonly mode without consulting any decision model", async () => {
+		const existing = join(root, "keep.txt");
+		const created = join(root, "new.txt");
+		writeFileSync(existing, "precious", "utf8");
 
-	it("blocks the python-subprocess trash that a pattern list could not see", async () => {
-		const file = join(root, "report.pdf");
-		writeFileSync(file, "precious");
-		const script = `python3 - <<'EOF'\nimport subprocess\nsubprocess.run(['/usr/bin/trash', '${file}'])\nEOF`;
-		const result = await run("auto", script, scriptedJev([{ match: "subprocess", kinds: { delete: 0.95 } }]));
-		expect(existsSync(file)).toBe(true);
-		expect(result).toMatch(/approval/i);
-	});
+		const wMsgs = await run("readonly", toolThenDone("write", { path: created, content: "nope" }));
+		expect(existsSync(created)).toBe(false);
+		expect(toolResultText(wMsgs, "write").text).toMatch(/read-only/i);
 
-	it("runs a call Jev finds safe", async () => {
-		const file = join(root, "a.md");
-		writeFileSync(file, "hello");
-		const copy = join(root, "a.copy.md");
-		await run("auto", `cp ${file} ${copy}`, scriptedJev());
-		expect(readFileSync(copy, "utf8")).toBe("hello");
-	});
-
-	it("blocks everything gated when Jev cannot classify the call, so it fails closed", async () => {
-		const file = join(root, "keep.txt");
-		writeFileSync(file, "precious");
-		const down: JevBackend = {
-			name: "down",
-			async judge() {
-				throw new Error("connection refused");
-			},
-		};
-		const result = await run("auto", `rm ${file}`, { backend: down });
-		expect(existsSync(file)).toBe(true);
-		expect(result).toMatch(/could not classify/i);
-	});
-
-	it("ask mode blocks even a harmless call when nobody can answer, and never asks Jev", async () => {
-		const file = join(root, "a.md");
-		writeFileSync(file, "hello");
-		const copy = join(root, "a.copy.md");
-		const jev = scriptedJev();
-		const result = await run("ask", `cp ${file} ${copy}`, jev);
-		expect(existsSync(copy)).toBe(false);
-		expect(result).toMatch(/approval/i);
-		expect(jev.count()).toBe(0);
-	});
-
-	it("deletes it in full mode without asking Jev", async () => {
-		const file = join(root, "gone.txt");
-		writeFileSync(file, "x");
-		const jev = scriptedJev([{ match: "rm ", kinds: { delete: 0.97 } }]);
-		await run("full", `rm ${file}`, jev);
-		expect(existsSync(file)).toBe(false);
-		expect(jev.count()).toBe(0);
-	});
-});
-
-describe("gate inside the agent's interactive runtime", () => {
-	async function tui(
-		mode: PermissionMode,
-		responses: FauxResponseStep[],
-		jev: JevBackend,
-		select: ExtensionUIContext["select"],
-	) {
-		const registration = registerFauxProvider({ api: `faux-perm-tui-${randomUUID()}`, models: [{ id: "perm-tui" }] });
-		registration.setResponses(responses);
-		const agentDir = join(root, "agent");
-		mkdirSync(agentDir, { recursive: true });
-		const model = registration.getModel();
-		writeFileSync(
-			join(agentDir, "settings.json"),
-			JSON.stringify({ defaultProvider: model.provider, defaultModel: model.id }),
+		const eMsgs = await run(
+			"readonly",
+			toolThenDone("edit", { path: existing, edits: [{ oldText: "precious", newText: "hacked" }] }),
 		);
-		const agent = new AutoRAGAgent({
-			model,
-			apiKey: "test-key",
-			searchPaths: [root],
-			workspacePath: root,
-			memoryPath: join(root, "memory.json"),
-			minSync: { autoInstall: false },
-			jikji: false,
-			piAgentDir: agentDir,
-			piSessionDir: join(root, "sessions"),
-			permissionMode: mode,
-			jev: { backend: jev },
-		});
-		const hosted = await agent.createPiInteractiveRuntime();
-		await hosted.runtime.session.bindExtensions({ uiContext: ui(select) });
-		return {
-			agent,
-			session: hosted.runtime.session,
-			dispose: async () => {
-				await hosted.dispose();
-				registration.unregister();
-			},
-		};
-	}
-
-	it("asks the user, honours Deny, and the file survives", async () => {
-		const file = join(root, "report.pdf");
-		writeFileSync(file, "x");
-		const asked: string[] = [];
-		const jev = scriptedJev([{ match: "mv ", kinds: { move: 0.95 } }]);
-		const t = await tui(
-			"auto",
-			bashThenDone(`mv ${file} ${join(root, "elsewhere.pdf")}`),
-			jev.backend,
-			async (title) => {
-				asked.push(title);
-				return "Deny";
-			},
-		);
-		try {
-			await t.session.prompt("move the report", { source: "extension" });
-			expect(asked).toHaveLength(1);
-			expect(asked[0]).toContain(file);
-			expect(asked[0]).toMatch(/\bmove\b/);
-			expect(existsSync(file)).toBe(true);
-			expect(bashResult(t.session.messages as never)).toMatch(/denied/i);
-		} finally {
-			await t.dispose();
-		}
+		expect(readFileSync(existing, "utf8")).toBe("precious");
+		expect(toolResultText(eMsgs, "edit").text).toMatch(/read-only/i);
 	});
 
-	it("runs the operation when the user allows it", async () => {
-		const file = join(root, "report.pdf");
-		writeFileSync(file, "x");
-		const jev = scriptedJev([{ match: "rm ", kinds: { delete: 0.95 } }]);
-		const t = await tui("auto", bashThenDone(`rm ${file}`), jev.backend, async () => "Allow once");
-		try {
-			await t.session.prompt("delete the report", { source: "extension" });
-			expect(existsSync(file)).toBe(false);
-		} finally {
-			await t.dispose();
-		}
+	it("allows write and edit tools in full mode", async () => {
+		const existing = join(root, "edit-me.txt");
+		const created = join(root, "created.txt");
+		writeFileSync(existing, "before", "utf8");
+
+		await run("full", toolThenDone("write", { path: created, content: "hello" }));
+		expect(readFileSync(created, "utf8")).toBe("hello");
+
+		await run("full", toolThenDone("edit", { path: existing, edits: [{ oldText: "before", newText: "after" }] }));
+		expect(readFileSync(existing, "utf8")).toBe("after");
 	});
 
-	it("switches mode live: the same call is blocked in ask and runs after the controller moves to full", async () => {
-		const file = join(root, "report.pdf");
-		writeFileSync(file, "x");
-		const jev = scriptedJev([{ match: "rm ", kinds: { delete: 0.95 } }]);
-		const t = await tui(
-			"auto",
-			[...bashThenDone(`rm ${file}`), ...bashThenDone(`rm ${file}`)],
-			jev.backend,
-			async () => "Deny",
-		);
-		try {
-			await t.session.prompt("delete it", { source: "extension" });
-			expect(existsSync(file)).toBe(true);
-			t.agent.permissionControl.set("full");
-			await t.session.prompt("delete it again", { source: "extension" });
-			expect(existsSync(file)).toBe(false);
-		} finally {
-			await t.dispose();
-		}
-	});
+	it.skipIf(process.platform !== "darwin")(
+		"enforces OS-level read-only disk inside real bash calls in readonly mode, while allowing reads and $TMPDIR",
+		async () => {
+			const file = join(root, "precious.txt");
+			writeFileSync(file, "original", "utf8");
 
-	it("auto mode: Jev approves without a dialog; a Jev rejection reaches the user", async () => {
-		const first = join(root, "approved.txt");
-		writeFileSync(first, "x");
-		let dialogs = 0;
-		const a = await tui(
-			"auto",
-			bashThenDone(`rm ${first}`),
-			scriptedJev([{ match: "rm ", kinds: { delete: 0.97 }, approve: true }]).backend,
-			async () => {
-				dialogs += 1;
-				return "Deny";
-			},
-		);
-		try {
-			await a.session.prompt("tidy", { source: "extension" });
-			expect(existsSync(first)).toBe(false);
-			expect(dialogs).toBe(0);
-		} finally {
-			await a.dispose();
-		}
+			// Reading succeeds
+			const readMsgs = await run("readonly", toolThenDone("bash", { command: `cat "${file}"` }));
+			const readRes = toolResultText(readMsgs, "bash");
+			expect(readRes.isError).toBe(false);
+			expect(readRes.text).toContain("original");
 
-		const second = join(root, "rejected.txt");
-		writeFileSync(second, "x");
-		const titles: string[] = [];
-		const b = await tui(
-			"auto",
-			bashThenDone(`rm ${second}`),
-			scriptedJev([{ match: "rm ", kinds: { delete: 0.97 }, approve: false }]).backend,
-			async (title) => {
-				titles.push(title);
-				return "Allow once";
-			},
-		);
-		try {
-			await b.session.prompt("tidy", { source: "extension" });
-			expect(titles).toHaveLength(1);
-			expect(titles[0]).toMatch(/jev/i);
-			expect(existsSync(second)).toBe(false);
-		} finally {
-			await b.dispose();
-		}
-	});
-});
-
-describe("what Jev is told, through the agent's real input paths", () => {
-	async function auto(responses: FauxResponseStep[], jev: ScriptedJev) {
-		const registration = registerFauxProvider({ api: `faux-perm-state-${randomUUID()}`, models: [{ id: "state" }] });
-		registration.setResponses(responses);
-		const agentDir = join(root, "agent");
-		mkdirSync(agentDir, { recursive: true });
-		const model = registration.getModel();
-		writeFileSync(
-			join(agentDir, "settings.json"),
-			JSON.stringify({ defaultProvider: model.provider, defaultModel: model.id }),
-		);
-		const agent = new AutoRAGAgent({
-			model,
-			apiKey: "test-key",
-			searchPaths: [root],
-			workspacePath: root,
-			memoryPath: join(root, "memory.json"),
-			minSync: { autoInstall: false },
-			jikji: false,
-			piAgentDir: agentDir,
-			piSessionDir: join(root, "sessions"),
-			permissionMode: "auto",
-			jev: { backend: jev.backend },
-		});
-		const hosted = await agent.createPiInteractiveRuntime();
-		await hosted.runtime.session.bindExtensions({ uiContext: ui(async () => "Deny") });
-		return {
-			agent,
-			session: hosted.runtime.session,
-			runtime: hosted.runtime,
-			dispose: async () => {
-				await hosted.dispose();
-				registration.unregister();
-			},
-		};
-	}
-
-	const flagged = (match: string) => scriptedJev([{ match, kinds: { delete: 0.97 }, approve: true }]);
-
-	it("shows the first question and every later turn, never the phase prompts", async () => {
-		const victim = join(root, "old-notes.txt");
-		writeFileSync(victim, "x");
-		const jev = flagged("rm ");
-		const t = await auto(
-			[
-				fauxAssistantMessage("FIRST ANSWER", { stopReason: "stop" }),
-				fauxAssistantMessage([fauxToolCall("bash", { command: `rm ${victim}` })], { stopReason: "toolUse" }),
-				fauxAssistantMessage("done", { stopReason: "stop" }),
-			],
-			jev,
-		);
-		try {
-			await t.session.prompt("Organize my notes folder", { source: "interactive" });
-			await t.agent.waitForIdle();
-			await t.session.prompt("Now delete old-notes.txt, it is obsolete", { source: "interactive" });
-			await t.agent.waitForIdle();
-
-			expect(jev.count()).toBe(1);
-			const state = jev.states[0] ?? "";
-			expect(state.indexOf("[1] Organize my notes folder")).toBeGreaterThan(-1);
-			expect(state.indexOf("[2] Now delete old-notes.txt, it is obsolete")).toBeGreaterThan(
-				state.indexOf("[1] Organize my notes folder"),
+			// Scratch temp write succeeds
+			const tmpMsgs = await run(
+				"readonly",
+				toolThenDone("bash", { command: 'echo "scratch" > "$TMPDIR/note.txt" && cat "$TMPDIR/note.txt"' }),
 			);
-			// AutoRAG's own prompts wrap the query; none of that is something the user said.
-			expect(state).not.toContain("Answer this query directly");
-			expect(state).not.toContain("It needs no search");
-			expect(existsSync(victim)).toBe(false);
-		} finally {
-			await t.dispose();
-		}
-	});
+			const tmpRes = toolResultText(tmpMsgs, "bash");
+			expect(tmpRes.isError).toBe(false);
+			expect(tmpRes.text).toContain("scratch");
 
-	it("includes a steer typed while the agent was working", async () => {
-		const victim = join(root, "report-2024.pdf");
-		writeFileSync(victim, "x");
-		const { promise: gate, resolve: release } = deferred();
-		const { promise: started, resolve: entered } = deferred();
-		const held: FauxResponseStep = async () => {
-			entered();
-			await gate;
-			return fauxAssistantMessage([fauxToolCall("bash", { command: `rm ${victim}` })], { stopReason: "toolUse" });
-		};
-		const jev = flagged("rm ");
-		const t = await auto([held, fauxAssistantMessage("done", { stopReason: "stop" })], jev);
-		try {
-			await t.session.prompt("Clean up old reports", { source: "interactive" });
-			await started;
-			await t.session.prompt("Only the 2024 ones", { source: "interactive", streamingBehavior: "steer" });
-			release();
-			await t.agent.waitForIdle();
+			// rm is blocked by the kernel
+			const rmMsgs = await run("readonly", toolThenDone("bash", { command: `rm "${file}"` }));
+			expect(toolResultText(rmMsgs, "bash").isError).toBe(true);
+			expect(existsSync(file)).toBe(true);
 
-			expect(jev.count()).toBe(1);
-			const state = jev.states[0] ?? "";
-			expect(state).toContain("[1] Clean up old reports");
-			expect(state).toContain("[2] (correction while the agent was working) Only the 2024 ones");
-		} finally {
-			await t.dispose();
-		}
-	});
-
-	it("includes an Alt+Enter follow-up queued behind the running search", async () => {
-		const victim = join(root, "scratch.txt");
-		writeFileSync(victim, "x");
-		const { promise: gate, resolve: release } = deferred();
-		const { promise: started, resolve: entered } = deferred();
-		const held: FauxResponseStep = async () => {
-			entered();
-			await gate;
-			return fauxAssistantMessage("FIRST ANSWER", { stopReason: "stop" });
-		};
-		const jev = flagged("rm ");
-		const t = await auto(
-			[
-				held,
-				fauxAssistantMessage([fauxToolCall("bash", { command: `rm ${victim}` })], { stopReason: "toolUse" }),
-				fauxAssistantMessage("done", { stopReason: "stop" }),
-			],
-			jev,
-		);
-		try {
-			await t.session.prompt("What is in my scratch folder?", { source: "interactive" });
-			await started;
-			await t.session.prompt("After that, delete scratch.txt", {
-				source: "interactive",
-				streamingBehavior: "followUp",
-			});
-			release();
-			await t.agent.waitForIdle();
-
-			expect(jev.count()).toBe(1);
-			expect(jev.states[0]).toContain("[1] What is in my scratch folder?");
-			expect(jev.states[0]).toContain("[2] After that, delete scratch.txt");
-		} finally {
-			await t.dispose();
-		}
-	});
-
-	it("shows the agent's own earlier calls, so Jev can tell what it created itself", async () => {
-		const original = join(root, "report.md");
-		writeFileSync(original, "hello");
-		const copy = join(root, "report.edited.md");
-		const jev = scriptedJev();
-		const t = await auto(
-			[
-				fauxAssistantMessage([fauxToolCall("bash", { command: `cp ${original} ${copy}` })], {
-					stopReason: "toolUse",
+			// node script unlink is blocked by the kernel
+			const nodeMsgs = await run(
+				"readonly",
+				toolThenDone("bash", {
+					command: `node -e 'require("fs").writeFileSync(${JSON.stringify(file)}, "hacked")'`,
 				}),
-				fauxAssistantMessage([fauxToolCall("bash", { command: `sed -i.bak 's/hello/bye/' ${copy}` })], {
-					stopReason: "toolUse",
-				}),
-				fauxAssistantMessage("done", { stopReason: "stop" }),
-			],
-			jev,
-		);
-		try {
-			await t.session.prompt("Fix the typo in a copy of report.md", { source: "interactive" });
-			await t.agent.waitForIdle();
-			expect(jev.count()).toBe(2);
-			expect(jev.states[1]).toContain(`cp ${original} ${copy}`);
-			expect(readFileSync(copy, "utf8")).toBe("bye");
-			expect(readFileSync(original, "utf8")).toBe("hello");
-		} finally {
-			await t.dispose();
-		}
+			);
+			expect(toolResultText(nodeMsgs, "bash").isError).toBe(true);
+			expect(readFileSync(file, "utf8")).toBe("original");
+
+			// /usr/bin/trash is blocked by the kernel
+			const trashMsgs = await run("readonly", toolThenDone("bash", { command: `/usr/bin/trash "${file}"` }));
+			expect(toolResultText(trashMsgs, "bash").isError).toBe(true);
+			expect(existsSync(file)).toBe(true);
+		},
+	);
+
+	it("allows bash mutations in full mode and responds to dynamic mode toggling mid-session", async () => {
+		const file = join(root, "toggle.txt");
+		writeFileSync(file, "v1", "utf8");
+		const controller = new PermissionController("readonly");
+
+		// First in readonly: write tool blocked
+		await run("readonly", toolThenDone("write", { path: file, content: "v2" }), controller);
+		expect(readFileSync(file, "utf8")).toBe("v1");
+
+		// Toggle same controller to full: bash delete succeeds
+		controller.set("full");
+		await run("full", toolThenDone("bash", { command: `rm "${file}"` }), controller);
+		expect(existsSync(file)).toBe(false);
 	});
+});
 
-	it("brings the earlier conversation back on /resume and starts empty on /new", async () => {
-		const victim = join(root, "later.txt");
-		const kept = join(root, "kept.txt");
-		writeFileSync(victim, "x");
-		writeFileSync(kept, "x");
-		const jev = flagged("rm ");
-		const t = await auto(
-			[
-				fauxAssistantMessage("FIRST ANSWER", { stopReason: "stop" }),
-				// After /new: a deletion with no earlier conversation.
-				fauxAssistantMessage("FRESH ANSWER", { stopReason: "stop" }),
-				fauxAssistantMessage([fauxToolCall("bash", { command: `rm ${kept}` })], { stopReason: "toolUse" }),
-				fauxAssistantMessage("fresh done", { stopReason: "stop" }),
-				// After /resume: the earlier conversation is back.
-				fauxAssistantMessage([fauxToolCall("bash", { command: `rm ${victim}` })], { stopReason: "toolUse" }),
-				fauxAssistantMessage("resumed done", { stopReason: "stop" }),
-			],
-			jev,
+describe("permission gate inside AutoRAGAgent interactive TUI runtime", () => {
+	it("shows readonly/full status in TUI footer and enforces mode on real interactive turns", async () => {
+		const file = join(root, "notes.txt");
+		writeFileSync(file, "safe", "utf8");
+
+		const registration = registerFauxProvider({ api: `faux-perm-tui-${randomUUID()}`, models: [{ id: "perm-tui" }] });
+		registration.setResponses([
+			fauxAssistantMessage("fast answer", { stopReason: "stop" }),
+			fauxAssistantMessage([fauxToolCall("write", { path: file, content: "overwritten" })], {
+				stopReason: "toolUse",
+			}),
+			fauxAssistantMessage("cannot write in read-only mode", { stopReason: "stop" }),
+		]);
+
+		const agentDir = join(root, "agent");
+		mkdirSync(agentDir, { recursive: true });
+		const model = registration.getModel();
+		writeFileSync(
+			join(agentDir, "settings.json"),
+			JSON.stringify({ defaultProvider: model.provider, defaultModel: model.id }),
 		);
+		const agent = new AutoRAGAgent({
+			model,
+			apiKey: "test-key",
+			searchPaths: [root],
+			workspacePath: root,
+			memoryPath: join(root, "memory.json"),
+			minSync: { autoInstall: false },
+			jikji: false,
+			piAgentDir: agentDir,
+			piSessionDir: join(root, "sessions"),
+			permissionMode: "readonly",
+			jev: baselineJev(),
+		});
+		const statuses: (string | undefined)[] = [];
+		const notices: string[] = [];
+		const hosted = await agent.createPiInteractiveRuntime();
 		try {
-			await t.session.prompt("Remember: the archive folder is off limits", { source: "interactive" });
-			await t.agent.waitForIdle();
-			const file = t.session.sessionFile;
-			if (file === undefined) throw new Error("expected a persisted session");
+			await hosted.runtime.session.bindExtensions({ uiContext: ui(statuses, notices) });
+			expect(statuses).toContain("permissions: read-only");
+			expect(agent.permissionControl.mode).toBe("readonly");
 
-			await t.runtime.newSession();
-			await t.runtime.session.bindExtensions({ uiContext: ui(async () => "Deny") });
-			await t.runtime.session.prompt("Hello there", { source: "interactive" });
-			await t.agent.waitForIdle();
-			await t.runtime.session.prompt("Delete kept.txt", { source: "interactive" });
-			await t.agent.waitForIdle();
-			expect(jev.count()).toBe(1);
-			expect(jev.states[0]).toContain("[1] Hello there");
-			expect(jev.states[0]).toContain("[2] Delete kept.txt");
-			expect(jev.states[0]).not.toContain("archive folder is off limits");
+			await hosted.runtime.session.prompt("try to edit notes.txt", { source: "interactive" });
+			await agent.waitForIdle();
+			expect(readFileSync(file, "utf8")).toBe("safe");
 
-			await t.runtime.switchSession(file);
-			await t.runtime.session.bindExtensions({ uiContext: ui(async () => "Deny") });
-			await t.runtime.session.prompt("Now delete later.txt", { source: "interactive" });
-			await t.agent.waitForIdle();
-			expect(jev.count()).toBe(2);
-			expect(jev.states[1]).toContain("[1] Remember: the archive folder is off limits");
-			expect(jev.states[1]).toContain("[2] Now delete later.txt");
-			expect(jev.states[1]).not.toContain("Hello there");
+			// Switching via controller updates footer immediately
+			agent.permissionControl.set("full");
+			expect(statuses.at(-1)).toBe("permissions: full");
 		} finally {
-			await t.dispose();
+			await hosted.dispose();
+			registration.unregister();
 		}
 	});
 });

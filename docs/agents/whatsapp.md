@@ -52,8 +52,8 @@ The `/whatsapp` menu also manages **Disconnect** and **Logoff (Delete Session)**
   only chats you control, and treat chat content as untrusted input to the model.
 - All allowed chats share the **same model context**; reply routing is not conversation privacy
   isolation.
-- A bridged `tui` defaults to `full` permission because there is no terminal dialog; an explicit
-  `--permission-mode`, `AUTORAG_PERMISSION_MODE`, or config value still wins.
+- A bridged `tui` defaults to `readonly` disk permissions; pass
+  `--permission-mode full`, `AUTORAG_PERMISSION_MODE=full`, or config `"permissionMode": "full"` to allow writes.
 - WhatsApp chat commands `/compact` and `/abort` compact the current Pi context and abort the running
   operation.
 - `whatsapp-pi` uses an unofficial WhatsApp Web client; WhatsApp can restrict accounts that use one.
