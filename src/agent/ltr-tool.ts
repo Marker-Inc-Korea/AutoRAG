@@ -77,7 +77,7 @@ export function createManageLtrTool(host: LtrToolHost): AgentTool<typeof manageL
 		name: MANAGE_LTR_TOOL_NAME,
 		label: "Manage Learning-to-Rank",
 		description:
-			"Manage AutoRAG's learning-to-rank reordering of search results: check its status, train a model from the logged searches, turn it on or off, pick which trained model serves, and let it retrain automatically. It only reorders what the reranker already returned; it never adds or drops evidence.",
+			"Manage AutoRAG's opt-in learning-to-rank reordering of search results: check status, train from logged searches, enable/disable, pick a model, or configure auto-retraining. It only reorders reranker output (never adds/drops evidence). Never enable, switch models, or train without being asked, and never recommend serving a model marked rejected.",
 		parameters: manageLtrSchema,
 		async execute(_toolCallId, params): Promise<AgentToolResult<ManageLtrDetails>> {
 			const { action } = params;

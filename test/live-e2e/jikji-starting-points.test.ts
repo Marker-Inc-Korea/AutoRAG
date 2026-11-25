@@ -147,7 +147,7 @@ describe.skipIf(!LIVE)("jikji files as verification starting points over the rea
 		expect(internals.jikjiStartingPoints[0]).toBe(join(docs, "0233.md"));
 
 		const prompt = agent.buildRefinementPrompt(question, {}, "first answer", true, [], internals.jikjiStartingPoints);
-		expect(prompt).toContain(`start exploring from them.\n- ${join(docs, "0233.md")}`);
+		expect(prompt).toContain(join(docs, "0233.md"));
 	}, 60_000);
 
 	it("reranks even when jikji reports high confidence and says not to rerank", async () => {

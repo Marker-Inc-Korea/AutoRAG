@@ -1,7 +1,6 @@
 import { Type } from "typebox";
 import {
 	ANSWER_BULLET_RULE,
-	ANSWER_CITATION_RULE,
 	ANSWER_DELIVERABLE_RULE,
 	ANSWER_EMPHASIS_RULE,
 	ANSWER_IMAGE_EMBED_RULE,
@@ -45,9 +44,8 @@ const evidenceRefSchema = Type.Object({
 });
 
 const answerSchema = Type.String({
-	description: `Answer for the caller. Unless the user explicitly requests otherwise, provide at most 5 bullet points (plus optional explanation) and answer directly; reference results by bracketed number (e.g. [1], [2]) without file paths or raw chunk text, except the image-embed exception below. ${ANSWER_LEAD_RULE} ${ANSWER_BULLET_RULE} ${ANSWER_EMPHASIS_RULE} ${ANSWER_LANGUAGE_RULE} ${ANSWER_UNCERTAINTY_RULE} ${ANSWER_RELEVANCE_RULE} ${ANSWER_UNCONFIRMED_FINAL_RULE} ${ANSWER_DELIVERABLE_RULE} ${ANSWER_CITATION_RULE} ${ANSWER_IMAGE_EMBED_RULE}`,
+	description: `Direct answer for the caller citing results by bracketed number ([1], [2]). ${ANSWER_LEAD_RULE} ${ANSWER_BULLET_RULE} ${ANSWER_EMPHASIS_RULE} ${ANSWER_LANGUAGE_RULE} ${ANSWER_RELEVANCE_RULE} ${ANSWER_DELIVERABLE_RULE} ${ANSWER_IMAGE_EMBED_RULE} ${ANSWER_UNCONFIRMED_FINAL_RULE} ${ANSWER_UNCERTAINTY_RULE}`,
 });
-
 const warningsSchema = Type.Optional(
 	Type.Array(Type.String(), { description: "Optional warnings about this result set" }),
 );

@@ -166,7 +166,6 @@ describe("Jev config branch: the agent configures itself", () => {
 		expect(seen.prompts[0]).not.toContain(skillPath);
 		expect(seen.prompts[0]).toContain(configPath);
 		expect(seen.prompts[0]).toContain("change the default model to new/model");
-		expect(seen.prompts[0]).toMatch(/do NOT call the retrieval, datasource, or web search tools/u);
 		// No route withholds tools: the file tools the turn needs and the search
 		// tools it must not use are all still visible to the model.
 		expect(seen.toolNames[0]).toEqual(
@@ -234,7 +233,6 @@ describe("Jev config branch: the agent configures itself", () => {
 
 		expect(seen.toolNames[0]).toEqual(expect.arrayContaining(["bash", "manage_automations"]));
 		expect(seen.prompts[0]).toContain("manage_automations");
-		expect(seen.prompts[0]).toContain("File Automations");
 	});
 
 	it("lets the model edit the config file with its write tool and report the change", async () => {

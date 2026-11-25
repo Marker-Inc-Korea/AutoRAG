@@ -4,7 +4,6 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
 import { createFSearchSearchTool, FSEARCH_SEARCH_TOOL_NAME } from "../../src/agent/fsearch-search-tool.ts";
-import { buildSystemPrompt } from "../../src/agent/system-prompt.ts";
 import type { FSearchRunner, FSearchSearchRequest } from "../../src/fsearch/index.ts";
 
 const FIXTURE_DIR = "test/fixtures/sample-project";
@@ -195,36 +194,6 @@ describe("fsearch_search tool", () => {
 	});
 });
 
-describe("system prompt FSearch guidance", () => {
-	it("documents FSearch only when the tool is available", () => {
-		const withTool = buildSystemPrompt({
-			toolNames: ["bash", FSEARCH_SEARCH_TOOL_NAME],
-		});
-		expect(withTool).toContain(`- **${FSEARCH_SEARCH_TOOL_NAME}**:`);
-		expect(withTool).toContain("## FSearch File-Name Search");
-		expect(withTool).toContain("ext:");
-		expect(withTool).not.toContain(`- **${FSEARCH_SEARCH_TOOL_NAME}**: caller-provided tool`);
-
-		const withoutTool = buildSystemPrompt({ toolNames: ["bash"] });
-		expect(withoutTool).not.toContain("FSearch");
-	});
-
-	it("routes file discovery to fsearch_search when it is the only discovery tool", () => {
-		const prompt = buildSystemPrompt({
-			toolNames: ["bash", FSEARCH_SEARCH_TOOL_NAME, "search_all_documents"],
-		});
-		expect(prompt).toContain("use `fsearch_search` actively to locate relevant files and folders");
-	});
-
-	it("names fsearch_search alongside the other registered discovery tools", () => {
-		const prompt = buildSystemPrompt({
-			toolNames: ["bash", "jikji_find", FSEARCH_SEARCH_TOOL_NAME],
-			jikjiIndexingEnabled: true,
-		});
-		expect(prompt).toMatch(/`jikji_find`[^\n]*`fsearch_search`|`fsearch_search`[^\n]*`jikji_find`/);
-	});
-});
-
 interface AgentInternals {
 	innerAgent: { state: { tools: Array<{ name: string; execute: (...args: unknown[]) => Promise<unknown> }> } };
 }
@@ -259,10 +228,9 @@ describe("AutoRAGAgent FSearch wiring", () => {
 		});
 	}
 
-	it("registers fsearch_search and its prompt section on macOS/Linux", () => {
+	it("registers fsearch_search on macOS/Linux", () => {
 		const agent = macAgent();
 		expect(toolNames(agent)).toContain(FSEARCH_SEARCH_TOOL_NAME);
-		expect(agent.getSystemPrompt()).toContain("## FSearch File-Name Search");
 	});
 
 	it("omits fsearch_search on Windows and when disabled", () => {

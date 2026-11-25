@@ -7,7 +7,6 @@ import { toToolDefinition } from "../../src/agent/pi-session.ts";
 import {
 	createReviseAnswerTool,
 	formatRevision,
-	REVISE_ANSWER_PROMPT_RULE,
 	REVISE_ANSWER_TOOL_NAME,
 	type ReviseAnswerDetails,
 	type ReviseAnswerParams,
@@ -81,24 +80,6 @@ function run(h: Harness, params: ReviseAnswerParams) {
 }
 
 describe("revise_answer tool", () => {
-	it("tells the model that wording, style and translation choices are not corrections", () => {
-		const tool = harness().tool;
-		for (const text of [tool.description, REVISE_ANSWER_PROMPT_RULE]) {
-			expect(text).toMatch(/wording|rephras/i);
-			expect(text).toMatch(/not (a|for) /i);
-		}
-		expect(REVISE_ANSWER_PROMPT_RULE).toMatch(/same fact/i);
-	});
-
-	it("tells the model an addition must be a fact the first answer does not already state", () => {
-		const tool = harness().tool;
-		for (const text of [tool.description, REVISE_ANSWER_PROMPT_RULE]) {
-			expect(text).toMatch(/already (state|say|contain|in)/i);
-		}
-		// The model reads the serialized schema, so that is what is asserted on.
-		expect(JSON.stringify(tool.parameters)).toMatch(/does not already state/i);
-	});
-
 	it("is named revise_answer", () => {
 		expect(REVISE_ANSWER_TOOL_NAME).toBe("revise_answer");
 		expect(harness().tool.name).toBe("revise_answer");

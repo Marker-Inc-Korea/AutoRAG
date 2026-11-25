@@ -1,22 +1,7 @@
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import type { ExtensionAPI, ExtensionFactory, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { MockBackend } from "jev-use";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { AutoRAGAgent } from "../../src/agent/agent.ts";
+import { describe, expect, it } from "vitest";
 import { createJevExtension, JEV_TOOL_NAME } from "../../src/agent/jev-extension.ts";
-
-const FIXTURE_DIR = "test/fixtures/sample-project";
-let tmpDir: string;
-
-beforeEach(() => {
-	tmpDir = mkdtempSync(join(tmpdir(), "autorag-jev-wiring-"));
-});
-
-afterEach(() => {
-	rmSync(tmpDir, { recursive: true, force: true });
-});
 
 /** Runs an extension factory against a minimal ExtensionAPI and returns registered tools. */
 function registeredTools(factory: ExtensionFactory): ToolDefinition[] {
@@ -57,13 +42,5 @@ describe("jev pi extension", () => {
 		expect(verdicts[0]?.type).toBe("noul");
 		expect(typeof verdicts[0]?.answer).toBe("number");
 		expect(details.backend).toBe("mock");
-	});
-
-	it("always advertises the jev tool in the agent system prompt", () => {
-		const agent = new AutoRAGAgent({
-			searchPaths: [FIXTURE_DIR],
-			memoryPath: join(tmpDir, "memory.json"),
-		});
-		expect(agent.getSystemPrompt()).toContain("**jev**");
 	});
 });

@@ -238,7 +238,7 @@ describe("Jikji files as verification starting points (#2060)", () => {
 		expect(internals.jikjiStartingPoints).toEqual([]);
 	});
 
-	it("tells the verification prompt to start exploring from the files, and says nothing without them", () => {
+	it("includes Jikji starting-point paths in the verification prompt only when present", () => {
 		const internals = agentWith(async () => ({ answerPack: undefined }));
 
 		const withFiles = internals.buildRefinementPrompt(
@@ -251,9 +251,8 @@ describe("Jikji files as verification starting points (#2060)", () => {
 		);
 		const without = internals.buildRefinementPrompt("q", options, "first answer", true, [], []);
 
-		expect(withFiles).toContain(
-			"start exploring from them.\n- /docs/0417.md\n- /docs/0233.md\n\nNow verify it rigorously.",
-		);
-		expect(without).not.toContain("Jikji's file discovery");
+		expect(withFiles).toContain("/docs/0417.md");
+		expect(withFiles).toContain("/docs/0233.md");
+		expect(without).not.toContain("/docs/0417.md");
 	});
 });

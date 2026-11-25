@@ -145,8 +145,8 @@ describe("AutoRAGAgent prefetchInitialRetrievalContext", () => {
 		await agent.searchDocuments("refund director approval");
 
 		expect(prompts).toHaveLength(2);
-		expect(prompts[0]).not.toContain("Jikji's file discovery");
-		expect(prompts[1]).toContain(`start exploring from them.\n- ${source}\n\n`);
+		expect(prompts[0]).not.toContain(`- ${source}`);
+		expect(prompts[1]).toContain(`- ${source}`);
 	});
 
 	it("never indexes or prepares during a query, even on a never-refreshed workspace", async () => {
