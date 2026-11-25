@@ -50,8 +50,56 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 		sections.push(
 			`## Degraded State\n\nNo search tools were provided. Report a blocked/degraded state and do not claim a completed search.`,
 		);
-	}
+	} else {
+		const pick = (names: readonly string[]): string[] => names.filter((name) => toolAvailable(config, name));
+		const backtick = (names: readonly string[]): string => names.map((name) => `\`${name}\``).join(", ");
+		const perDatasource = config.toolNames.filter((name) => name.startsWith("search_datasource_"));
+		const searchGroup = [
+			...pick(["search_all_documents", "semantic_search_local_docs", "load_datasource_skill", "check_memory"]),
+			...discoveryTools,
+		];
+		const fileGroup = pick([
+			"read",
+			"write",
+			"edit",
+			"bash",
+			"grep",
+			"find",
+			"ls",
+			"convert_files",
+			"list_file_conversions",
+			"scan_duplicate_documents",
+		]);
+		const utilGroup = pick(["web_search", "web_fetch", "calculator", "jev", "ask_user", "revise_answer"]);
+		const opsGroup = pick(["manage_automations", "manage_ltr"]);
+		const known = new Set([...searchGroup, ...perDatasource, ...fileGroup, ...utilGroup, ...opsGroup]);
+		const extraTools = config.toolNames.filter((name) => !known.has(name));
 
+		const capLines: string[] = [];
+		if (searchGroup.length > 0 || perDatasource.length > 0) {
+			const parts: string[] = [];
+			if (searchGroup.length > 0) parts.push(backtick(searchGroup));
+			if (perDatasource.length > 0) parts.push(`per-datasource (${backtick(perDatasource)})`);
+			capLines.push(`- **Search & discovery**: ${parts.join(", ")}.`);
+		}
+		if (fileGroup.length > 0) {
+			capLines.push(
+				`- **Local files & documents**: ${backtick(fileGroup)} (reading, deliverables, organization, offline conversion, read-only duplicate/revision scans).`,
+			);
+		}
+		if (utilGroup.length > 0) {
+			capLines.push(`- **Web & utilities**: ${backtick(utilGroup)}.`);
+		}
+		if (opsGroup.length > 0) {
+			capLines.push(`- **Automation & ranking**: ${backtick(opsGroup)} (file-triggered rules/daemon, opt-in LTR).`);
+		}
+		if (extraTools.length > 0) {
+			capLines.push(`- **Additional tools**: ${backtick(extraTools)}.`);
+		}
+		sections.push(
+			`## Capabilities\n\nUse the registered tools that best fit the turn's goal (see tool schemas for parameters):\n${capLines.join("\n")}`,
+		);
+	}
 	const guardLine = config.retrievedContentGuard ? `- ${FENCING_GUARD_LINE}\n` : "";
 	const calcLine = toolAvailable(config, "calculator") ? `- **Calculations**: ${CALCULATOR_PROMPT_RULE}\n` : "";
 	const askUserLine = toolAvailable(config, "ask_user")
