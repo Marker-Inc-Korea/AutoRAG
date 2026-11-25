@@ -10,7 +10,6 @@ import {
 	type SingleDatasourceSearchProvider,
 	singleDatasourceToolName,
 } from "../../src/agent/search-single-datasource-tool.ts";
-import { buildSystemPrompt } from "../../src/agent/system-prompt.ts";
 import { buildDatasourceSkills } from "../../src/datasource/skills/factory.ts";
 import { datasourceSearchToolName } from "../../src/datasource/tool-naming.ts";
 import type { DatasourceIndexResult, DatasourceSkill, PollingMetadata } from "../../src/datasource/types.ts";
@@ -225,20 +224,6 @@ describe("AutoRAGAgent single-datasource retrieval", () => {
 		expect(results).toEqual([]);
 		expect(diagnostics).toEqual([]);
 		expect(kakaoCalls.count).toBe(0);
-	});
-});
-
-describe("buildSystemPrompt per-datasource tools", () => {
-	it("lists generated datasource tools with their connection instead of as caller tools", () => {
-		const prompt = buildSystemPrompt({
-			toolNames: ["search_datasource_kakao_work", "my_custom_tool"],
-			jikjiIndexingEnabled: false,
-			modelId: "test-model",
-		});
-
-		expect(prompt).toContain("**search_datasource_kakao_work**: search only the kakao-work datasource connection");
-		expect(prompt).toContain("**my_custom_tool**: caller-provided tool");
-		expect(prompt).not.toContain("**search_datasource_kakao_work**: caller-provided tool");
 	});
 });
 

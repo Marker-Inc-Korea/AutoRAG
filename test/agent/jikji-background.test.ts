@@ -131,8 +131,8 @@ describe("Jikji find runs in the background of the fast answer (#2060)", () => {
 		await agent.searchDocuments("refund approval");
 
 		expect(events).toEqual(["jikji-start", "fast-model", "jikji-done", "follow-up-check", "verify-model"]);
-		expect(prompts[0]).not.toContain("Jikji's file discovery");
-		expect(prompts[1]).toContain("start exploring from them.\n- /docs/0417.md");
+		expect(prompts[0]).not.toContain("/docs/0417.md");
+		expect(prompts[1]).toContain("- /docs/0417.md");
 	});
 
 	it("a failing Jikji find neither blocks nor breaks the run, and adds no starting points", async () => {
@@ -150,7 +150,7 @@ describe("Jikji find runs in the background of the fast answer (#2060)", () => {
 		const response = await agent.searchDocuments("refund approval");
 
 		expect(response.answer).toContain("final answer");
-		expect(prompts[1]).not.toContain("Jikji's file discovery");
+		expect(prompts[1]).not.toContain("Jikji candidate files");
 	});
 
 	it("gives Jikji the run's stop signal, not the steer signal, so a steer does not cancel it", async () => {

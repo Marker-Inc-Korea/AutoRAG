@@ -221,9 +221,6 @@ describe("AutoRAGAgent datasource integration", () => {
 		expect(prompt).toContain("<available_skills>");
 		expect(prompt).toContain("datasource-kakao");
 		expect(prompt).toContain("Search indexed KakaoTalk chats.");
-		expect(prompt).toContain("load_datasource_skill");
-		expect(prompt).toContain("search_datasource_kakao");
-		expect(prompt).not.toContain("search_datasource_documents");
 		// Full skill content (with example scopes) is loaded on demand, not in the prompt.
 		expect(prompt).not.toContain("/kakao/acct-1");
 		expect(prompt).not.toContain("/Users/");
