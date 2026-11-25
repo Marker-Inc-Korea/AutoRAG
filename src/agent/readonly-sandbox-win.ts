@@ -18,10 +18,12 @@ import { join, resolve } from "node:path";
  * 4. Only the session's dedicated scratch directory (and any explicitly trusted paths) receives a Low
  *    Integrity mandatory label (`icacls <path> /setintegritylevel (OI)(CI)L`), so temporary files under
  *    `$TMPDIR`/`%TEMP%` keep working while the rest of the disk stays kernel-enforced read-only.
- * 5. The child is launched via `CreateProcessAsUserW` with `DETACHED_PROCESS` (never `CREATE_NO_WINDOW`
- *    or `CREATE_NEW_CONSOLE`, which trigger `0xC0000142` `STATUS_DLL_INIT_FAILED` under a restricted
- *    token) and redirected anonymous pipes for stdout/stderr, bound to a Job Object that kills the entire
- *    process tree when the helper exits.
+ * 5. The child is launched via `CreateProcessAsUserW` inheriting the outer PowerShell helper's console
+ *    (`CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT`, never `CREATE_NO_WINDOW` or `CREATE_NEW_CONSOLE`,
+ *    which trigger `0xC0000142` `STATUS_DLL_INIT_FAILED` under restricted tokens, and never
+ *    `DETACHED_PROCESS`, which causes nested Windows PowerShell to drop piped stdout) with redirected
+ *    anonymous pipes for stdout/stderr, bound to a Job Object that kills the entire process tree when the
+ *    helper exits.
  *
  * Implementation note: the Win32 launcher is compiled once per session scratch directory as a tiny
  * PowerShell-hosted C# (`Add-Type`) runner using only Windows built-in `powershell.exe` / `pwsh.exe`
@@ -81,7 +83,6 @@ public static class AutoRAGLowIlLauncher
     private const uint SE_GROUP_INTEGRITY = 0x00000020;
 
     private const uint STARTF_USESTDHANDLES = 0x00000100;
-    private const uint DETACHED_PROCESS = 0x00000008;
     private const uint CREATE_SUSPENDED = 0x00000004;
     private const uint CREATE_UNICODE_ENVIRONMENT = 0x00000400;
     private const uint HANDLE_FLAG_INHERIT = 0x00000001;
@@ -437,9 +438,10 @@ public static class AutoRAGLowIlLauncher
                 }
             }
 
-            // Use DETACHED_PROCESS (never CREATE_NO_WINDOW / CREATE_NEW_CONSOLE, which trigger
-            // STATUS_DLL_INIT_FAILED 0xC0000142 under restricted tokens when creating a console).
-            uint flags = DETACHED_PROCESS | CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT;
+            // Inherit the outer helper's console (never CREATE_NO_WINDOW / CREATE_NEW_CONSOLE, which trigger
+            // STATUS_DLL_INIT_FAILED 0xC0000142 under restricted tokens when creating a console, and never
+            // DETACHED_PROCESS, which causes nested Windows PowerShell to produce empty piped stdout).
+            uint flags = CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT;
             if (!CreateProcessAsUserW(
                 restrictedToken,
                 null,

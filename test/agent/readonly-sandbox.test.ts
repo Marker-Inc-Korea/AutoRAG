@@ -181,13 +181,11 @@ describe("Windows Low-Integrity sandbox setup & invocation", () => {
 		sandboxes.push(sb);
 		expect(sb.backend).toBe("windows-low-il");
 		expect(sb.unavailableReason).toBeUndefined();
-		// Verify launcher script uses Low Integrity SID, restricted token, DETACHED_PROCESS (never CREATE_NO_WINDOW in flags), and Job Object.
+		// Verify launcher script uses Low Integrity SID, restricted token, console inheritance (never CREATE_NO_WINDOW or DETACHED_PROCESS in flags), and Job Object.
 		expect(WINDOWS_SANDBOX_LAUNCHER_PS1).toContain(WINDOWS_LOW_INTEGRITY_SID);
 		expect(WINDOWS_SANDBOX_LAUNCHER_PS1).toContain("CreateRestrictedToken");
 		expect(WINDOWS_SANDBOX_LAUNCHER_PS1).toContain("TokenIntegrityLevel");
-		expect(WINDOWS_SANDBOX_LAUNCHER_PS1).toContain(
-			"uint flags = DETACHED_PROCESS | CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT;",
-		);
+		expect(WINDOWS_SANDBOX_LAUNCHER_PS1).toContain("uint flags = CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT;");
 		expect(WINDOWS_SANDBOX_LAUNCHER_PS1).toContain("JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE");
 		expect(WINDOWS_SANDBOX_LAUNCHER_PS1).not.toMatch(/flags\s*=.*CREATE_NO_WINDOW/);
 

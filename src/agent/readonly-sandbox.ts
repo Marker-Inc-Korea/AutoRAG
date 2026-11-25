@@ -172,7 +172,7 @@ function resolveBashShell(
 		for (const candidate of candidates) {
 			if (probeBinary(candidate) !== undefined) return { shell: candidate, args: ["-c"] };
 		}
-		const onPath = probeBinary("bash.exe");
+		const onPath = probeBinary("bash.exe") ?? probeBinary("sh.exe");
 		if (onPath !== undefined) return { shell: onPath, args: ["-c"] };
 		throw new Error(
 			"No bash shell found on Windows. Install Git for Windows or configure shellPath in settings.json.",

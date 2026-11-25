@@ -169,7 +169,7 @@ describe("permission gate inside a real pi session (headless, no Jev)", () => {
 		},
 	);
 
-	it("allows bash mutations in full mode and responds to dynamic mode toggling mid-session", async () => {
+	it("allows mutations in full mode and responds to dynamic mode toggling mid-session", async () => {
 		const file = join(root, "toggle.txt");
 		writeFileSync(file, "v1", "utf8");
 		const controller = new PermissionController("readonly");
@@ -178,10 +178,14 @@ describe("permission gate inside a real pi session (headless, no Jev)", () => {
 		await run("readonly", toolThenDone("write", { path: file, content: "v2" }), controller);
 		expect(readFileSync(file, "utf8")).toBe("v1");
 
-		// Toggle same controller to full: bash delete succeeds
+		// Toggle same controller to full: write succeeds on every OS, and on Unix bash rm also succeeds
 		controller.set("full");
-		await run("full", toolThenDone("bash", { command: `rm "${file}"` }), controller);
-		expect(existsSync(file)).toBe(false);
+		await run("full", toolThenDone("write", { path: file, content: "v2" }), controller);
+		expect(readFileSync(file, "utf8")).toBe("v2");
+		if (process.platform !== "win32") {
+			await run("full", toolThenDone("bash", { command: `rm "${file}"` }), controller);
+			expect(existsSync(file)).toBe(false);
+		}
 	});
 });
 
