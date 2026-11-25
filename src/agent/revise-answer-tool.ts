@@ -10,7 +10,7 @@ export const REVISE_ANSWER_TOOL_NAME = "revise_answer";
 const reviseAnswerSchema = Type.Object({
 	op: Type.Union([Type.Literal("confirm"), Type.Literal("retract"), Type.Literal("replace"), Type.Literal("add")], {
 		description:
-			"confirm: the claim is right as written. retract: the claim is wrong or unsupported; it is struck out. replace: the claim is wrong and this is the corrected claim. add: a new verified finding the first answer does not already state; never a source, date or explanation for a claim it already makes.",
+			"confirm: rarely needed — claims that are already right need no call. retract: the claim is wrong or unsupported; it is struck out. replace: the claim is wrong and this is the corrected claim. add: a new verified finding the first answer does not already state; never a source, date or explanation for a claim it already makes.",
 	}),
 	claimId: Type.Optional(
 		Type.String({
@@ -52,7 +52,7 @@ export interface ReviseAnswerToolOptions {
 }
 
 /** Concise verification-turn rule for correcting an already-delivered first answer. */
-export const REVISE_ANSWER_PROMPT_RULE = `Apply corrections to the first answer via ${REVISE_ANSWER_TOOL_NAME} (one claim at a time) rather than rewriting it in your reply: retract or replace only factually wrong, unsupported, or outdated claims, and add only genuinely new verified findings (not extra citations or phrasing tweaks for claims already stated).`;
+export const REVISE_ANSWER_PROMPT_RULE = `Apply corrections to the first answer via ${REVISE_ANSWER_TOOL_NAME} (one claim at a time) rather than rewriting it in your reply: retract or replace only factually wrong, unsupported, or outdated claims, and add only genuinely new verified findings (not extra citations or phrasing tweaks for claims already stated). A claim that is already right needs no call — leave it untouched instead of calling confirm or rephrasing it.`;
 function reply(text: string, details: ReviseAnswerDetails, isError = false): AgentToolResult<ReviseAnswerDetails> {
 	return { content: [{ type: "text", text }], details, ...(isError ? { isError: true } : {}) };
 }
