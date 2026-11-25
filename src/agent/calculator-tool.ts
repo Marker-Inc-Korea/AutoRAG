@@ -48,12 +48,13 @@ const calculatorSchema = Type.Object({
 	date: Type.Optional(
 		Type.String({
 			description:
-				'date_add, date_info, add_business_days: a date or time. YYYY-MM-DD, YYYY/MM/DD, YYYYMMDD, "2026년 11월 8일", YYYY-MM-DDTHH:MM:SS[±HH:MM|Z], epoch seconds, "today" or "now".',
+				'date_add, date_info, add_business_days: a date or time. YYYY-MM-DD, YYYY/MM/DD, YYYYMMDD, "2026년 11월 8일", YYYY-MM-DDTHH:MM:SS[±HH:MM|Z], epoch seconds, "today" or "now". Never convert relative phrases like "next Friday" in your head — compute them from "today"/"now" with date_add.',
 		}),
 	),
 	datetime: Type.Optional(
 		Type.String({
-			description: "convert_timezone only: the time to convert. Carry an offset or Z, or give timeZone.",
+			description:
+				"convert_timezone only: the time to convert. Carry an offset or Z, or pass timeZone; if the source time zone is unknown and matters, ask the user instead of assuming one.",
 		}),
 	),
 	from: Type.Optional(Type.String({ description: "date_diff, business_days_between: start. Same formats as date." })),
