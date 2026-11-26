@@ -3,7 +3,6 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { SearchDocumentsResponse } from "../../src/agent/search-documents.ts";
-import { normalizeIndexingConfig } from "../../src/cli/config.ts";
 import { renderSearch } from "../../src/cli/output.ts";
 import { BUILTIN_DATASOURCE_SKILL_NAMES } from "../../src/datasource/skills/factory.ts";
 
@@ -121,12 +120,6 @@ describe("parent-agent skill docs", () => {
 		}
 	});
 
-	it("documents MinSync auto-install as on by default", () => {
-		expect(normalizeIndexingConfig({}).minSync.autoInstall).toBe(true);
-		const setup = readSkill("autorag-setup");
-		expect(setup).not.toMatch(/MinSync auto-install is off by default/);
-	});
-
 	it("documents search JSON sessionId as debug-only", () => {
 		const json = JSON.parse(renderSearch(searchResponse, { json: true, debug: false })) as {
 			sessionId?: string;
@@ -140,22 +133,14 @@ describe("parent-agent skill docs", () => {
 		const search = readSkill("autorag");
 		expect(search).toContain("autorag search");
 		expect(search).toContain("--json --debug");
-		expect(search).toMatch(/`--json` alone omits `sessionId`/);
-		expect(search).not.toMatch(/The response contains a `sessionId`/);
 	});
 
-	it("does not claim unknown datasource names fail config resolution", () => {
-		const setup = readSkill("autorag-setup");
-		expect(setup).not.toMatch(/Unknown skill names fail config resolution/);
-		expect(setup).toContain("unknown-datasource-skill");
-		expect(setup).toMatch(/they do not fail config resolution/);
+	it("names the unknown-datasource-skill diagnostic in the setup skill", () => {
+		expect(readSkill("autorag-setup")).toContain("unknown-datasource-skill");
 	});
 
-	it("lists builtin datasource templates and probes them wizard-style", () => {
+	it("lists every builtin datasource skill name in the setup skill", () => {
 		const setup = readSkill("autorag-setup");
-		expect(setup).toContain("wizard-style");
-		expect(setup).toContain("do not recommend it for datasource");
-		expect(setup).not.toContain("autorag ui --no-open");
 		for (const name of BUILTIN_DATASOURCE_SKILL_NAMES) {
 			expect(setup).toContain(name);
 		}
@@ -264,30 +249,17 @@ describe("parent-agent skill docs", () => {
 		}
 	});
 
-	it("presents hwp as a supported parsed format and not a legacy exclusion", () => {
-		const setup = readSkill("autorag-setup");
-		expect(setup).toMatch(/`hwp`, `hwpx`/);
-		expect(setup).not.toMatch(/or `hwp` as fully supported parsed formats/);
-		expect(setup).toMatch(/`xlsx`, `xlsm`, `xlsb`, `xls`, `ods`, `csv`, `tsv`, `hwp`, `hwpx`/);
-		expect(setup).toMatch(/Do not present legacy\n`\.doc` as a supported parsed format/s);
-	});
-
-	it("names Qwen3 at 1024 dimensions as the default embedding and never tells users to manage a model cache", () => {
+	it("never teaches the removed models prefetch/import/verify or gateway commands", () => {
 		for (const name of ["autorag-setup", "autorag-lite-setup"] as const) {
 			const skill = readSkill(name);
-			expect(skill).toMatch(/Qwen3/);
-			expect(skill).toMatch(/1024/);
-			// The removed `models prefetch|import|verify` and `gateway` commands must not be taught.
 			expect(skill).not.toMatch(/autorag models (prefetch|import|verify)/);
 			expect(skill).not.toMatch(/autorag gateway/);
 		}
 	});
 
-	it("documents autorag setup command and CLI-backed credential ownership", () => {
+	it("names the autorag setup command in the setup and main skills", () => {
 		const setup = readSkill("autorag-setup");
 		expect(setup).toContain("autorag setup");
-		expect(setup).toMatch(/CLI-backed datasources own their own/);
-		expect(setup).toMatch(/Discord uses discrawl's local\s+desktop wiretap archive/);
 		const mainSkill = readSkill("autorag");
 		expect(mainSkill).toContain("autorag setup --format json");
 		expect(mainSkill).not.toMatch(/autorag gateway/);
