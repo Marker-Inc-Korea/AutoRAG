@@ -152,12 +152,13 @@ describe("default visual page renderer + end-to-end multi-mirror retrieval", () 
 			visualParse: {
 				enabled: true,
 				gate: {
-					fingerprint: "stub-gate:v1",
+					fingerprint: "stub-gate:v2",
 					judge: async ({ page }) => ({
+						route: page === 2 ? "vlm" : "plain",
 						visuallyRich: page === 2,
-						probability: page === 2 ? 0.97 : 0.03,
-						model: "dec-1",
-						backend: "bivia",
+						probability: page === 2 ? 0.97 : 0.95,
+						model: "typesafe/jev-1.13",
+						backend: "openrouter",
 					}),
 				},
 				extractor: {
@@ -173,9 +174,15 @@ describe("default visual page renderer + end-to-end multi-mirror retrieval", () 
 			},
 		});
 
+		// Stage 1 (default/onboarding refresh): runs ONLY fast base parsing — visual mirror must NOT exist yet!
 		await agent.refresh(false, { methods: ["parsed", "minsync"] });
-
 		const engine = agent.getRetrievalEngine();
+		const beforeVisual = await engine.retrieve("QuantumWidget 94.7M", { topK: 10 });
+		expect(beforeVisual.results.some((hit) => hit.content.includes("QuantumWidget"))).toBe(false);
+
+		// Stage 2 (opt-in advanced visual parsing): layers visual/OCR mirror on top of Stage 1 mirrors!
+		await agent.refreshVisual();
+
 		const visualHits = await engine.retrieve("QuantumWidget 94.7M", { topK: 10 });
 		const visualHit = visualHits.results.find((hit) => hit.content.includes("QuantumWidget"));
 		expect(visualHit).toBeDefined();

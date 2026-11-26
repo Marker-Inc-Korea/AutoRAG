@@ -32,10 +32,10 @@ function fakeClassifierModel(
 	};
 }
 
-describe("visual page decision gate", () => {
+describe("visual page 3-way decision gate (vlm / ocr / plain)", () => {
 	const samplePng = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
-	it("marks a page as visually rich when probability meets the threshold", async () => {
+	it("routes visually rich chart/diagram pages to 'vlm'", async () => {
 		const classify = vi.fn(
 			async (
 				_model: ClassifierModel<"typesafe-system-one">,
@@ -48,13 +48,21 @@ describe("visual page decision gate", () => {
 					data: Buffer.from(samplePng).toString("base64"),
 				});
 				expect(String(context.state)).toContain("Revenue Q1-Q4");
+				expect(context.questions.parse_route?.type).toBe("choice");
 				return {
 					api: "typesafe-system-one",
 					provider: BIVIA_PROVIDER_ID,
 					model: BIVIA_DEFAULT_MODEL,
 					stopReason: "stop",
 					timestamp: Date.now(),
-					answers: { visually_rich: { type: "bool", probability: 0.94 } },
+					answers: {
+						parse_route: {
+							type: "choice",
+							choice: "vlm",
+							probabilities: { vlm: 0.94, ocr: 0.04, plain: 0.02 },
+							confidence: 0.94,
+						},
+					},
 				};
 			},
 		);
@@ -76,8 +84,10 @@ describe("visual page decision gate", () => {
 		});
 
 		expect(verdict).toEqual({
+			route: "vlm",
 			visuallyRich: true,
 			probability: 0.94,
+			probabilities: { vlm: 0.94, ocr: 0.04, plain: 0.02 },
 			model: BIVIA_DEFAULT_MODEL,
 			backend: BIVIA_PROVIDER_ID,
 		});
@@ -86,22 +96,66 @@ describe("visual page decision gate", () => {
 		expect(gate.fingerprint).toContain(BIVIA_DEFAULT_MODEL);
 	});
 
-	it("marks plain text pages as not visually rich below threshold", async () => {
+	it("routes scanned/handwritten/missing-text pages to 'ocr'", async () => {
 		const runtime: DecisionModelRuntime = {
-			getModelsOfType: () => [fakeClassifierModel("openrouter", "typesafe/jev-1.14")],
+			getModelsOfType: () => [fakeClassifierModel("openrouter", "typesafe/jev-1.13")],
 			classify: async () => ({
 				api: "typesafe-system-one",
 				provider: "openrouter",
-				model: "typesafe/jev-1.14",
+				model: "typesafe/jev-1.13",
 				stopReason: "stop",
 				timestamp: Date.now(),
-				answers: { visually_rich: { type: "bool", probability: 0.08 } },
+				answers: {
+					parse_route: {
+						type: "choice",
+						choice: "ocr",
+						probabilities: { vlm: 0.02, ocr: 0.96, plain: 0.02 },
+						confidence: 0.96,
+					},
+				},
 			}),
 		};
 
 		const gate = createVisualPageGate({
 			backend: "openrouter",
-			model: "typesafe/jev-1.14",
+			model: "typesafe/jev-1.13",
+			runtime,
+		});
+		const verdict = await gate.judge({
+			virtualPath: "/docs/scan.pdf",
+			page: 1,
+			image: { data: samplePng, mimeType: "image/png" },
+			extractedText: "",
+		});
+
+		expect(verdict.route).toBe("ocr");
+		expect(verdict.visuallyRich).toBe(true);
+		expect(verdict.probability).toBe(0.96);
+	});
+
+	it("routes ordinary prose or decorative-only pages to 'plain'", async () => {
+		const runtime: DecisionModelRuntime = {
+			getModelsOfType: () => [fakeClassifierModel("openrouter", "typesafe/jev-1.13")],
+			classify: async () => ({
+				api: "typesafe-system-one",
+				provider: "openrouter",
+				model: "typesafe/jev-1.13",
+				stopReason: "stop",
+				timestamp: Date.now(),
+				answers: {
+					parse_route: {
+						type: "choice",
+						choice: "plain",
+						probabilities: { vlm: 0.01, ocr: 0.06, plain: 0.93 },
+						confidence: 0.93,
+					},
+				},
+			}),
+		};
+
+		const gate = createVisualPageGate({
+			backend: "openrouter",
+			model: "typesafe/jev-1.13",
 			threshold: 0.6,
 			runtime,
 		});
@@ -112,8 +166,9 @@ describe("visual page decision gate", () => {
 			extractedText: "Standard agreement clauses.",
 		});
 
+		expect(verdict.route).toBe("plain");
 		expect(verdict.visuallyRich).toBe(false);
-		expect(verdict.probability).toBe(0.08);
+		expect(verdict.probability).toBe(0.93);
 	});
 
 	it("rejects a text-only classifier model loudly instead of silently dropping the image", async () => {
@@ -137,14 +192,21 @@ describe("visual page decision gate", () => {
 		).rejects.toThrow(/image|vision/i);
 	});
 
-	it("sends multimodal image_url state when using the hosted dazzi backend", async () => {
+	it("sends multimodal image_url state with 3-way choice question when using the hosted dazzi backend", async () => {
 		let capturedBody: Record<string, unknown> | undefined;
 		const fetchImpl = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
 			capturedBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
 			return new Response(
 				JSON.stringify({
-					model: "typesafe/jev-1.14",
-					answers: { visually_rich: { type: "noul", noul: 0.87 } },
+					model: "jev-1.13",
+					answers: {
+						parse_route: {
+							type: "choice",
+							choice: "vlm",
+							probabilities: { vlm: 0.91, ocr: 0.05, plain: 0.04 },
+							confidence: 0.91,
+						},
+					},
 					usage: { input_tokens: 400, output_tokens: 10 },
 				}),
 				{ status: 200, headers: { "Content-Type": "application/json" } },
@@ -153,7 +215,7 @@ describe("visual page decision gate", () => {
 
 		const gate = createVisualPageGate({
 			backend: "dazzi",
-			model: "typesafe/jev-1.14",
+			model: "jev-1.13",
 			dazzi: { apiKey: "tok_test", baseUrl: "https://api.dazziapp.com", fetchImpl },
 		});
 		const verdict = await gate.judge({
@@ -163,8 +225,9 @@ describe("visual page decision gate", () => {
 			extractedText: "Quarterly metrics",
 		});
 
+		expect(verdict.route).toBe("vlm");
 		expect(verdict.visuallyRich).toBe(true);
-		expect(verdict.probability).toBe(0.87);
+		expect(verdict.probability).toBe(0.91);
 		expect(Array.isArray(capturedBody?.state)).toBe(true);
 		const parts = capturedBody?.state as unknown[];
 		expect(parts[0]).toEqual({
@@ -181,8 +244,8 @@ describe("visual page decision gate", () => {
 		];
 		const body = toNativeBody(
 			multimodalState as unknown as string,
-			[{ id: "q", type: "noul", question: "has chart?" }],
-			"typesafe/jev-1.14",
+			[{ id: "q", type: "choice", question: "route?", options: ["vlm", "ocr", "plain"] }],
+			"jev-1.13",
 		);
 		expect(body.state).toEqual(multimodalState);
 		expect(DazziJevBackend).toBeDefined();

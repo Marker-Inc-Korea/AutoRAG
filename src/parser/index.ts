@@ -62,4 +62,5 @@ export {
 	type VisualGateOptions,
 	type VisualGateVerdict,
 	type VisualPageGate,
+	type VisualPageRoute,
 } from "./visual-gate.ts";

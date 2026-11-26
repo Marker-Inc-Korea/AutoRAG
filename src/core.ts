@@ -82,6 +82,14 @@ export class AutoRAGLite {
 		return this.agent.syncParsedMirrors(force);
 	}
 
+	/** Run Stage 2 opt-in advanced VLM/OCR visual parsing on top of Stage 1 mirrors and sync MinSync. */
+	refreshVisual(
+		force = false,
+		options?: Omit<AutoRAGRefreshOptions, "methods" | "skipVisual">,
+	): Promise<AutoRAGRefreshResult> {
+		return this.agent.refreshVisual(force, options);
+	}
+
 	/** Run the configured MinSync indexer without constructing a model. */
 	syncMinSync(): Promise<MinSyncSyncResult | undefined> {
 		return this.agent.syncMinSync();

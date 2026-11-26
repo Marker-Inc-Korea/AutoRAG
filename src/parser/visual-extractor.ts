@@ -32,24 +32,26 @@ export interface VisualPageExtractor {
 	extract(input: VisualExtractInput): Promise<VisualExtractResult>;
 }
 
-const VLM_PROMPT_VERSION = "v1";
+const VLM_PROMPT_VERSION = "v3-focused";
 const OCR_PROMPT_VERSION = "v1";
 const DEFAULT_VLM_TIMEOUT_MS = 60_000;
 const DEFAULT_VLM_MAX_TOKENS = 4_096;
 const MAX_CONTEXT_TEXT_CHARS = 3_000;
 
 const VLM_SYSTEM_PROMPT = [
-	"You are a precision document visual parser building a searchable Markdown mirror for a retrieval system.",
-	"Given one rendered document page image, transcribe and structure ALL visual information and its surrounding headings/context so every chart, table, and diagram is self-contained and searchable:",
-	"- Charts, plots, and graphs: title, axis labels, units, legend, every visible series and numeric value (as a Markdown table when tabular), and key annotations.",
-	"- Diagrams, flowcharts, org charts, infographics, and architecture figures: every component/node label, hierarchy, connection, and directional relationship.",
-	"- Complex tables or calendars (multi-level headers, merged cells, column-aligned grids): accurate Markdown tables preserving column alignment, headers, units, totals, and footnotes.",
-	"- Visual annotations, colored highlights, underlines, or red-marked sections: explicitly note what text or region is highlighted/marked and quote the marked text verbatim.",
-	"- Embedded photos, screenshots, callouts, formulas, or scanned text: verbatim visible text and concrete factual content.",
-	"Rules:",
+	"You are a precision document visual parser building a supplementary Markdown mirror for a retrieval system.",
+	"A separate base text mirror already holds the page's plain prose. Your job is to extract the structured visual and data content that plain text parsing misses, flattens, or distorts — while keeping the figure's title, caption, and key topic label so the entry is self-contained when retrieved:",
+	"- Charts, plots, and graphs: figure title/caption, axis labels, units, legend, EVERY visible series and numeric value as a clean Markdown table, plus concise trend/comparison takeaways.",
+	"- Diagrams, flowcharts, org charts, infographics, and architecture figures: title, every node/component label, hierarchy, arrows/connections, and quantitative callouts.",
+	"- Complex tables or calendars (multi-level headers, merged cells, column-aligned grids): exact Markdown table preserving column alignment, headers, units, totals, and footnotes.",
+	"- Visual annotations, colored highlights, underlines, or red-marked sections: explicitly state what is highlighted/marked and quote the marked text verbatim.",
+	"- Embedded screenshots, formulas, or data-bearing photos: verbatim visible text, equations, and concrete factual labels.",
+	"Strict rules:",
+	"- IGNORE purely decorative stock photos, page borders, background textures, watermarks, or generic icons that carry no factual data.",
+	"- Do NOT copy long body paragraphs that are already faithfully present in the reference text; include only the concise heading/caption needed to contextualize the visual element.",
 	"- Preserve the document's original language (e.g., Korean, English, Japanese) and exact numbers, dates, currencies, percentages, and identifiers.",
 	"- Never invent numbers, labels, or facts not visible in the page image.",
-	"- Output clean Markdown only, without meta-commentary or markdown code fences wrapping the whole response.",
+	"- Output clean Markdown only, without meta-commentary or wrapping code fences.",
 ].join("\n");
 
 export type VlmCompleteFn = (

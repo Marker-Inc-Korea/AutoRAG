@@ -87,6 +87,7 @@ describe("visual-rich page gating and multi-mirror incremental sync", () => {
 			const tag = Buffer.from(image.data).toString("utf8");
 			const rich = tag.includes("chart");
 			return {
+				route: rich ? ("vlm" as const) : ("plain" as const),
 				visuallyRich: rich,
 				probability: rich ? 0.96 : 0.04,
 				model: "dec-1",
@@ -226,6 +227,7 @@ describe("visual-rich page gating and multi-mirror incremental sync", () => {
 		const gate: VisualPageGate = {
 			fingerprint: "bivia:dec-1:0.6:v1",
 			judge: async ({ page }) => ({
+				route: page === 2 ? "ocr" : "plain",
 				visuallyRich: page === 2,
 				probability: page === 2 ? 0.92 : 0.05,
 				model: "dec-1",
@@ -342,6 +344,7 @@ describe("visual-rich page gating and multi-mirror incremental sync", () => {
 			const text = Buffer.from(image.data).toString("utf8");
 			const rich = text.includes("CHART_");
 			return {
+				route: rich ? ("vlm" as const) : ("plain" as const),
 				visuallyRich: rich,
 				probability: rich ? 0.95 : 0.05,
 				model: "typesafe/jev-1.13",
@@ -517,5 +520,92 @@ describe("visual-rich page gating and multi-mirror incremental sync", () => {
 		expect(coalesced[0]?.content).toContain("Page 7 chart footnote");
 		expect(coalesced[0]?.metadata?.hasVisualComplement).toBe(true);
 		expect(coalesced[1]?.metadata?.pageStart).toBe(12);
+	});
+
+	it("dispatches 3-way routes in one file: vlm -> VLM extractor, ocr -> OCR extractor, plain -> skipped", async () => {
+		const pdfPath = join(docs, "mixed-3way.pdf");
+		writeFileSync(pdfPath, "Plain prose page 1\fScanned form page 2\fRevenue bar chart page 3");
+		const registry = new ParserRegistry([new StubPagedPdfParser()]);
+
+		const renderer: PageRenderer = {
+			fingerprint: "3way-renderer:v1",
+			supports: () => true,
+			renderPages: async () => [
+				fakeRenderedPage(1, "plain-p1"),
+				fakeRenderedPage(2, "scan-p2"),
+				fakeRenderedPage(3, "chart-p3"),
+			],
+		};
+		const gate: VisualPageGate = {
+			fingerprint: "jev-3way:v2",
+			judge: async ({ page }) => {
+				if (page === 2) {
+					return {
+						route: "ocr",
+						visuallyRich: true,
+						probability: 0.97,
+						model: "typesafe/jev-1.13",
+						backend: "openrouter",
+					};
+				}
+				if (page === 3) {
+					return {
+						route: "vlm",
+						visuallyRich: true,
+						probability: 0.96,
+						model: "typesafe/jev-1.13",
+						backend: "openrouter",
+					};
+				}
+				return {
+					route: "plain",
+					visuallyRich: false,
+					probability: 0.92,
+					model: "typesafe/jev-1.13",
+					backend: "openrouter",
+				};
+			},
+		};
+		const vlmExtract = vi.fn(async ({ page }) => ({
+			markdown: `VLM chart table p.${page}: Q4 = 99M`,
+			extractorKind: "vlm" as const,
+			extractorModel: "openrouter/google/gemini-3.5-flash-lite",
+		}));
+		const ocrExtract = vi.fn(async ({ page }) => ({
+			markdown: `OCR scanned text p.${page}: Account #8821`,
+			extractorKind: "ocr" as const,
+			extractorModel: "tesseract:en+ko",
+		}));
+
+		await syncParsedMirrors({
+			root,
+			searchPaths: [docs],
+			registry,
+			visualParse: {
+				renderer,
+				gate,
+				vlmExtractor: { kind: "vlm", modelId: "gemini", fingerprint: "vlm:gemini:v3", extract: vlmExtract },
+				ocrExtractor: { kind: "ocr", modelId: "tesseract:en+ko", fingerprint: "ocr:tess:v1", extract: ocrExtract },
+			},
+		});
+
+		// Page 1 -> plain (0 calls), Page 2 -> OCR only, Page 3 -> VLM only!
+		expect(ocrExtract).toHaveBeenCalledTimes(1);
+		expect(ocrExtract).toHaveBeenCalledWith(expect.objectContaining({ page: 2 }));
+		expect(vlmExtract).toHaveBeenCalledTimes(1);
+		expect(vlmExtract).toHaveBeenCalledWith(expect.objectContaining({ page: 3 }));
+
+		const vp = "/docs/mixed-3way.pdf";
+		const visualMd = readFileSync(parsedVisualOutputPath(root, vp), "utf8");
+		expect(visualMd).toContain("ocr:tesseract:en+ko");
+		expect(visualMd).toContain("Account #8821");
+		expect(visualMd).toContain("vlm:openrouter/google/gemini-3.5-flash-lite");
+		expect(visualMd).toContain("Q4 = 99M");
+		expect(visualMd).not.toContain("Plain prose page 1");
+
+		const manifest = loadVisualManifest(root, vp);
+		expect(manifest?.pages["1"]?.route).toBe("plain");
+		expect(manifest?.pages["2"]?.route).toBe("ocr");
+		expect(manifest?.pages["3"]?.route).toBe("vlm");
 	});
 });

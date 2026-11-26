@@ -13,11 +13,14 @@ import { isDazziSignedIn } from "../cloud/credential.ts";
 import { DazziJevBackend, type DazziJevBackendOptions } from "../cloud/jev-backend.ts";
 import type { VisualImageMimeType } from "./page-render.ts";
 
-/** Default calibrated P(visually_rich) cutoff for escalating a page to VLM/OCR extraction. */
+/** Default calibrated probability cutoff for escalating a page to `vlm` or `ocr` extraction. */
 export const DEFAULT_VISUAL_GATE_THRESHOLD = 0.6;
 
 /** Prompt revision baked into the gate fingerprint so prompt updates invalidate stale decisions. */
-const VISUAL_GATE_PROMPT_VERSION = "v1";
+const VISUAL_GATE_PROMPT_VERSION = "v2-3way";
+
+/** Route chosen by the vision decision gate for one page. */
+export type VisualPageRoute = "vlm" | "ocr" | "plain";
 
 /** Maximum characters of base-extracted page text sent alongside the page image to keep state compact. */
 const MAX_STATE_TEXT_CHARS = 4_000;
@@ -65,9 +68,14 @@ export interface VisualGateInput {
 }
 
 export interface VisualGateVerdict {
+	/** 3-way route: `vlm` (genuinely visually rich), `ocr` (scanned/handwritten/missing text), or `plain` (base parser is enough). */
+	readonly route: VisualPageRoute;
+	/** True when `route` is `vlm` or `ocr` (i.e. this page needs a visual/OCR enrichment entry). */
 	readonly visuallyRich: boolean;
-	/** Calibrated P(visually_rich) in [0, 1]. */
+	/** Probability of the chosen route (or P(escalate) when routed to `vlm`/`ocr`), in [0, 1]. */
 	readonly probability: number;
+	/** Per-route probability distribution when returned by the decision model. */
+	readonly probabilities?: Readonly<Record<VisualPageRoute, number>>;
 	readonly model: string;
 	readonly backend: string;
 }
@@ -98,13 +106,63 @@ export interface VisualGateOptions {
 	readonly env?: Record<string, string | undefined>;
 }
 
-const VISUAL_RICH_QUESTION_ID = "visually_rich";
-const VISUAL_RICH_INSTRUCTIONS =
-	"Does this document page contain visually rich information — such as a chart, graph, plot, diagram, architecture figure, flowchart, map, photo or screenshot with data, complex multi-header/merged table, visual color highlight or red/marked annotation, or scanned/image-only text — whose important facts or structure are missing or distorted in the extracted text?";
-const VISUAL_RICH_CRITERIA = {
-	true: "The page has a chart, diagram, visual figure, complex layout table, meaningful colored highlight/annotation, or unreadable/scanned image text that needs VLM or OCR extraction to capture accurately.",
-	false: "The page is standard prose, headings, lists, or simple text/tables already accurately captured in the extracted text (or purely decorative logos, headers, or footers).",
-} as const;
+const VISUAL_ROUTE_QUESTION_ID = "parse_route";
+const VISUAL_ROUTE_INSTRUCTIONS =
+	"Choose the single best parsing route for this document page given both the page image and the base parser's extracted text.";
+const VISUAL_ROUTE_OPTIONS: Readonly<Record<VisualPageRoute, string>> = {
+	vlm: "Page contains genuinely visually rich data that OCR or plain text cannot accurately capture: charts, graphs, plots, data diagrams, flowcharts, org charts, infographics, maps, complex multi-header/merged tables or calendar grids, or meaningful color-coded/red-marked annotations. Do NOT choose vlm for decorative stock photos or illustrations without data.",
+	ocr: "Page contains primarily text (scanned document, fax, handwriting, screenshot/image of text, or form) where readable text is visibly present on the page image but is missing, empty, or severely garbled in the base parser's extracted text.",
+	plain: "Base parser's extracted text already captures the page's substantive content accurately (ordinary prose, headings, simple lists/tables, cover pages, or pages with only decorative photos/logos/headers).",
+};
+
+/** Resolve a 3-way choice answer into a calibrated {@link VisualGateVerdict}. */
+function verdictFromChoice(
+	choice: string,
+	distribution: Readonly<Record<string, number>> | undefined,
+	threshold: number,
+	model: string,
+	backend: string,
+): VisualGateVerdict {
+	const pVlm =
+		typeof distribution?.vlm === "number" && Number.isFinite(distribution.vlm)
+			? distribution.vlm
+			: choice === "vlm"
+				? 1
+				: 0;
+	const pOcr =
+		typeof distribution?.ocr === "number" && Number.isFinite(distribution.ocr)
+			? distribution.ocr
+			: choice === "ocr"
+				? 1
+				: 0;
+	const pPlain =
+		typeof distribution?.plain === "number" && Number.isFinite(distribution.plain)
+			? distribution.plain
+			: Math.max(0, 1 - pVlm - pOcr);
+
+	let route: VisualPageRoute = "plain";
+	let probability = pPlain;
+	if (choice === "vlm" && pVlm >= threshold) {
+		route = "vlm";
+		probability = pVlm;
+	} else if (choice === "ocr" && pOcr >= threshold) {
+		route = "ocr";
+		probability = pOcr;
+	} else if ((choice === "vlm" || choice === "ocr") && pVlm + pOcr >= threshold) {
+		// Combined visual/OCR signal exceeds threshold even if probability splits between vlm and ocr.
+		route = pVlm >= pOcr ? "vlm" : "ocr";
+		probability = route === "vlm" ? pVlm : pOcr;
+	}
+
+	return {
+		route,
+		visuallyRich: route !== "plain",
+		probability,
+		probabilities: { vlm: pVlm, ocr: pOcr, plain: pPlain },
+		model,
+		backend,
+	};
+}
 
 function hasProviderKey(provider: string, env: Record<string, string>): boolean {
 	if (provider === BIVIA_PROVIDER_ID) return getBiviaEnvApiKey(env) !== undefined;
@@ -235,24 +293,25 @@ export function createVisualPageGate(options: VisualGateOptions = {}): VisualPag
 					state: multimodalState as unknown as string,
 					questions: [
 						{
-							id: VISUAL_RICH_QUESTION_ID,
-							type: "noul",
-							question: VISUAL_RICH_INSTRUCTIONS,
-							criteria: VISUAL_RICH_CRITERIA,
+							id: VISUAL_ROUTE_QUESTION_ID,
+							type: "choice",
+							question: VISUAL_ROUTE_INSTRUCTIONS,
+							options: { ...VISUAL_ROUTE_OPTIONS },
 						},
 					],
 				});
 				const answer = response.answers[0];
-				const probability = typeof answer?.answer === "number" ? answer.answer : undefined;
-				if (probability === undefined || !Number.isFinite(probability)) {
-					throw new Error(`Dazzi visual gate returned no numeric probability for ${resolved.model}`);
+				const choice = typeof answer?.answer === "string" ? answer.answer : undefined;
+				if (choice === undefined) {
+					throw new Error(`Dazzi visual gate returned no route choice for ${resolved.model}`);
 				}
-				return {
-					visuallyRich: probability >= threshold,
-					probability,
-					model: response.model ?? resolved.model,
-					backend: resolved.backend,
-				};
+				return verdictFromChoice(
+					choice,
+					answer?.distribution,
+					threshold,
+					response.model ?? resolved.model,
+					resolved.backend,
+				);
 			}
 
 			const runtime = options.runtime ?? (await decisionRuntimeFor(options.agentDir ?? getAgentDir()));
@@ -269,7 +328,7 @@ export function createVisualPageGate(options: VisualGateOptions = {}): VisualPag
 			};
 			if (!isVisionDecisionModel(model)) {
 				throw new Error(
-					`Decision model "${resolved.backend}/${model.id}" does not support image input; choose a vision-capable decision model (e.g. bivia/dec-1, openrouter/typesafe/jev-1.14, openai/gpt-6-luna).`,
+					`Decision model "${resolved.backend}/${model.id}" does not support image input; choose a vision-capable decision model (e.g. openrouter/typesafe/jev-1.13, bivia/dec-1, openai/gpt-6-luna).`,
 				);
 			}
 
@@ -279,10 +338,10 @@ export function createVisualPageGate(options: VisualGateOptions = {}): VisualPag
 					state: stateText as unknown as JsonObject,
 					images: [{ type: "image", data: base64, mimeType: input.image.mimeType }],
 					questions: {
-						[VISUAL_RICH_QUESTION_ID]: {
-							type: "bool",
-							instructions: VISUAL_RICH_INSTRUCTIONS,
-							criteria: VISUAL_RICH_CRITERIA,
+						[VISUAL_ROUTE_QUESTION_ID]: {
+							type: "choice",
+							instructions: VISUAL_ROUTE_INSTRUCTIONS,
+							criteria: { ...VISUAL_ROUTE_OPTIONS },
 						},
 					},
 				},
@@ -298,16 +357,11 @@ export function createVisualPageGate(options: VisualGateOptions = {}): VisualPag
 					`Visual gate ${resolved.backend}/${model.id} failed: ${result.errorMessage ?? result.stopReason}`,
 				);
 			}
-			const answer = result.answers[VISUAL_RICH_QUESTION_ID];
-			if (answer === undefined || answer.type !== "bool" || !Number.isFinite(answer.probability)) {
-				throw new Error(`Visual gate ${resolved.backend}/${model.id} returned no usable boolean verdict`);
+			const answer = result.answers[VISUAL_ROUTE_QUESTION_ID];
+			if (answer === undefined || answer.type !== "choice") {
+				throw new Error(`Visual gate ${resolved.backend}/${model.id} returned no usable route choice`);
 			}
-			return {
-				visuallyRich: answer.probability >= threshold,
-				probability: answer.probability,
-				model: result.model,
-				backend: resolved.backend,
-			};
+			return verdictFromChoice(answer.choice, answer.probabilities, threshold, result.model, resolved.backend);
 		},
 	};
 }

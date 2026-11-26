@@ -51,10 +51,12 @@ export interface VisualParseExtractorAgentConfig {
 export interface VisualParseAgentOptions {
 	/** Opt-in switch. Absent means enabled when a visualParse block is supplied; `false` disables it. */
 	readonly enabled?: boolean;
-	/** Calibrated P(visually_rich) cutoff for the unified decision model (`jev`). Default 0.6. */
+	/** Calibrated probability cutoff for the unified decision model (`jev`). Default 0.6. */
 	readonly threshold?: number;
 	readonly gate?: VisualParseGateAgentConfig | VisualPageGate;
 	readonly extractor?: VisualParseExtractorAgentConfig | VisualPageExtractor;
+	/** Optional dedicated OCR extractor seam when `extractor` is VLM (defaults to local Tesseract OCR). */
+	readonly ocrExtractor?: VisualPageExtractor;
 	readonly renderer?: PageRenderer;
 	readonly maxPagesPerFile?: number;
 	readonly maxWidthPx?: number;
@@ -190,15 +192,30 @@ export async function resolveVisualParseSyncOptions(input: {
 				...(input.env !== undefined ? { env: input.env } : {}),
 			});
 
-	let extractor: VisualPageExtractor;
-	if (isVisualPageExtractor(visualParse.extractor)) {
-		extractor = visualParse.extractor;
-	} else if (visualParse.extractor === undefined || visualParse.extractor.kind === "ocr") {
-		extractor = createOcrVisualPageExtractor({
-			languages: visualParse.extractor?.languages ?? input.languages,
-			timeoutMs: visualParse.extractor?.timeoutMs,
-			cachePath: visualParse.extractor?.cachePath ?? tesseractCachePathFor(input.workspaceRoot),
+	const defaultOcrExtractor = (): VisualPageExtractor =>
+		visualParse.ocrExtractor ??
+		createOcrVisualPageExtractor({
+			languages:
+				!isVisualPageExtractor(visualParse.extractor) && visualParse.extractor?.languages !== undefined
+					? visualParse.extractor.languages
+					: input.languages,
+			timeoutMs: !isVisualPageExtractor(visualParse.extractor) ? visualParse.extractor?.timeoutMs : undefined,
+			cachePath:
+				(!isVisualPageExtractor(visualParse.extractor) ? visualParse.extractor?.cachePath : undefined) ??
+				tesseractCachePathFor(input.workspaceRoot),
 		});
+
+	let vlmExtractor: VisualPageExtractor | undefined;
+	let ocrExtractor: VisualPageExtractor | undefined;
+	if (isVisualPageExtractor(visualParse.extractor)) {
+		if (visualParse.extractor.kind === "vlm") {
+			vlmExtractor = visualParse.extractor;
+			ocrExtractor = visualParse.ocrExtractor;
+		} else {
+			ocrExtractor = visualParse.extractor;
+		}
+	} else if (visualParse.extractor === undefined || visualParse.extractor.kind === "ocr") {
+		ocrExtractor = defaultOcrExtractor();
 	} else {
 		if (visualParse.extractor.model === undefined) {
 			throw new Error("visualParse.extractor.model is required when visualParse.extractor.kind is 'vlm'.");
@@ -206,11 +223,13 @@ export async function resolveVisualParseSyncOptions(input: {
 		const resolved = isResolvedModel(visualParse.extractor.model)
 			? visualParse.extractor.model
 			: await resolveVlmModelRef(visualParse.extractor.model, agentDir, input.env);
-		extractor = createVlmVisualPageExtractor({
+		vlmExtractor = createVlmVisualPageExtractor({
 			model: resolved.model,
 			...(resolved.apiKey !== undefined ? { apiKey: resolved.apiKey } : {}),
 			...(visualParse.extractor.timeoutMs !== undefined ? { timeoutMs: visualParse.extractor.timeoutMs } : {}),
 		});
+		// When VLM mode is configured, scanned/handwritten/missing-text pages route to local OCR automatically.
+		ocrExtractor = defaultOcrExtractor();
 	}
 
 	const renderer =
@@ -222,7 +241,8 @@ export async function resolveVisualParseSyncOptions(input: {
 
 	return {
 		gate,
-		extractor,
+		...(vlmExtractor !== undefined ? { vlmExtractor } : {}),
+		...(ocrExtractor !== undefined ? { ocrExtractor } : {}),
 		renderer,
 		...(visualParse.maxPagesPerFile !== undefined ? { maxPagesPerFile: visualParse.maxPagesPerFile } : {}),
 		...(visualParse.maxWidthPx !== undefined ? { maxWidthPx: visualParse.maxWidthPx } : {}),

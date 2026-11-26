@@ -9,7 +9,7 @@ import {
 import { joinPages, type PageMarkdownInput, type ParsedPages } from "../parser/pages.ts";
 import { normalizeMarkdown } from "../parser/text.ts";
 import type { VisualExtractorKind, VisualPageExtractor } from "../parser/visual-extractor.ts";
-import type { VisualPageGate } from "../parser/visual-gate.ts";
+import type { VisualPageGate, VisualPageRoute } from "../parser/visual-gate.ts";
 import { abortReason } from "../process/abort-reason.ts";
 import { writeFileAtomic } from "./atomic-write.ts";
 import { readPagesSidecar, writePagesSidecar } from "./pages-sidecar.ts";
@@ -27,6 +27,8 @@ export interface VisualPageRecord {
 	readonly baseTextSha256: string;
 	readonly gateFingerprint: string;
 	readonly gateProbability: number;
+	/** 3-way route (`vlm`, `ocr`, or `plain`); older manifests without `route` infer from `visuallyRich`. */
+	readonly route?: VisualPageRoute;
 	readonly visuallyRich: boolean;
 	readonly extractorFingerprint?: string;
 	readonly extractorKind?: VisualExtractorKind;
@@ -44,6 +46,7 @@ export interface VisualMirrorManifest {
 	readonly pageCount: number;
 	readonly rendererFingerprint: string;
 	readonly gateFingerprint: string;
+	/** Combined fingerprint of active VLM and OCR extractors. */
 	readonly extractorFingerprint: string;
 	readonly maxPagesPerFile: number;
 	readonly maxWidthPx: number;
@@ -54,12 +57,45 @@ export interface VisualMirrorManifest {
 
 export interface VisualMirrorSyncOptions {
 	readonly gate: VisualPageGate;
-	readonly extractor: VisualPageExtractor;
+	/** Primary extractor (legacy single-extractor seam, or VLM extractor when `vlmExtractor` is omitted). */
+	readonly extractor?: VisualPageExtractor;
+	/** Dedicated VLM extractor for pages routed to `vlm` (charts, diagrams, complex tables, visual annotations). */
+	readonly vlmExtractor?: VisualPageExtractor;
+	/** Dedicated OCR extractor for pages routed to `ocr` (scans, handwriting, text missed by base parser). */
+	readonly ocrExtractor?: VisualPageExtractor;
 	readonly renderer?: PageRenderer;
 	readonly maxPagesPerFile?: number;
 	readonly maxWidthPx?: number;
 	/** Max concurrent page gate/extraction calls per file (default {@link DEFAULT_VISUAL_PAGE_CONCURRENCY}). */
 	readonly concurrency?: number;
+}
+
+function resolveExtractors(options: VisualMirrorSyncOptions): {
+	readonly vlm: VisualPageExtractor | undefined;
+	readonly ocr: VisualPageExtractor | undefined;
+	readonly combinedFingerprint: string;
+} {
+	const vlm = options.vlmExtractor ?? (options.extractor?.kind === "vlm" ? options.extractor : undefined);
+	const ocr = options.ocrExtractor ?? (options.extractor?.kind === "ocr" ? options.extractor : undefined);
+	if (vlm === undefined && ocr === undefined) {
+		throw new Error(
+			"VisualMirrorSyncOptions requires at least one extractor (vlmExtractor, ocrExtractor, or extractor).",
+		);
+	}
+	const combinedFingerprint = [
+		vlm !== undefined ? `vlm=${vlm.fingerprint}` : "vlm=none",
+		ocr !== undefined ? `ocr=${ocr.fingerprint}` : "ocr=none",
+	].join("|");
+	return { vlm, ocr, combinedFingerprint };
+}
+
+function pickExtractorForRoute(
+	route: VisualPageRoute,
+	extractors: { readonly vlm: VisualPageExtractor | undefined; readonly ocr: VisualPageExtractor | undefined },
+): VisualPageExtractor | undefined {
+	if (route === "plain") return undefined;
+	if (route === "vlm") return extractors.vlm ?? extractors.ocr;
+	return extractors.ocr ?? extractors.vlm;
 }
 
 export interface VisualMirrorDiagnostic {
@@ -192,11 +228,12 @@ export function isVisualMirrorUpToDate(
 	if (manifest === undefined) return false;
 	const maxPages = options.maxPagesPerFile ?? DEFAULT_VISUAL_MAX_PAGES_PER_FILE;
 	const maxWidth = options.maxWidthPx ?? DEFAULT_VISUAL_MAX_WIDTH_PX;
+	const extractors = resolveExtractors(options);
 	if (
 		manifest.sourceVersion !== sourceVersion ||
 		manifest.rendererFingerprint !== renderer.fingerprint ||
 		manifest.gateFingerprint !== options.gate.fingerprint ||
-		manifest.extractorFingerprint !== options.extractor.fingerprint ||
+		manifest.extractorFingerprint !== extractors.combinedFingerprint ||
 		manifest.maxPagesPerFile !== maxPages ||
 		manifest.maxWidthPx !== maxWidth
 	) {
@@ -314,6 +351,7 @@ export async function syncVisualMirrorForFile(input: {
 	}
 
 	const previousManifest = input.force === true ? undefined : loadVisualManifest(input.root, input.virtualPath);
+	const extractors = resolveExtractors(input.options);
 	const baseTexts = extractBasePageTexts(input.baseMirrorPath);
 	const nextPages: Record<string, VisualPageRecord> = {};
 	let pagesGated = 0;
@@ -329,7 +367,7 @@ export async function syncVisualMirrorForFile(input: {
 			pageCount: renderedPages.reduce((max, page) => Math.max(max, page.page), 0),
 			rendererFingerprint: renderer.fingerprint,
 			gateFingerprint: input.options.gate.fingerprint,
-			extractorFingerprint: input.options.extractor.fingerprint,
+			extractorFingerprint: extractors.combinedFingerprint,
 			maxPagesPerFile,
 			maxWidthPx,
 			pages: nextPages,
@@ -356,16 +394,20 @@ export async function syncVisualMirrorForFile(input: {
 			cached.baseTextSha256 === baseTextSha256 &&
 			cached.gateFingerprint === input.options.gate.fingerprint;
 
-		if (gateCacheHit && !cached.visuallyRich) {
+		const cachedRoute: VisualPageRoute =
+			cached?.route ?? (cached?.visuallyRich ? (cached.extractorKind ?? "vlm") : "plain");
+		if (gateCacheHit && cachedRoute === "plain") {
 			nextPages[pageKey] = cached;
 			pagesReused += 1;
 			return;
 		}
 
+		const cachedExpectedExtractor = gateCacheHit ? pickExtractorForRoute(cachedRoute, extractors) : undefined;
 		if (
 			gateCacheHit &&
-			cached.visuallyRich &&
-			cached.extractorFingerprint === input.options.extractor.fingerprint &&
+			cachedRoute !== "plain" &&
+			cachedExpectedExtractor !== undefined &&
+			cached.extractorFingerprint === cachedExpectedExtractor.fingerprint &&
 			typeof cached.markdown === "string"
 		) {
 			nextPages[pageKey] = cached;
@@ -373,10 +415,10 @@ export async function syncVisualMirrorForFile(input: {
 			return;
 		}
 
-		let visuallyRich: boolean;
+		let route: VisualPageRoute;
 		let probability: number;
 		if (gateCacheHit) {
-			visuallyRich = cached.visuallyRich;
+			route = cachedRoute;
 			probability = cached.gateProbability;
 			pagesReused += 1;
 		} else {
@@ -388,7 +430,7 @@ export async function syncVisualMirrorForFile(input: {
 					extractedText,
 					signal: input.signal,
 				});
-				visuallyRich = verdict.visuallyRich;
+				route = verdict.route ?? (verdict.visuallyRich ? "vlm" : "plain");
 				probability = verdict.probability;
 				pagesGated += 1;
 			} catch (error) {
@@ -404,13 +446,15 @@ export async function syncVisualMirrorForFile(input: {
 			}
 		}
 
-		if (!visuallyRich) {
+		const targetExtractor = pickExtractorForRoute(route, extractors);
+		if (route === "plain" || targetExtractor === undefined) {
 			nextPages[pageKey] = {
 				page: rendered.page,
 				imageSha256: rendered.sha256,
 				baseTextSha256,
 				gateFingerprint: input.options.gate.fingerprint,
 				gateProbability: probability,
+				route: "plain",
 				visuallyRich: false,
 				updatedAt: new Date().toISOString(),
 			};
@@ -418,7 +462,7 @@ export async function syncVisualMirrorForFile(input: {
 		}
 
 		try {
-			const extracted = await input.options.extractor.extract({
+			const extracted = await targetExtractor.extract({
 				virtualPath: input.virtualPath,
 				page: rendered.page,
 				image: { data: rendered.data, mimeType: rendered.mimeType },
@@ -432,14 +476,15 @@ export async function syncVisualMirrorForFile(input: {
 				baseTextSha256,
 				gateFingerprint: input.options.gate.fingerprint,
 				gateProbability: probability,
+				route,
 				visuallyRich: true,
-				extractorFingerprint: input.options.extractor.fingerprint,
+				extractorFingerprint: targetExtractor.fingerprint,
 				extractorKind: extracted.extractorKind,
 				extractorModel: extracted.extractorModel,
 				markdown: extracted.markdown,
 				updatedAt: new Date().toISOString(),
 			};
-			// Persist incrementally as visually-rich pages finish so an abort never wastes completed VLM/OCR calls.
+			// Persist incrementally as visually-rich/OCR pages finish so an abort never wastes completed calls.
 			persistPartial(`${input.sourceVersion}:in-progress`);
 		} catch (error) {
 			if (input.signal?.aborted) throw abortReason(input.signal);
@@ -447,7 +492,7 @@ export async function syncVisualMirrorForFile(input: {
 			diagnostics.push({
 				code: "visual-extract-failed",
 				page: rendered.page,
-				message: `Page ${rendered.page} visual extraction failed: ${error instanceof Error ? error.message : String(error)}`,
+				message: `Page ${rendered.page} visual extraction (${route}) failed: ${error instanceof Error ? error.message : String(error)}`,
 			});
 			if (cached !== undefined) nextPages[pageKey] = cached;
 		}

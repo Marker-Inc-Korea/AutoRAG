@@ -584,8 +584,15 @@ export interface AutoRefreshOptions {
 	readonly immediate?: boolean;
 }
 
-/** Methods that `refresh` can selectively run. Defaults to all when omitted. */
-export type RefreshMethod = "parsed" | "minsync" | "datasources" | "jikji" | "everything" | "fsearch";
+/**
+ * Methods that `refresh` can selectively run.
+ * - Stage 1 (default fast parsing): `parsed` + `minsync` (+ datasources/jikji/everything/fsearch).
+ * - Stage 2 (opt-in advanced VLM/OCR parsing): `visual` runs on top of the base parsed mirrors, enriching
+ *   visually-rich pages (VLM) and scanned/missing-text pages (OCR) into supplementary mirrors and syncing MinSync.
+ *   `visual` only runs when explicitly included in `methods` or when `visualParse.enabled` is configured and
+ *   `skipVisual` is not set (onboarding passes `methods: ["parsed", "minsync"]` without `"visual"`, or `skipVisual: true`).
+ */
+export type RefreshMethod = "parsed" | "visual" | "minsync" | "datasources" | "jikji" | "everything" | "fsearch";
 
 /**
  * Progress of a refresh phase that can count its work. `parsed` counts source files
@@ -616,6 +623,11 @@ export interface AutoRAGRefreshOptions {
 	readonly signal?: AbortSignal;
 	/** Called while the parse, MinSync and datasource phases run. A throwing callback is ignored; it never fails the refresh. */
 	readonly onProgress?: (progress: AutoRAGRefreshProgress) => void;
+	/**
+	 * Skip Stage 2 (advanced VLM/OCR visual mirror enrichment) for this refresh even when `visualParse` is enabled
+	 * in config — used by initial onboarding / fast refresh so Stage 1 finishes quickly before optional Stage 2 runs.
+	 */
+	readonly skipVisual?: boolean;
 	/**
 	 * Per-root `jikji prepare` controls: a hard `timeoutMs` wall per root and a
 	 * `parseTimeout` (seconds, forwarded to `--parse-timeout`). Unset values fall
@@ -4301,10 +4313,16 @@ export class AutoRAGAgent {
 		const methods = opts?.methods;
 		const allMethods = methods === undefined;
 		const wants = (m: RefreshMethod): boolean => allMethods || (methods as readonly RefreshMethod[]).includes(m);
-		// Parsed mirror is required when MinSync runs,
-		// since they index over the parsed mirrors. Also run it when explicitly
-		// requested or when all methods are selected.
-		const needsParsed = allMethods || wants("parsed") || wants("minsync");
+		// Two-stage parsing:
+		// - Stage 1 (`parsed`): fast base text parsing only — always runs for `parsed`/`minsync`/default refresh.
+		// - Stage 2 (`visual`): opt-in advanced VLM/OCR enrichment layered on top of Stage 1 mirrors.
+		//   Runs ONLY when explicitly requested (`methods` includes `"visual"`), never blocking Stage 1 onboarding
+		//   (`methods: ["parsed", "minsync"]`) or fast default refreshes when `skipVisual: true`.
+		const wantsVisual =
+			opts?.skipVisual !== true && methods !== undefined && (methods as readonly RefreshMethod[]).includes("visual");
+		// Parsed mirror is required when MinSync or Stage-2 visual enrichment runs.
+		const needsParsed = allMethods || wants("parsed") || wants("minsync") || wantsVisual;
+		const needsMinSync = allMethods || wants("minsync") || wantsVisual;
 		const runId = randomUUID();
 		const startedAt = new Date().toISOString();
 		let progress: PersistedRefreshProgress = {
@@ -4328,13 +4346,13 @@ export class AutoRAGAgent {
 		signal?.addEventListener("abort", forwardAbort, { once: true });
 		let minSyncPipeline: PipelinedSync | undefined;
 		// A refresh that builds the index from nothing lets queries read beside all its syncs, not only the first.
-		const firstBuild = needsParsed && wants("minsync") ? this.minSyncMethod.beginFirstBuild() : undefined;
+		const firstBuild = needsParsed && needsMinSync ? this.minSyncMethod.beginFirstBuild() : undefined;
 		try {
 			writeRefreshProgress(this.workspaceProjectRoot, progress);
 			// MinSync indexes the parsed mirrors. When both run, the first committed batch starts a sync while
 			// parsing carries on, and each later sync covers every batch committed meanwhile: the first batch is
 			// searchable long before the last, and a large corpus costs a few syncs instead of one per batch.
-			const batchedMinSync = needsParsed && wants("minsync");
+			const batchedMinSync = needsParsed && needsMinSync;
 			const minSyncBatches: MinSyncSyncResult[] = [];
 			const minSyncBatchFailures: SearchDocumentDiagnostic[] = [];
 			let minSyncOmittedFailures = 0;
@@ -4414,6 +4432,7 @@ export class AutoRAGAgent {
 				? await this.syncParsedMirrors(force, {
 						...(opts?.retrySkipped === true ? { retrySkipped: true } : {}),
 						...(signal === undefined ? {} : { signal }),
+						includeVisual: wantsVisual,
 						...(pipeline === undefined
 							? {}
 							: {
@@ -4907,18 +4926,24 @@ export class AutoRAGAgent {
 
 	async syncParsedMirrors(
 		force = false,
-		options: Pick<ParsedMirrorSyncOptions, "signal" | "onProgress" | "retrySkipped" | "onBatch" | "batchSize"> = {},
+		options: Pick<ParsedMirrorSyncOptions, "signal" | "onProgress" | "retrySkipped" | "onBatch" | "batchSize"> & {
+			/** Run Stage 2 (visual-rich VLM + OCR enrichment) on top of Stage 1 base mirrors. Default false (Stage 1 only). */
+			readonly includeVisual?: boolean;
+		} = {},
 	): Promise<ParsedMirrorSyncResult> {
+		const { includeVisual = false, ...syncOpts } = options;
 		const duplicateFilter = await this.exactDuplicateExclusions();
-		const visualParse = await resolveVisualParseSyncOptions({
-			visualParse: this.visualParseOptions,
-			workspaceRoot: this.workspaceProjectRoot,
-			languages: this.languages,
-			inheritedJev: this.jevOptions,
-			agentDir: this.piAgentDir,
-		});
+		const visualParse = includeVisual
+			? await resolveVisualParseSyncOptions({
+					visualParse: this.visualParseOptions,
+					workspaceRoot: this.workspaceProjectRoot,
+					languages: this.languages,
+					inheritedJev: this.jevOptions,
+					agentDir: this.piAgentDir,
+				})
+			: undefined;
 		return syncParsedMirrors({
-			...options,
+			...syncOpts,
 			...this.refreshLimits,
 			root: this.workspaceProjectRoot,
 			searchPaths: this.searchPaths,
@@ -4934,6 +4959,18 @@ export class AutoRAGAgent {
 				? { cloudFingerprints: { dupey: this.dupeyOptions } }
 				: {}),
 		});
+	}
+
+	/**
+	 * Stage 2 opt-in advanced visual parsing: keeps Stage 1 base mirrors intact, runs the vision decision gate
+	 * (`vlm` / `ocr` / `plain`) incrementally on rendered pages, writes supplementary visual/OCR mirrors on top,
+	 * and syncs MinSync so both mirrors are searchable.
+	 */
+	refreshVisual(
+		force = false,
+		opts?: Omit<AutoRAGRefreshOptions, "methods" | "skipVisual">,
+	): Promise<AutoRAGRefreshResult> {
+		return this.refresh(force, { ...opts, methods: ["visual", "minsync"] });
 	}
 
 	/**
