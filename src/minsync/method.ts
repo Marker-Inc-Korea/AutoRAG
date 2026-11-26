@@ -231,6 +231,7 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 					virtualPath: entry.virtualPath,
 					minsyncChunkId: chunkId,
 					minsyncPath: hit.path,
+					...(entry.mirrorKind === "visual" ? { mirrorKind: "visual" } : {}),
 					// The window's fallback time for a local file: when the source was last modified.
 					sourceMtimeMs: entry.sourceMtimeMs,
 					...(location !== undefined

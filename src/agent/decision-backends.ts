@@ -137,7 +137,7 @@ const SYSTEM_ONE_APIS: Readonly<Record<string, true>> = {
 const runtimes = new Map<string, Promise<DecisionModelRuntime>>();
 
 /** pi's runtime for one agent home, offline: the bundled catalog plus `models.json`, with `auth.json` credentials. */
-function runtimeFor(agentDir: string): Promise<DecisionModelRuntime> {
+export function decisionRuntimeFor(agentDir: string): Promise<DecisionModelRuntime> {
 	const environmentOnly = process.env.AUTORAG_AUTH_MODE === "environment";
 	const cacheKey = `${environmentOnly ? "environment" : "stored"}:${agentDir}`;
 	let runtime = runtimes.get(cacheKey);
@@ -227,7 +227,7 @@ export class PiDecisionBackend implements JevBackend {
 	}
 
 	async judge(request: BackendRequest): Promise<BackendResponse> {
-		const runtime = this.runtime ?? (await runtimeFor(this.agentDir ?? getAgentDir()));
+		const runtime = this.runtime ?? (await decisionRuntimeFor(this.agentDir ?? getAgentDir()));
 		const catalog = runtime.getModelsOfType("classifier", this.name);
 		const template = catalog[0];
 		if (template === undefined) {

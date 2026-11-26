@@ -278,6 +278,7 @@ import { formatSkillInvocation } from "./skill-invocation.ts";
 import { buildSystemPrompt, type SystemPromptConfig } from "./system-prompt.ts";
 import { ToolBurstGuard, type ToolBurstGuardOptions } from "./tool-burst-guard.ts";
 import { createUserRequestPersistence, UserRequestLog } from "./user-requests.ts";
+import { resolveVisualParseSyncOptions, type VisualParseAgentOptions } from "./visual-parse-runtime.ts";
 import {
 	createWatchRefresh,
 	type WatcherFactory,
@@ -793,6 +794,11 @@ export interface AutoRAGAgentOptions {
 	rerank?: RerankAgentOptions | false;
 	autoRefresh?: AutoRefreshOptions;
 	parserOptions?: DefaultParserRegistryOptions;
+	/**
+	 * Opt-in visual-rich page gating (Bivia/Jev vision decision model) + VLM/OCR supplementary mirror extraction.
+	 * Absent or `false` leaves parsing text-only.
+	 */
+	visualParse?: VisualParseAgentOptions | false;
 	dupey?: DupeyCliOptions | false;
 	/**
 	 * Cloud placeholder probe. Omitted, the platform probe is used (macOS and Windows). A programmatic seam for
@@ -1142,6 +1148,8 @@ export class AutoRAGAgent {
 	private readonly startupDiagnostics: readonly SearchDocumentDiagnostic[];
 	private readonly datasourceAgentSkills: readonly DatasourceAgentSkill[];
 	private readonly parserOptions: DefaultParserRegistryOptions | undefined;
+	private readonly visualParseOptions: VisualParseAgentOptions | false | undefined;
+	private readonly jevOptions: JevToolOptions | undefined;
 	private readonly dupeyOptions: DupeyCliOptions | false;
 	private readonly fileeOptions: FileeCliOptions | false;
 	/** Platform cloud probe; `undefined` where AutoRAG has no cloud handling. */
@@ -1298,6 +1306,8 @@ export class AutoRAGAgent {
 		);
 		// The global language setting selects the OCR engine; the workspace pins Tesseract's model cache.
 		this.parserOptions = resolveParserOptions(options.parserOptions, this.languages, this.workspaceProjectRoot);
+		this.visualParseOptions = options.visualParse;
+		this.jevOptions = options.jev;
 		this.dupeyOptions = options.dupey ?? {};
 		this.fileeOptions = options.filee ?? {};
 		this.cloudProbe = options.cloudProbe ?? defaultCloudProbe();
@@ -4900,6 +4910,13 @@ export class AutoRAGAgent {
 		options: Pick<ParsedMirrorSyncOptions, "signal" | "onProgress" | "retrySkipped" | "onBatch" | "batchSize"> = {},
 	): Promise<ParsedMirrorSyncResult> {
 		const duplicateFilter = await this.exactDuplicateExclusions();
+		const visualParse = await resolveVisualParseSyncOptions({
+			visualParse: this.visualParseOptions,
+			workspaceRoot: this.workspaceProjectRoot,
+			languages: this.languages,
+			inheritedJev: this.jevOptions,
+			agentDir: this.piAgentDir,
+		});
 		return syncParsedMirrors({
 			...options,
 			...this.refreshLimits,
@@ -4908,6 +4925,7 @@ export class AutoRAGAgent {
 			minSyncBinaryPath: await this.minSyncMethod.resolveBinary(),
 			force,
 			parserOptions: this.parserOptions,
+			...(visualParse !== undefined ? { visualParse } : {}),
 			excludeSourcePaths: duplicateFilter.excluded,
 			userExcludedSourcePaths: new Set(this.excludePaths),
 			cloudProbe: this.cloudProbe,

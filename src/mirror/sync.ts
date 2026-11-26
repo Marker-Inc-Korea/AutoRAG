@@ -40,6 +40,12 @@ import {
 } from "./index-store.ts";
 import { writePagesSidecar } from "./pages-sidecar.ts";
 import { parsedMirrorRoot, parsedOutputPath } from "./paths.ts";
+import {
+	isVisualMirrorUpToDate,
+	removeVisualMirror,
+	syncVisualMirrorForFile,
+	type VisualMirrorSyncOptions,
+} from "./visual-mirror.ts";
 
 /** Refuse to fully load/parse sources larger than this. Keeps Node heap stable on home folders. */
 export const DEFAULT_MAX_SOURCE_BYTES = 50 * 1024 * 1024;
@@ -194,6 +200,11 @@ export interface ParsedMirrorSyncOptions {
 	 * Absent keeps no fingerprints. Needs {@link ParsedMirrorSyncOptions.cloudProbe} for the machine's roots.
 	 */
 	readonly cloudFingerprints?: CloudFingerprintSyncOptions;
+	/**
+	 * Optional visual-rich page gating + VLM/OCR extraction pipeline. When provided, visually-rich pages are
+	 * extracted incrementally into a second mirror (`parsed/visual/<hash>.md`) alongside the base text mirror.
+	 */
+	readonly visualParse?: VisualMirrorSyncOptions;
 }
 
 /** How a refresh fingerprints cloud and network files: the dupey CLI (or a test double) that reads the exact hash. */
@@ -234,7 +245,10 @@ export type ParsedMirrorDiagnosticCode =
 	| "directory-unreadable"
 	| "cloud-placeholder-skipped"
 	| "cloud-evict-failed"
-	| "cloud-fingerprint-failed";
+	| "cloud-fingerprint-failed"
+	| "visual-render-failed"
+	| "visual-gate-failed"
+	| "visual-extract-failed";
 
 /**
  * Refresh diagnostic. `source` is an opaque virtual path, never a real filesystem path.
@@ -632,6 +646,7 @@ async function syncWithRegistry(
 				await session.delete(decision.key);
 				if (path === undefined) continue;
 				writePagesSidecar(parsedOutputPath(options.root, path), "", undefined);
+				removeVisualMirror(options.root, path);
 				if (previous.entries[path]) deleted += 1;
 				if (!currentPaths.has(path))
 					diagnostics.push({
@@ -655,9 +670,17 @@ async function syncWithRegistry(
 			const outcome = await options.onBatch({ index: batchIndex, virtualPaths, final });
 			if (outcome?.stop === true) batchStopped = true;
 		};
+		const needsVisualEnrichment = (entry: CurrentEntry): boolean =>
+			options.visualParse !== undefined &&
+			!omitted.has(entry.virtualPath) &&
+			!deferred.has(mirrorStageKey(entry.virtualPath)) &&
+			(options.force === true ||
+				!isVisualMirrorUpToDate(options.root, entry.virtualPath, entry.sourceVersion, options.visualParse));
 		if (!deferDeletions) await applyDeleteDecisions();
 		await gate.classify(
-			current.filter((entry) => pending.has(mirrorStageKey(entry.virtualPath))).map((entry) => entry.sourcePath),
+			current
+				.filter((entry) => pending.has(mirrorStageKey(entry.virtualPath)) || needsVisualEnrichment(entry))
+				.map((entry) => entry.sourcePath),
 		);
 		let batchStart = 0;
 		for (;;) {
@@ -681,6 +704,7 @@ async function syncWithRegistry(
 				if (omission !== undefined) {
 					if (pending.has(mirrorStageKey(entry.virtualPath))) {
 						if (previous.entries[entry.virtualPath]) deleted += 1;
+						removeVisualMirror(options.root, entry.virtualPath);
 						await session.skip(
 							mirrorStageKey(entry.virtualPath),
 							versions.get(entry.virtualPath)!,
@@ -708,9 +732,12 @@ async function syncWithRegistry(
 				}
 				const parser = registry.getForVirtualPath(entry.virtualPath)!;
 				const outputPath = parsedOutputPath(options.root, entry.virtualPath);
-				const cloudDecision = pending.has(mirrorStageKey(entry.virtualPath))
-					? await gate.decide(entry.sourcePath, entry.sizeBytes, dirname(entry.sourcePath))
-					: ({ kind: "local" } as const);
+				const basePending = pending.has(mirrorStageKey(entry.virtualPath));
+				const visualPending = !basePending && needsVisualEnrichment(entry);
+				const cloudDecision =
+					basePending || visualPending
+						? await gate.decide(entry.sourcePath, entry.sizeBytes, dirname(entry.sourcePath))
+						: ({ kind: "local" } as const);
 				if (cloudDecision.kind === "skip") {
 					skipped += 1;
 					diagnostics.push({
@@ -875,6 +902,27 @@ async function syncWithRegistry(
 							}
 						}
 					}
+					if (options.visualParse !== undefined) {
+						const visualOutcome = await syncVisualMirrorForFile({
+							root: options.root,
+							virtualPath: entry.virtualPath,
+							sourcePath: entry.sourcePath,
+							sourceVersion: entry.sourceVersion,
+							baseMirrorPath: outputPath,
+							readBytes: async () => bytes,
+							options: options.visualParse,
+							force: options.force,
+							signal: options.signal,
+						});
+						for (const visualDiag of visualOutcome.diagnostics) {
+							diagnostics.push({
+								code: visualDiag.code,
+								severity: "warning",
+								message: visualDiag.message,
+								source: entry.virtualPath,
+							});
+						}
+					}
 					if (cloudDecision.kind === "download" && gate.evictAfterParse) {
 						const released = await gate.release(entry.sourcePath);
 						if (!released.ok) {
@@ -882,6 +930,49 @@ async function syncWithRegistry(
 								code: "cloud-evict-failed",
 								severity: "warning",
 								message: `The file was indexed but its local copy could not be released: ${released.message}`,
+								source: entry.virtualPath,
+							});
+						}
+					}
+				} else if (visualPending && options.visualParse !== undefined) {
+					try {
+						const visualOutcome = await syncVisualMirrorForFile({
+							root: options.root,
+							virtualPath: entry.virtualPath,
+							sourcePath: entry.sourcePath,
+							sourceVersion: entry.sourceVersion,
+							baseMirrorPath: outputPath,
+							readBytes: () =>
+								withTransientRetry(() => readFile(entry.sourcePath), transientRetries, transientBackoffMs),
+							options: options.visualParse,
+							force: options.force,
+							signal: options.signal,
+						});
+						for (const visualDiag of visualOutcome.diagnostics) {
+							diagnostics.push({
+								code: visualDiag.code,
+								severity: "warning",
+								message: visualDiag.message,
+								source: entry.virtualPath,
+							});
+						}
+						if (visualOutcome.changed) written += 1;
+					} catch (error) {
+						if (options.signal?.aborted) throw abortReason(options.signal);
+						diagnostics.push({
+							code: "visual-render-failed",
+							severity: "warning",
+							message: error instanceof Error ? error.message : String(error),
+							source: entry.virtualPath,
+						});
+					}
+					if (cloudDecision.kind === "download" && gate.evictAfterParse) {
+						const released = await gate.release(entry.sourcePath);
+						if (!released.ok) {
+							diagnostics.push({
+								code: "cloud-evict-failed",
+								severity: "warning",
+								message: `The file was visually indexed but its local copy could not be released: ${released.message}`,
 								source: entry.virtualPath,
 							});
 						}

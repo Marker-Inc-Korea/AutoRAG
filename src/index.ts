@@ -27,6 +27,13 @@ export {
 	type SearchDocumentWarning,
 } from "./agent/index.ts";
 export { buildSystemPrompt, type SystemPromptConfig } from "./agent/system-prompt.ts";
+export type {
+	VisualParseAgentOptions,
+	VisualParseExtractorAgentConfig,
+	VisualParseExtractorModelRef,
+	VisualParseGateAgentConfig,
+} from "./agent/visual-parse-runtime.ts";
+export { resolveVisualParseSyncOptions } from "./agent/visual-parse-runtime.ts";
 export * from "./cloud/index.ts";
 export * from "./convert/index.ts";
 export {

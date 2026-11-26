@@ -170,6 +170,38 @@ export interface LtrConfig {
 	};
 }
 
+/** Visual-rich page gating + VLM/OCR mirror extraction config (opt-in). */
+export interface VisualParseGateCliConfig {
+	/** Vision decision backend: `bivia`, `openrouter`, `openai`, `typesafe`, `cloudflare-workers-ai`, or `dazzi`. */
+	backend?: string;
+	/** Decision model id within `backend`, e.g. `dec-1` on Bivia or `typesafe/jev-1.14` on OpenRouter. */
+	model?: string;
+	/** Calibrated P(visually_rich) threshold in (0, 1]. Default 0.6. */
+	threshold?: number;
+}
+
+export interface VisualParseExtractorCliConfig {
+	/** Extraction engine for visually-rich pages: `"vlm"` (vision LLM) or `"ocr"` (local OCR). */
+	kind: "vlm" | "ocr";
+	/** Vision chat model reference (required when `kind` is `"vlm"`). */
+	model?: AgentModelConfig;
+	/** Document languages for `"ocr"` extraction; inherits global `languages` when omitted. */
+	languages?: LanguageTag[];
+	/** Per-page extraction timeout in milliseconds. */
+	timeoutMs?: number;
+}
+
+export interface VisualParseCliConfig {
+	/** `false` disables visual-rich mirror enrichment; missing means enabled when the block is present. */
+	enabled?: boolean;
+	gate?: VisualParseGateCliConfig;
+	extractor?: VisualParseExtractorCliConfig;
+	/** Cap on pages inspected per document (default 50). */
+	maxPagesPerFile?: number;
+	/** Maximum width in pixels for rendered pages (default 1024). */
+	maxWidthPx?: number;
+}
+
 /**
  * Post-merge reranking config. Opt-in: reranking runs only when a `model` is named, and a block without one is treated
  * as off (reported once at startup). `provider` is `openrouter` (default) or the hosted Dazzi Models plan (`dazzi`).
@@ -269,6 +301,8 @@ export interface CliConfig {
 	permissionMode?: PermissionMode;
 	/** Post-merge reranking. Absent ⇒ reranking disabled. `false` disables it. */
 	rerank?: RerankConfig | false;
+	/** Opt-in visual-rich page gating (Bivia/Jev vision decision model) + VLM/OCR supplementary mirror extraction. */
+	visualParse?: VisualParseCliConfig | false;
 	parserOptions?: Record<string, unknown>;
 	dupey?: {
 		enabled?: boolean;
@@ -1189,6 +1223,7 @@ export function resolveConfig(input: ResolveConfigInput): CliConfig {
 		config.datasources = file.datasources as DatasourcesConfig;
 	}
 	if (file.rerank !== undefined) config.rerank = normalizeRerankConfig(file.rerank, "rerank");
+	if (file.visualParse !== undefined) config.visualParse = normalizeVisualParseConfig(file.visualParse, "visualParse");
 	return config;
 }
 
@@ -1549,6 +1584,128 @@ export function normalizeRerankConfig(raw: unknown, path: string): RerankConfig 
 	return out;
 }
 
+const VISUAL_PARSE_FIELDS: Readonly<Record<string, true>> = {
+	enabled: true,
+	gate: true,
+	extractor: true,
+	maxPagesPerFile: true,
+	maxWidthPx: true,
+};
+
+const VISUAL_PARSE_GATE_FIELDS: Readonly<Record<string, true>> = {
+	backend: true,
+	model: true,
+	threshold: true,
+};
+
+const VISUAL_PARSE_EXTRACTOR_FIELDS: Readonly<Record<string, true>> = {
+	kind: true,
+	model: true,
+	languages: true,
+	timeoutMs: true,
+};
+
+export function normalizeVisualParseConfig(raw: unknown, path = "visualParse"): VisualParseCliConfig | false {
+	if (raw === false) return false;
+	if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+		throw new ConfigError(`Config field '${path}' must be false or an object`);
+	}
+	const record = raw as Record<string, unknown>;
+	for (const key of Object.keys(record)) {
+		if (VISUAL_PARSE_FIELDS[key] !== true) {
+			throw new ConfigError(`Unknown field '${path}.${key}'`);
+		}
+	}
+	const out: VisualParseCliConfig = {};
+	if (record.enabled !== undefined) {
+		if (typeof record.enabled !== "boolean") {
+			throw new ConfigError(`${path}.enabled must be a boolean`);
+		}
+		out.enabled = record.enabled;
+	}
+	if (record.gate !== undefined) {
+		if (typeof record.gate !== "object" || record.gate === null || Array.isArray(record.gate)) {
+			throw new ConfigError(`${path}.gate must be an object`);
+		}
+		const gateRecord = record.gate as Record<string, unknown>;
+		for (const key of Object.keys(gateRecord)) {
+			if (VISUAL_PARSE_GATE_FIELDS[key] !== true) {
+				throw new ConfigError(`Unknown field '${path}.gate.${key}'`);
+			}
+		}
+		const gate: VisualParseGateCliConfig = {};
+		if (gateRecord.backend !== undefined) {
+			if (typeof gateRecord.backend !== "string" || gateRecord.backend.trim().length === 0) {
+				throw new ConfigError(`${path}.gate.backend must be a non-empty string`);
+			}
+			gate.backend = gateRecord.backend.trim();
+		}
+		if (gateRecord.model !== undefined) {
+			if (typeof gateRecord.model !== "string" || gateRecord.model.trim().length === 0) {
+				throw new ConfigError(`${path}.gate.model must be a non-empty string`);
+			}
+			gate.model = gateRecord.model.trim();
+		}
+		if (gateRecord.threshold !== undefined) {
+			if (
+				typeof gateRecord.threshold !== "number" ||
+				!Number.isFinite(gateRecord.threshold) ||
+				gateRecord.threshold <= 0 ||
+				gateRecord.threshold > 1
+			) {
+				throw new ConfigError(`${path}.gate.threshold must be a number in (0, 1]`);
+			}
+			gate.threshold = gateRecord.threshold;
+		}
+		out.gate = gate;
+	}
+	if (record.extractor !== undefined) {
+		if (typeof record.extractor !== "object" || record.extractor === null || Array.isArray(record.extractor)) {
+			throw new ConfigError(`${path}.extractor must be an object`);
+		}
+		const extRecord = record.extractor as Record<string, unknown>;
+		for (const key of Object.keys(extRecord)) {
+			if (VISUAL_PARSE_EXTRACTOR_FIELDS[key] !== true) {
+				throw new ConfigError(`Unknown field '${path}.extractor.${key}'`);
+			}
+		}
+		if (extRecord.kind !== "vlm" && extRecord.kind !== "ocr") {
+			throw new ConfigError(`${path}.extractor.kind must be "vlm" or "ocr"`);
+		}
+		const extractor: VisualParseExtractorCliConfig = { kind: extRecord.kind };
+		if (extRecord.model !== undefined) {
+			const parsedModel = modelReference(extRecord.model, `${path}.extractor.model`);
+			if (parsedModel !== undefined) extractor.model = parsedModel;
+		}
+		if (extractor.kind === "vlm" && extractor.model === undefined && out.enabled !== false) {
+			throw new ConfigError(`${path}.extractor.model is required when ${path}.extractor.kind is "vlm"`);
+		}
+		if (extRecord.languages !== undefined) {
+			extractor.languages = normalizeConfigLanguages(extRecord.languages);
+		}
+		if (extRecord.timeoutMs !== undefined) {
+			if (
+				typeof extRecord.timeoutMs !== "number" ||
+				!Number.isInteger(extRecord.timeoutMs) ||
+				extRecord.timeoutMs <= 0
+			) {
+				throw new ConfigError(`${path}.extractor.timeoutMs must be a positive integer`);
+			}
+			extractor.timeoutMs = extRecord.timeoutMs;
+		}
+		out.extractor = extractor;
+	}
+	for (const field of ["maxPagesPerFile", "maxWidthPx"] as const) {
+		const value = record[field];
+		if (value === undefined) continue;
+		if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) {
+			throw new ConfigError(`${path}.${field} must be a positive integer`);
+		}
+		out[field] = value;
+	}
+	return out;
+}
+
 export function buildAgentOptions(config: CliConfig, agentDir?: string): Omit<AutoRAGAgentOptions, "model"> {
 	const opts: Record<string, unknown> = {
 		searchPaths: config.searchPaths,
@@ -1597,6 +1754,20 @@ export function buildAgentOptions(config: CliConfig, agentDir?: string): Omit<Au
 					};
 	}
 	if (config.parserOptions) opts.parserOptions = config.parserOptions;
+	if (config.visualParse !== undefined) {
+		opts.visualParse =
+			config.visualParse === false || config.visualParse.enabled === false
+				? false
+				: {
+						enabled: config.visualParse.enabled ?? true,
+						...(config.visualParse.gate !== undefined ? { gate: config.visualParse.gate } : {}),
+						...(config.visualParse.extractor !== undefined ? { extractor: config.visualParse.extractor } : {}),
+						...(config.visualParse.maxPagesPerFile !== undefined
+							? { maxPagesPerFile: config.visualParse.maxPagesPerFile }
+							: {}),
+						...(config.visualParse.maxWidthPx !== undefined ? { maxWidthPx: config.visualParse.maxWidthPx } : {}),
+					};
+	}
 	if (config.dupey?.enabled === false) {
 		opts.dupey = false;
 	} else {
@@ -2362,6 +2533,9 @@ export function writeDefaultConfig(
 	if (partial.limits !== undefined) full.limits = normalizeLimitsConfig(partial.limits);
 	if (partial.refresh !== undefined) full.refresh = normalizeRefreshConfig(partial.refresh);
 	if (partial.parserOptions) full.parserOptions = partial.parserOptions;
+	if (partial.visualParse !== undefined) {
+		full.visualParse = normalizeVisualParseConfig(partial.visualParse, "visualParse");
+	}
 	// Reranking is opt-in and sends text to a remote model, so a new config carries no `rerank` block.
 	if (partial.rerank !== undefined) full.rerank = partial.rerank;
 	// Jev routing and question decomposition are on by default; new configs

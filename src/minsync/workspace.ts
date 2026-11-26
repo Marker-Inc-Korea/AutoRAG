@@ -13,9 +13,17 @@ import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 import { normalizeVirtualPath } from "../filesystem/source-paths.ts";
 import { renameWithRetry } from "../mirror/atomic-write.ts";
 import { loadMirrorIndex } from "../mirror/index-store.ts";
-import { minSyncDocumentPath, minSyncWorkspaceRoot } from "./paths.ts";
+import { parsedVisualOutputPath } from "../mirror/paths.ts";
+import {
+	MINSYNC_VISUAL_SUFFIX,
+	minSyncDocumentPath,
+	minSyncVisualDocumentPath,
+	minSyncWorkspaceRoot,
+} from "./paths.ts";
 
 const NS_PER_MS = 1_000_000;
+
+export type MinSyncMirrorKind = "text" | "visual";
 
 export interface MinSyncWorkspaceEntry {
 	readonly virtualPath: string;
@@ -24,6 +32,8 @@ export interface MinSyncWorkspaceEntry {
 	readonly minSyncPath: string;
 	/** The source file's last-modified time (epoch ms) as the mirror index recorded it; not when it was authored. */
 	readonly sourceMtimeMs: number;
+	/** Which parsed mirror of the source file this staged document came from. */
+	readonly mirrorKind?: MinSyncMirrorKind;
 }
 
 export interface MinSyncWorkspaceSyncResult {
@@ -47,11 +57,19 @@ export interface MinSyncWorkspaceSyncResult {
 interface MinSyncStagingEntry {
 	readonly outputPath: string;
 	readonly updatedAt: string;
+	readonly visualOutputPath?: string;
+	readonly visualStamp?: string;
 }
 
 interface MinSyncStagingState {
 	readonly version: 1;
 	readonly entries: Readonly<Record<string, MinSyncStagingEntry>>;
+}
+
+function fileStamp(path: string): string | undefined {
+	const stat = lstatSync(path, { throwIfNoEntry: false });
+	if (!stat?.isFile()) return undefined;
+	return `${stat.size}:${stat.mtimeMs}`;
 }
 
 export function syncMinSyncWorkspace(
@@ -65,7 +83,7 @@ export function syncMinSyncWorkspace(
 	const excluded = candidates
 		.filter((entry) => normalizeVirtualPath(entry.virtualPath) !== entry.virtualPath || !existsSync(entry.outputPath))
 		.map((entry) => entry.virtualPath);
-	const entries = candidates
+	const baseEntries: MinSyncWorkspaceEntry[] = candidates
 		.filter((entry) => normalizeVirtualPath(entry.virtualPath) === entry.virtualPath && existsSync(entry.outputPath))
 		.map((entry) => {
 			const minSyncPath = minSyncDocumentPath(workspacePath, entry.virtualPath);
@@ -75,6 +93,7 @@ export function syncMinSyncWorkspace(
 				parsedOutputPath: entry.outputPath,
 				minSyncPath,
 				sourceMtimeMs: Math.floor(entry.sourceMtimeNs / NS_PER_MS),
+				mirrorKind: "text" as const,
 			};
 		});
 	const previousState = loadStagingState(workspacePath);
@@ -84,7 +103,7 @@ export function syncMinSyncWorkspace(
 	const desiredPaths = new Set<string>();
 	const stagedEntries: MinSyncWorkspaceEntry[] = [];
 	const stagingFailed: string[] = [];
-	for (const entry of entries) {
+	for (const entry of baseEntries) {
 		const mirrorEntry = index.entries[entry.virtualPath];
 		if (mirrorEntry === undefined) continue;
 		const previousEntry = previousState?.entries[entry.virtualPath];
@@ -109,12 +128,44 @@ export function syncMinSyncWorkspace(
 				continue;
 			}
 		}
+		stagedEntries.push(entry);
+		desiredPaths.add(entry.minSyncPath);
+
+		const visualOutputPath = parsedVisualOutputPath(root, entry.virtualPath);
+		const visualStamp = fileStamp(visualOutputPath);
+		let visualStaged = false;
+		if (visualStamp !== undefined) {
+			const visualMinSyncPath = minSyncVisualDocumentPath(workspacePath, entry.virtualPath);
+			try {
+				const visualUnchanged =
+					previousEntry?.visualOutputPath === visualOutputPath &&
+					previousEntry.visualStamp === visualStamp &&
+					isRegularFile(visualMinSyncPath);
+				if (!visualUnchanged) {
+					ensureManagedDirectory(filesRoot, dirname(visualMinSyncPath));
+					copyFileAtomically(visualOutputPath, visualMinSyncPath);
+				}
+				stagedEntries.push({
+					virtualPath: entry.virtualPath,
+					sourcePath: entry.sourcePath,
+					parsedOutputPath: visualOutputPath,
+					minSyncPath: visualMinSyncPath,
+					sourceMtimeMs: entry.sourceMtimeMs,
+					mirrorKind: "visual",
+				});
+				desiredPaths.add(visualMinSyncPath);
+				visualStaged = true;
+			} catch (error) {
+				if (!isPerDocumentStagingError(error)) throw error;
+				stagingFailed.push(`${entry.virtualPath}${MINSYNC_VISUAL_SUFFIX}`);
+			}
+		}
+
 		currentState[entry.virtualPath] = {
 			outputPath: mirrorEntry.outputPath,
 			updatedAt: mirrorEntry.updatedAt,
+			...(visualStaged && visualStamp !== undefined ? { visualOutputPath, visualStamp } : {}),
 		};
-		desiredPaths.add(entry.minSyncPath);
-		stagedEntries.push(entry);
 	}
 
 	// `desiredPaths` is driven by the whole mirror index, not by one parse batch,
@@ -233,17 +284,34 @@ export function buildMinSyncPathMap(
 	const byPath = new Map<string, MinSyncWorkspaceEntry>();
 	for (const entry of Object.values(index.entries)) {
 		const minSyncPath = minSyncDocumentPath(workspacePath, entry.virtualPath);
-		const mapped = {
+		const mapped: MinSyncWorkspaceEntry = {
 			virtualPath: entry.virtualPath,
 			sourcePath: entry.sourcePath,
 			parsedOutputPath: entry.outputPath,
 			minSyncPath,
 			sourceMtimeMs: Math.floor(entry.sourceMtimeNs / NS_PER_MS),
+			mirrorKind: "text",
 		};
 		byPath.set(entry.outputPath, mapped);
 		byPath.set(minSyncPath, mapped);
 		byPath.set(`files/${entry.virtualPath.replace(/^\/+/, "")}.md`, mapped);
 		byPath.set(legacyParsedVirtualPath(root, entry.virtualPath), mapped);
+
+		const visualOutputPath = parsedVisualOutputPath(root, entry.virtualPath);
+		const visualMinSyncPath = minSyncVisualDocumentPath(workspacePath, entry.virtualPath);
+		if (existsSync(visualOutputPath) || existsSync(visualMinSyncPath)) {
+			const mappedVisual: MinSyncWorkspaceEntry = {
+				virtualPath: entry.virtualPath,
+				sourcePath: entry.sourcePath,
+				parsedOutputPath: visualOutputPath,
+				minSyncPath: visualMinSyncPath,
+				sourceMtimeMs: mapped.sourceMtimeMs,
+				mirrorKind: "visual",
+			};
+			byPath.set(visualOutputPath, mappedVisual);
+			byPath.set(visualMinSyncPath, mappedVisual);
+			byPath.set(`files/${entry.virtualPath.replace(/^\/+/, "")}${MINSYNC_VISUAL_SUFFIX}`, mappedVisual);
+		}
 	}
 	return byPath;
 }

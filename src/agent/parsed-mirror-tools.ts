@@ -24,9 +24,14 @@ import { formatDatasourceGrepOutput, grepDatasourceSkills, resolveDatasourceGrep
 import type { DatasourceSkill } from "../datasource/types.ts";
 import { type CloudRoot, canonicalPath, isPathInside } from "../filesystem/cloud-placeholder.ts";
 import { planSourceRoots, type SourceRoot, sourceIdentifier } from "../filesystem/source-paths.ts";
-import { minSyncDocumentPath, minSyncWorkspaceRoot } from "../minsync/paths.ts";
+import {
+	MINSYNC_VISUAL_SUFFIX,
+	minSyncDocumentPath,
+	minSyncVisualDocumentPath,
+	minSyncWorkspaceRoot,
+} from "../minsync/paths.ts";
 import { readPagesSidecar } from "../mirror/pages-sidecar.ts";
-import { parsedOutputPath } from "../mirror/paths.ts";
+import { parsedOutputPath, parsedVisualOutputPath } from "../mirror/paths.ts";
 import { type ParsedPages, pageRange } from "../parser/pages.ts";
 import { describeLocation } from "../retrieval/chunk-location.ts";
 import type { EvidenceLedger } from "./evidence-ledger.ts";
@@ -75,6 +80,8 @@ export interface MirrorFileMapping {
 	readonly virtualPath: string;
 	readonly mirrorPath: string;
 	readonly pagesMirrorPath: string;
+	/** Staged visual-extraction mirror path when the file has visually-rich pages extracted. */
+	readonly visualMirrorPath?: string;
 	/** True when the original source file exists and has a strictly newer mtime than the staged mirror. */
 	readonly stale: boolean;
 }
@@ -83,6 +90,7 @@ export interface MirrorSourceResolution {
 	readonly sourcePath: string;
 	readonly virtualPath: string;
 	readonly pagesMirrorPath: string;
+	readonly mirrorKind?: "text" | "visual";
 }
 
 export type MirrorTarget =
@@ -256,13 +264,16 @@ export function createParsedMirrorMapper(options: ParsedMirrorMapperOptions): Pa
 		const owner = findOwner(sourceFile);
 		if (owner === undefined) return undefined;
 		const virtualPath = sourceIdentifier(owner.binding.root, owner.resolved);
-		const mirrorPath = minSyncDocumentPath(minSyncWorkspaceRoot(workspaceRoot), virtualPath);
+		const wsRoot = minSyncWorkspaceRoot(workspaceRoot);
+		const mirrorPath = minSyncDocumentPath(wsRoot, virtualPath);
 		if (!isRegularFile(mirrorPath)) return undefined;
+		const candidateVisual = minSyncVisualDocumentPath(wsRoot, virtualPath);
 		return {
 			sourcePath: owner.resolved,
 			virtualPath,
 			mirrorPath,
 			pagesMirrorPath: parsedOutputPath(workspaceRoot, virtualPath),
+			...(isRegularFile(candidateVisual) ? { visualMirrorPath: candidateVisual } : {}),
 			stale: isMirrorStale(owner.resolved, mirrorPath),
 		};
 	};
@@ -322,12 +333,13 @@ export function createParsedMirrorMapper(options: ParsedMirrorMapperOptions): Pa
 		const rel = relative(resolvedFilesRoot, candidate);
 		if (rel === "" || rel.startsWith("..") || isAbsolute(rel)) return undefined;
 		const posixRel = rel.split(sep).join("/");
-		if (!posixRel.endsWith(".md")) return undefined;
-		const withoutMd = posixRel.slice(0, -".md".length);
-		const slash = withoutMd.indexOf("/");
+		const isVisual = posixRel.endsWith(MINSYNC_VISUAL_SUFFIX);
+		if (!isVisual && !posixRel.endsWith(".md")) return undefined;
+		const withoutSuffix = posixRel.slice(0, -(isVisual ? MINSYNC_VISUAL_SUFFIX.length : ".md".length));
+		const slash = withoutSuffix.indexOf("/");
 		if (slash === -1) return undefined;
-		const prefixSegment = withoutMd.slice(0, slash);
-		const rest = withoutMd.slice(slash + 1);
+		const prefixSegment = withoutSuffix.slice(0, slash);
+		const rest = withoutSuffix.slice(slash + 1);
 		const binding = byPrefix.get(prefixSegment);
 		if (binding === undefined || rest.length === 0) return undefined;
 		const sourcePath = resolve(binding.resolvedRoot, ...rest.split("/"));
@@ -335,7 +347,10 @@ export function createParsedMirrorMapper(options: ParsedMirrorMapperOptions): Pa
 		return {
 			sourcePath,
 			virtualPath,
-			pagesMirrorPath: parsedOutputPath(workspaceRoot, virtualPath),
+			pagesMirrorPath: isVisual
+				? parsedVisualOutputPath(workspaceRoot, virtualPath)
+				: parsedOutputPath(workspaceRoot, virtualPath),
+			mirrorKind: isVisual ? "visual" : "text",
 		};
 	};
 

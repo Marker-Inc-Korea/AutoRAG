@@ -16,10 +16,15 @@ export {
 } from "./cloud-fingerprints.ts";
 export type { ParsedMirrorEntry, ParsedMirrorIndex } from "./index-store.ts";
 export { emptyMirrorIndex, loadMirrorIndex } from "./index-store.ts";
+export { pagesSidecarPath, readPagesSidecar, writePagesSidecar } from "./pages-sidecar.ts";
 export {
 	isParsedRefreshComplete,
+	PARSED_VISUAL_PAGES_SUBDIR,
+	PARSED_VISUAL_SUBDIR,
 	parsedMirrorRoot,
 	parsedOutputPath,
+	parsedVisualManifestPath,
+	parsedVisualOutputPath,
 	refreshReadinessPath,
 } from "./paths.ts";
 export type {
@@ -37,3 +42,20 @@ export {
 	MirrorWorkspaceError,
 	syncParsedMirrors,
 } from "./sync.ts";
+export type {
+	VisualMirrorDiagnostic,
+	VisualMirrorFileOutcome,
+	VisualMirrorManifest,
+	VisualMirrorSyncOptions,
+	VisualPageRecord,
+} from "./visual-mirror.ts";
+export {
+	accumulateVisualPages,
+	extractBasePageTexts,
+	isVisualMirrorUpToDate,
+	loadVisualManifest,
+	removeVisualMirror,
+	renderVisualMirrorMarkdown,
+	saveVisualManifest,
+	syncVisualMirrorForFile,
+} from "./visual-mirror.ts";
