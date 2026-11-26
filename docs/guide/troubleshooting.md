@@ -98,7 +98,7 @@ Native stores stay owned by their CLIs — AutoRAG never rebuilds them. Fix a br
 | `retrieval-method-failed` | One method errored during the query | Read `--debug` diagnostics; the message carries the method's own error |
 | `retrieval-source-missing` | Warning: hits whose source file was moved or deleted since the last refresh were skipped; the other hits are returned | Run `autorag refresh` to drop the stale entries |
 | `rerank-disabled` | Warning: `rerank` names no model, so reranking is off and each source contributes its own top 10 | Set `rerank.model` to turn it on, or remove the block; nothing else is wrong |
-| `mass-delete-suppressed` | A refresh would delete too large a share of indexed documents | Investigate the search root, then `autorag refresh --force` if the deletion is intended |
+| `mass-delete-suppressed` | A refresh would delete too large a share of indexed documents | Investigate the search root (a root removed from `searchPaths` counts as deleted). If the deletion is intended, set `refresh.maxDeleteRatio` to `1` for one refresh; `autorag refresh --force` also works but re-parses and re-embeds everything |
 | `walk-truncated` | The directory walk hit its entry/depth cap under a root | Raise `refresh.maxScannedEntries` / `refresh.maxDepth` |
 | `search-root-unavailable` | A search root is missing, unlistable, or empty while it previously held documents; mirrors kept | Restore the root, then `autorag refresh` |
 | `parser-warning` | kordoc parsed a file with a warning; the file is still indexed | Inspect the warning; fix the source if the parse matters |

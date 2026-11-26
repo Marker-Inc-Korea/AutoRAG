@@ -1198,6 +1198,24 @@ describe("syncParsedMirrors deletion-ratio safety valve", () => {
 		expect(diagnosticsWith(result, "mass-delete-suppressed")).toEqual([]);
 	});
 
+	it("prunes a removed search root with maxDeleteRatio 1 without re-parsing the kept root (#2181)", async () => {
+		const removed = join(root, "old");
+		writeFiles(removed, 120);
+		writeFiles(source, 30);
+		await syncParsedMirrors({ root, searchPaths: [source, removed], registry: createDefaultParserRegistry() });
+
+		const suppressed = await sync();
+		expect(suppressed.deleted).toBe(0);
+		expect(diagnosticsWith(suppressed, "mass-delete-suppressed")).toHaveLength(1);
+
+		const pruned = await sync({ maxDeleteRatio: 1 });
+
+		expect(pruned.deleted).toBe(120);
+		expect(pruned.written).toBe(0);
+		expect(diagnosticsWith(pruned, "mass-delete-suppressed")).toEqual([]);
+		expect(Object.keys(loadMirrorIndex(root).entries)).toHaveLength(30);
+	});
+
 	it("never suppresses deletions at or below the 100-file floor", async () => {
 		writeFiles(source, 100);
 		await sync();

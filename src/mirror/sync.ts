@@ -568,7 +568,7 @@ async function syncWithRegistry(
 		diagnostics.push({
 			code: "mass-delete-suppressed",
 			severity: "warning",
-			message: `This refresh would remove ${staleCandidates.size} of ${indexedCount} indexed documents, more than the allowed ${Math.round(maxDeleteRatio * 100)}%; their mirrors were kept. If the sources are really gone, run a forced refresh.`,
+			message: `This refresh would remove ${staleCandidates.size} of ${indexedCount} indexed documents, more than the allowed ${Math.round(maxDeleteRatio * 100)}%; their mirrors were kept. If the sources are really gone, or their search root was removed from the config, set refresh.maxDeleteRatio to 1 for one refresh: it deletes them and re-parses only changed documents. A forced refresh also deletes them, but it re-parses and re-embeds every document.`,
 			source: "parsed-mirror",
 		});
 	const unknown = new Set<string>();
