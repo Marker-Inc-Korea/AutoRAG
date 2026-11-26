@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+	detectMirrorStaleness,
 	loadMirrorIndex,
 	type ParsedMirrorSyncOptions,
 	type ParsedMirrorSyncResult,
@@ -248,6 +249,61 @@ describe("source read failures", () => {
 		const result = await sync();
 		expect(result.diagnostics).toEqual([]);
 		expect(loadMirrorIndex(root).entries["/docs/b.txt"]).toBeDefined();
+	});
+
+	it("classifies a failed-only source-read-failed:EDEADLK record as source-read-failed in detectMirrorStaleness", async () => {
+		writeCorpus();
+		fsMock.readFileHook = (path) => {
+			if (String(path).endsWith("b.txt")) throw errno("EDEADLK");
+		};
+		await sync();
+		const index = loadMirrorIndex(root);
+		expect(index.entries["/docs/b.txt"]).toBeUndefined();
+		expect(index.skipped?.["/docs/b.txt"]).toBeUndefined();
+
+		const stale = await detectMirrorStaleness({
+			root,
+			searchPaths: [source],
+			registry: createDefaultParserRegistry(),
+		});
+
+		expect(stale).toEqual([
+			{
+				code: "stale-index",
+				severity: "warning",
+				source: "/docs/b.txt",
+				reason: "source-read-failed",
+				message:
+					"Source /docs/b.txt failed to read (EDEADLK) during the last refresh; fix file readability before refreshing.",
+			},
+		]);
+	});
+
+	it("classifies a legacy source-read-failed record without errno suffix in detectMirrorStaleness", async () => {
+		writeCorpus();
+		fsMock.readFileHook = (path) => {
+			if (String(path).endsWith("b.txt")) throw new Error("read failed without errno");
+		};
+		await sync();
+		const index = loadMirrorIndex(root);
+		expect(index.entries["/docs/b.txt"]).toBeUndefined();
+		expect(index.skipped?.["/docs/b.txt"]).toBeUndefined();
+
+		const stale = await detectMirrorStaleness({
+			root,
+			searchPaths: [source],
+			registry: createDefaultParserRegistry(),
+		});
+
+		expect(stale).toEqual([
+			{
+				code: "stale-index",
+				severity: "warning",
+				source: "/docs/b.txt",
+				reason: "source-read-failed",
+				message: "Source /docs/b.txt failed to read during the last refresh; fix file readability before refreshing.",
+			},
+		]);
 	});
 });
 

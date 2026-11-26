@@ -303,6 +303,37 @@ describe("syncParsedMirrors", () => {
 		const result = await syncParsedMirrors({ root, searchPaths: [source], registry: createDefaultParserRegistry() });
 		expect(result.diagnostics).toEqual([]);
 	});
+
+	it("excludes Office lock files (~$*) from staleness detection and refresh while processing normal documents", async () => {
+		writeFileSync(join(source, "~$report.docx"), Buffer.from("lock owner metadata"));
+		writeFileSync(join(source, "report.docx"), await createDocxFixture("Quarterly report body"));
+
+		const staleBefore = await detectMirrorStaleness({
+			root,
+			searchPaths: [source],
+			registry: createDefaultParserRegistry(),
+		});
+		expect(staleBefore.map((d) => d.source)).toEqual(["/docs/report.docx"]);
+
+		const result = await syncParsedMirrors({
+			root,
+			searchPaths: [source],
+			registry: createDefaultParserRegistry(),
+		});
+		const index = loadMirrorIndex(root);
+		const outputPath = requireValue(index.entries["/docs/report.docx"]?.outputPath, "report output path");
+
+		expect(result).toMatchObject({ scanned: 1, written: 1, skipped: 0, diagnostics: [] });
+		expect(index.entries["/docs/~$report.docx"]).toBeUndefined();
+		expect(readFileSync(outputPath, "utf8")).toContain("Quarterly report body");
+
+		const staleAfter = await detectMirrorStaleness({
+			root,
+			searchPaths: [source],
+			registry: createDefaultParserRegistry(),
+		});
+		expect(staleAfter).toEqual([]);
+	});
 	it("skips a standalone image below 3 pixels and still indexes a sibling text file", async () => {
 		// PNG signature + IHDR width 2, height 36.
 		writeFileSync(
