@@ -1,6 +1,6 @@
 import { basename } from "node:path";
 import type { ClassifierApi, ClassifierModel, JsonObject } from "@earendil-works/pi-ai";
-import { getEnvApiKey } from "@earendil-works/pi-ai/compat";
+import { findEnvKeys } from "@earendil-works/pi-ai/compat";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import {
 	BIVIA_DEFAULT_MODEL,
@@ -29,23 +29,25 @@ const VISUAL_GATE_MAX_RETRIES = 2;
 /**
  * Vision-capable default decision model per provider. Every entry here accepts image input
  * (`input: ["text", "image"]`) and answers typed yes/no questions over a page image + text state.
+ * Defaults match AutoRAG's unified decision model (`jev`), keeping Jev (`jev-1.13` / `typesafe/jev-1.13`)
+ * as the single default across both search routing and visual-rich page gating.
  */
 export const VISION_DECISION_PROVIDER_DEFAULT_MODELS: Readonly<Record<string, string>> = {
-	[BIVIA_PROVIDER_ID]: BIVIA_DEFAULT_MODEL,
-	openrouter: "typesafe/jev-1.14",
+	openrouter: "typesafe/jev-1.13",
 	openai: "gpt-6-luna",
 	typesafe: "jev-latest",
 	"cloudflare-workers-ai": "@cf/cloudflare/clef-omni",
-	dazzi: "typesafe/jev-1.14",
+	[BIVIA_PROVIDER_ID]: BIVIA_DEFAULT_MODEL,
+	dazzi: "jev-1.13",
 };
 
-/** Provider resolution order when no explicit visual gate backend is named. */
+/** Provider resolution order when no explicit visual gate backend is named (matches DECISION_PROVIDER_ORDER, Jev first). */
 export const VISION_DECISION_PROVIDER_ORDER: readonly string[] = [
-	BIVIA_PROVIDER_ID,
 	"openrouter",
 	"openai",
 	"typesafe",
 	"cloudflare-workers-ai",
+	BIVIA_PROVIDER_ID,
 ];
 
 /** True when a pi-ai classifier model declares image input support. */
@@ -106,7 +108,12 @@ const VISUAL_RICH_CRITERIA = {
 
 function hasProviderKey(provider: string, env: Record<string, string>): boolean {
 	if (provider === BIVIA_PROVIDER_ID) return getBiviaEnvApiKey(env) !== undefined;
-	return getEnvApiKey(provider, env) !== undefined;
+	const keys = findEnvKeys(provider);
+	if (keys === undefined || keys.length === 0) return false;
+	return keys.some((key) => {
+		const value = env[key];
+		return typeof value === "string" && value.length > 0;
+	});
 }
 
 /**

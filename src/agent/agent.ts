@@ -4949,12 +4949,20 @@ export class AutoRAGAgent {
 	 * that is already a duplicate is reported stale until the next refresh excludes it.
 	 */
 	private async scanMirrorStaleness(): Promise<ParsedMirrorSyncResult> {
+		const visualParse = await resolveVisualParseSyncOptions({
+			visualParse: this.visualParseOptions,
+			workspaceRoot: this.workspaceProjectRoot,
+			languages: this.languages,
+			inheritedJev: this.jevOptions,
+			agentDir: this.piAgentDir,
+		}).catch(() => undefined);
 		const diagnostics = await detectMirrorStaleness({
 			...this.refreshLimits,
 			root: this.workspaceProjectRoot,
 			searchPaths: this.searchPaths,
 			minSyncBinaryPath: this.minSyncBinaryPath,
 			parserOptions: this.parserOptions,
+			...(visualParse !== undefined ? { visualParse } : {}),
 			reuseRecordedDuplicateExclusions: true,
 			userExcludedSourcePaths: new Set(this.excludePaths),
 			cloudProbe: this.cloudProbe,

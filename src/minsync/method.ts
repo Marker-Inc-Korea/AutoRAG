@@ -168,10 +168,20 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 		const topK = options.topK ?? this.defaultTopK;
 		const scopedK = options.scope ? Math.min(Math.max(topK * 5, topK + 20), this.scopedTopK) : topK;
 		// The deeper fusion widens whatever the scope already asked for; the cap bounds only the extra depth.
-		const queryK =
+		const baseQueryK =
 			this.recordCut === undefined ? scopedK : this.recordCut.fusedLimit(scopedK, OVERFETCH_ABSOLUTE_CAP);
 		const binaryPath = await this.resolveBinary({ install: false });
 		const byPath = buildMinSyncPathMap(this.root, this.workspacePath, binaryPath);
+		let hasVisualMirrors = false;
+		for (const entry of byPath.values()) {
+			if (entry.mirrorKind === "visual") {
+				hasVisualMirrors = true;
+				break;
+			}
+		}
+		// When supplementary visual mirrors exist, add a small buffer so coalescing same-page text+visual hits
+		// does not reduce topK without distorting document-level recordCut balance.
+		const queryK = hasVisualMirrors ? Math.min(baseQueryK + 8, OVERFETCH_ABSOLUTE_CAP) : baseQueryK;
 		// Queries never install: they use an existing binary or fail loudly.
 		const client = new MinSyncClient({
 			binaryPath,
@@ -246,12 +256,14 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 						: {}),
 				},
 			});
-			// With a record cut the whole in-scope pool is collected, then cut by document below.
-			if (this.recordCut === undefined && results.length >= topK) break;
+			// With a record cut or visual mirrors the whole in-scope pool is collected, then coalesced/cut below.
+			if (!hasVisualMirrors && this.recordCut === undefined && results.length >= topK) break;
 		}
 		if (missingSources.length > 0)
 			options.onSourceMissing?.({ method: this.describe().name, missing: missingSources });
-		return this.recordCut === undefined ? results : this.recordCut.cut(results, topK, (result) => result.source);
+		const merged = hasVisualMirrors ? coalesceCrossMirrorPageHits(results) : results;
+		if (this.recordCut === undefined) return merged.slice(0, topK);
+		return this.recordCut.cut(merged, topK, (result) => result.source);
 	}
 
 	/**
@@ -296,6 +308,67 @@ export class MinSyncHybridMethod extends MinSyncVectorMethod {
 					capabilities: ["semantic", "lexical", "incremental", "parsed-mirrors", "virtual-paths"],
 				};
 	}
+}
+
+/**
+ * Maximum characters merged into one slot when coalescing same-page hits across text and visual mirrors,
+ * keeping each chunk concise while preserving both prose and chart/table extractions on the same page.
+ */
+const MAX_COALESCED_CONTENT_CHARS = 8_000;
+
+/**
+ * Coalesce duplicate hits that land on the exact same `(source, page)` across a document's text mirror
+ * and supplementary visual mirror (or multiple visual sub-chunks of the same page). Without coalescing,
+ * a visually-rich page occupies 2–3 slots in `topK` and crowds out other relevant pages from the same
+ * document. Merging keeps the higher-ranked hit's score and appends the complementary mirror excerpt so
+ * both text and visual evidence travel together in one slot.
+ */
+export function coalesceCrossMirrorPageHits(results: readonly RetrievalResult[]): RetrievalResult[] {
+	const out: RetrievalResult[] = [];
+	const bySinglePage = new Map<string, number>();
+
+	for (const result of results) {
+		const pageStart = typeof result.metadata?.pageStart === "number" ? result.metadata.pageStart : undefined;
+		const pageEnd = typeof result.metadata?.pageEnd === "number" ? result.metadata.pageEnd : undefined;
+		const isVisual = result.metadata?.mirrorKind === "visual";
+		if (pageStart === undefined || pageEnd === undefined || pageStart !== pageEnd) {
+			out.push(result);
+			continue;
+		}
+		const key = `${result.source}\0${pageStart}`;
+		const existingIndex = bySinglePage.get(key);
+		if (existingIndex === undefined) {
+			bySinglePage.set(key, out.length);
+			out.push(result);
+			continue;
+		}
+		const existing = out[existingIndex]!;
+		const existingIsVisual = existing.metadata?.mirrorKind === "visual";
+		// Two ordinary base-text chunks on the same page keep their original behavior (multiple passages per page).
+		if (!isVisual && !existingIsVisual) {
+			out.push(result);
+			continue;
+		}
+		// One is visual (or both are visual sub-chunks on the exact same page): merge into the higher-ranked slot.
+		const label = isVisual ? `[Visual extraction — p.${pageStart}]` : `[Base text — p.${pageStart}]`;
+		const addition = result.content.trim();
+		const combinedContent =
+			existing.content.length < MAX_COALESCED_CONTENT_CHARS &&
+			addition.length > 0 &&
+			!existing.content.includes(addition)
+				? `${existing.content}\n\n${label}\n${addition}`.slice(0, MAX_COALESCED_CONTENT_CHARS)
+				: existing.content;
+		out[existingIndex] = {
+			...existing,
+			content: combinedContent,
+			metadata: {
+				...existing.metadata,
+				...(isVisual || existingIsVisual ? { hasVisualComplement: true } : {}),
+			},
+		};
+	}
+
+	return out;
 }
 
 /**

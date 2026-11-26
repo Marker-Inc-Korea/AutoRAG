@@ -611,6 +611,7 @@ async function syncWithRegistry(
 		if (previous.entries[entry.virtualPath]) deleted += 1;
 		skipped += 1;
 		diagnostics.push({ ...diagnostic, source: entry.virtualPath });
+		removeVisualMirror(options.root, entry.virtualPath);
 		if (reason === "parser-skipped")
 			await session.skip(mirrorStageKey(entry.virtualPath), versions.get(entry.virtualPath)!, reason);
 		else
@@ -1100,8 +1101,13 @@ export async function detectMirrorStaleness(options: ParsedMirrorSyncOptions): P
 		);
 		const diagnostics: ParsedMirrorDiagnostic[] = [];
 		for (const entry of current) {
-			if (omitted.has(entry.virtualPath) || !work.has(mirrorStageKey(entry.virtualPath))) continue;
+			const baseWork = work.has(mirrorStageKey(entry.virtualPath));
 			const prev = previous.entries[entry.virtualPath];
+			const visualPending =
+				options.visualParse !== undefined &&
+				prev !== undefined &&
+				!isVisualMirrorUpToDate(options.root, entry.virtualPath, entry.sourceVersion, options.visualParse);
+			if (omitted.has(entry.virtualPath) || (!baseWork && !visualPending)) continue;
 			const skip = previous.skipped?.[entry.virtualPath];
 			const known =
 				prev ?? (skip?.reason === "user-excluded" || skip?.reason === "source-unreadable" ? undefined : skip);
@@ -1112,17 +1118,19 @@ export async function detectMirrorStaleness(options: ParsedMirrorSyncOptions): P
 					prev.parserVersion !== parser.version ||
 					prev.parserFingerprint !== fingerprint);
 			const reason =
-				known === undefined
-					? "source-added"
-					: parserChanged
-						? "parser-changed"
-						: known.sourceMtimeNs !== entry.mtimeNs && known.sourceSizeBytes !== entry.sizeBytes
-							? "mtime-and-size-changed"
-							: known.sourceMtimeNs !== entry.mtimeNs
-								? "mtime-changed"
-								: known.sourceSizeBytes !== entry.sizeBytes
-									? "size-changed"
-									: "source-or-mirror-changed";
+				!baseWork && visualPending
+					? "visual-parse-pending"
+					: known === undefined
+						? "source-added"
+						: parserChanged
+							? "parser-changed"
+							: known.sourceMtimeNs !== entry.mtimeNs && known.sourceSizeBytes !== entry.sizeBytes
+								? "mtime-and-size-changed"
+								: known.sourceMtimeNs !== entry.mtimeNs
+									? "mtime-changed"
+									: known.sourceSizeBytes !== entry.sizeBytes
+										? "size-changed"
+										: "source-or-mirror-changed";
 			diagnostics.push({
 				code: "stale-index",
 				severity: "warning",

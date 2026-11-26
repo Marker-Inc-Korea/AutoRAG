@@ -188,18 +188,23 @@ describe("visual page decision gate", () => {
 		expect(DazziJevBackend).toBeDefined();
 	});
 
-	it("resolves vision decision backend defaults across bivia, openrouter, openai, typesafe, cloudflare, and dazzi", () => {
+	it("resolves vision decision backend defaults keeping Jev as default while supporting bivia, openrouter, openai, typesafe, cloudflare, and dazzi", () => {
 		expect(DEFAULT_VISUAL_GATE_THRESHOLD).toBe(0.6);
 		expect(VISION_DECISION_PROVIDER_DEFAULT_MODELS[BIVIA_PROVIDER_ID]).toBe(BIVIA_DEFAULT_MODEL);
-		expect(VISION_DECISION_PROVIDER_DEFAULT_MODELS.openrouter).toBe("typesafe/jev-1.14");
-		expect(VISION_DECISION_PROVIDER_DEFAULT_MODELS.dazzi).toBe("typesafe/jev-1.14");
+		expect(VISION_DECISION_PROVIDER_DEFAULT_MODELS.openrouter).toBe("typesafe/jev-1.13");
+		expect(VISION_DECISION_PROVIDER_DEFAULT_MODELS.dazzi).toBe("jev-1.13");
 		expect(isVisionDecisionModel(fakeClassifierModel("bivia", "dec-1", ["text", "image"]))).toBe(true);
 		expect(isVisionDecisionModel(fakeClassifierModel("opencode", "jev-1.13", ["text"]))).toBe(false);
 
-		const resolved = resolveVisualGateBackend({
+		const defaultJev = resolveVisualGateBackend({
+			env: { OPENROUTER_API_KEY: "or-key", BIVIA_API_KEY: "test-bivia-key" },
+		});
+		expect(defaultJev).toEqual({ backend: "openrouter", model: "typesafe/jev-1.13" });
+
+		const biviaOnly = resolveVisualGateBackend({
 			env: { BIVIA_API_KEY: "test-bivia-key" },
 		});
-		expect(resolved).toEqual({ backend: "bivia", model: "dec-1" });
+		expect(biviaOnly).toEqual({ backend: "bivia", model: "dec-1" });
 
 		const inherited = resolveVisualGateBackend({
 			inheritedJev: { backend: "openrouter", model: "typesafe/jev-1.14" },

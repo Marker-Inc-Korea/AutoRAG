@@ -51,11 +51,14 @@ export interface VisualParseExtractorAgentConfig {
 export interface VisualParseAgentOptions {
 	/** Opt-in switch. Absent means enabled when a visualParse block is supplied; `false` disables it. */
 	readonly enabled?: boolean;
+	/** Calibrated P(visually_rich) cutoff for the unified decision model (`jev`). Default 0.6. */
+	readonly threshold?: number;
 	readonly gate?: VisualParseGateAgentConfig | VisualPageGate;
 	readonly extractor?: VisualParseExtractorAgentConfig | VisualPageExtractor;
 	readonly renderer?: PageRenderer;
 	readonly maxPagesPerFile?: number;
 	readonly maxWidthPx?: number;
+	readonly concurrency?: number;
 }
 
 function isVisualPageGate(value: VisualParseGateAgentConfig | VisualPageGate | undefined): value is VisualPageGate {
@@ -174,12 +177,14 @@ export async function resolveVisualParseSyncOptions(input: {
 				}
 			: undefined;
 
+	const threshold =
+		visualParse.threshold ?? (!isVisualPageGate(visualParse.gate) ? visualParse.gate?.threshold : undefined);
 	const gate: VisualPageGate = isVisualPageGate(visualParse.gate)
 		? visualParse.gate
 		: createVisualPageGate({
 				...(visualParse.gate?.backend !== undefined ? { backend: visualParse.gate.backend } : {}),
 				...(visualParse.gate?.model !== undefined ? { model: visualParse.gate.model } : {}),
-				...(visualParse.gate?.threshold !== undefined ? { threshold: visualParse.gate.threshold } : {}),
+				...(threshold !== undefined ? { threshold } : {}),
 				...(inheritedJev !== undefined ? { inheritedJev } : {}),
 				agentDir,
 				...(input.env !== undefined ? { env: input.env } : {}),
@@ -221,5 +226,6 @@ export async function resolveVisualParseSyncOptions(input: {
 		renderer,
 		...(visualParse.maxPagesPerFile !== undefined ? { maxPagesPerFile: visualParse.maxPagesPerFile } : {}),
 		...(visualParse.maxWidthPx !== undefined ? { maxWidthPx: visualParse.maxWidthPx } : {}),
+		...(visualParse.concurrency !== undefined ? { concurrency: visualParse.concurrency } : {}),
 	};
 }

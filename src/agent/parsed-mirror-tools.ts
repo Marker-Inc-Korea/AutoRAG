@@ -221,6 +221,16 @@ export function rewriteMirrorGlob(glob: string): string {
 	return `${negated ? "!" : ""}${body}.md`;
 }
 
+/** Companion glob matching supplementary visual-extraction mirrors (`<original>.autorag-visual.md`). */
+export function rewriteVisualMirrorGlob(glob: string): string {
+	const cleaned = glob.replace(/^(!?)(?:\.\/)+/, "$1");
+	if (cleaned.length === 0) return cleaned;
+	const negated = cleaned.startsWith("!");
+	const body = negated ? cleaned.slice(1) : cleaned;
+	if (body.endsWith("*") || body.endsWith("/")) return cleaned;
+	return `${negated ? "!" : ""}${body}${MINSYNC_VISUAL_SUFFIX}`;
+}
+
 export function createParsedMirrorMapper(options: ParsedMirrorMapperOptions): ParsedMirrorMapper {
 	const workspaceRoot = resolve(options.workspaceRoot);
 	const filesRoot = join(minSyncWorkspaceRoot(workspaceRoot), "files");
@@ -488,11 +498,17 @@ function runJsMirrorGrep(options: {
 
 	const globSpec = options.glob?.trim();
 	const mirrorGlob = globSpec && globSpec.length > 0 ? rewriteMirrorGlob(globSpec) : undefined;
+	const visualMirrorGlob = globSpec && globSpec.length > 0 ? rewriteVisualMirrorGlob(globSpec) : undefined;
 	const globMatcher = mirrorGlob ? compileSimpleGlob(mirrorGlob) : undefined;
+	const visualGlobMatcher =
+		visualMirrorGlob && visualMirrorGlob !== mirrorGlob ? compileSimpleGlob(visualMirrorGlob) : undefined;
 
 	const files: string[] = [];
 	if (options.target.kind === "file") {
 		files.push(options.target.mirrorPath);
+		if (options.target.mapping.visualMirrorPath !== undefined) {
+			files.push(options.target.mapping.visualMirrorPath);
+		}
 	} else {
 		const rootDir = options.target.mirrorPath;
 		const walk = (dir: string): void => {
@@ -511,7 +527,9 @@ function runJsMirrorGrep(options: {
 				} else if (entry.isFile() && entry.name.endsWith(".md")) {
 					if (globMatcher !== undefined) {
 						const relPosix = relative(rootDir, full).split(sep).join("/");
-						if (!globMatcher(relPosix, entry.name)) continue;
+						const matched =
+							globMatcher(relPosix, entry.name) || visualGlobMatcher?.(relPosix, entry.name) === true;
+						if (!matched) continue;
 					}
 					files.push(full);
 				}
@@ -698,10 +716,21 @@ export async function runMirrorGrep(options: RunMirrorGrepOptions): Promise<Mirr
 					if (options.ignoreCase) args.push("--ignore-case");
 					if (options.literal) args.push("--fixed-strings");
 					if (options.glob !== undefined && options.glob.trim() !== "") {
-						args.push("--glob", rewriteMirrorGlob(options.glob.trim()));
+						const trimmedGlob = options.glob.trim();
+						const baseGlob = rewriteMirrorGlob(trimmedGlob);
+						const visualGlob = rewriteVisualMirrorGlob(trimmedGlob);
+						args.push("--glob", baseGlob);
+						if (visualGlob !== baseGlob) args.push("--glob", visualGlob);
 					}
 					if (contextValue > 0) args.push("--context", String(contextValue));
-					args.push("--", options.pattern, isDir ? "." : options.target.mirrorPath);
+					if (isDir) {
+						args.push("--", options.pattern, ".");
+					} else {
+						args.push("--", options.pattern, options.target.mirrorPath);
+						if (options.target.mapping.visualMirrorPath !== undefined) {
+							args.push(options.target.mapping.visualMirrorPath);
+						}
+					}
 
 					const child = spawn(rgPath, args, {
 						cwd: isDir ? options.target.mirrorPath : undefined,
@@ -1181,7 +1210,11 @@ export function createParsedMirrorToolsExtension(options: ParsedMirrorToolsExten
 								...(loc?.section !== undefined ? { section: loc.section } : {}),
 							});
 							const staleNote = mapping.stale ? " — warning: source modified after last refresh" : "";
-							const header = `[${evidenceId !== undefined ? `${evidenceId} | ` : ""}Parsed mirror of ${mapping.sourcePath}${locLabel !== undefined ? ` (${locLabel})` : ""}${staleNote}]`;
+							const visualNote =
+								mapping.visualMirrorPath !== undefined
+									? ` · visual extraction mirror available: ${mapping.visualMirrorPath}`
+									: "";
+							const header = `[${evidenceId !== undefined ? `${evidenceId} | ` : ""}Parsed mirror of ${mapping.sourcePath}${locLabel !== undefined ? ` (${locLabel})` : ""}${staleNote}${visualNote}]`;
 							const combinedText = `${header}\n${textBlock.text}`;
 							return {
 								...mirrorResult,

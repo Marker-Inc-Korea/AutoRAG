@@ -194,12 +194,17 @@ export interface VisualParseExtractorCliConfig {
 export interface VisualParseCliConfig {
 	/** `false` disables visual-rich mirror enrichment; missing means enabled when the block is present. */
 	enabled?: boolean;
+	/** Calibrated P(visually_rich) threshold in (0, 1] for the unified decision model (`jev`). Default 0.6. */
+	threshold?: number;
+	/** Optional gate override (defaults to the single configured `jev` decision model). */
 	gate?: VisualParseGateCliConfig;
 	extractor?: VisualParseExtractorCliConfig;
 	/** Cap on pages inspected per document (default 50). */
 	maxPagesPerFile?: number;
 	/** Maximum width in pixels for rendered pages (default 1024). */
 	maxWidthPx?: number;
+	/** Max concurrent page gate/extraction calls per file (default 4). */
+	concurrency?: number;
 }
 
 /**
@@ -1586,10 +1591,12 @@ export function normalizeRerankConfig(raw: unknown, path: string): RerankConfig 
 
 const VISUAL_PARSE_FIELDS: Readonly<Record<string, true>> = {
 	enabled: true,
+	threshold: true,
 	gate: true,
 	extractor: true,
 	maxPagesPerFile: true,
 	maxWidthPx: true,
+	concurrency: true,
 };
 
 const VISUAL_PARSE_GATE_FIELDS: Readonly<Record<string, true>> = {
@@ -1622,6 +1629,17 @@ export function normalizeVisualParseConfig(raw: unknown, path = "visualParse"): 
 			throw new ConfigError(`${path}.enabled must be a boolean`);
 		}
 		out.enabled = record.enabled;
+	}
+	if (record.threshold !== undefined) {
+		if (
+			typeof record.threshold !== "number" ||
+			!Number.isFinite(record.threshold) ||
+			record.threshold <= 0 ||
+			record.threshold > 1
+		) {
+			throw new ConfigError(`${path}.threshold must be a number in (0, 1]`);
+		}
+		out.threshold = record.threshold;
 	}
 	if (record.gate !== undefined) {
 		if (typeof record.gate !== "object" || record.gate === null || Array.isArray(record.gate)) {
@@ -1695,7 +1713,7 @@ export function normalizeVisualParseConfig(raw: unknown, path = "visualParse"): 
 		}
 		out.extractor = extractor;
 	}
-	for (const field of ["maxPagesPerFile", "maxWidthPx"] as const) {
+	for (const field of ["maxPagesPerFile", "maxWidthPx", "concurrency"] as const) {
 		const value = record[field];
 		if (value === undefined) continue;
 		if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) {
@@ -1760,12 +1778,16 @@ export function buildAgentOptions(config: CliConfig, agentDir?: string): Omit<Au
 				? false
 				: {
 						enabled: config.visualParse.enabled ?? true,
+						...(config.visualParse.threshold !== undefined ? { threshold: config.visualParse.threshold } : {}),
 						...(config.visualParse.gate !== undefined ? { gate: config.visualParse.gate } : {}),
 						...(config.visualParse.extractor !== undefined ? { extractor: config.visualParse.extractor } : {}),
 						...(config.visualParse.maxPagesPerFile !== undefined
 							? { maxPagesPerFile: config.visualParse.maxPagesPerFile }
 							: {}),
 						...(config.visualParse.maxWidthPx !== undefined ? { maxWidthPx: config.visualParse.maxWidthPx } : {}),
+						...(config.visualParse.concurrency !== undefined
+							? { concurrency: config.visualParse.concurrency }
+							: {}),
 					};
 	}
 	if (config.dupey?.enabled === false) {

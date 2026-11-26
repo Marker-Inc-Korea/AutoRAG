@@ -40,10 +40,10 @@ const MAX_CONTEXT_TEXT_CHARS = 3_000;
 
 const VLM_SYSTEM_PROMPT = [
 	"You are a precision document visual parser building a searchable Markdown mirror for a retrieval system.",
-	"Given one rendered document page image, transcribe and structure ALL visual information that plain text extraction misses or distorts:",
+	"Given one rendered document page image, transcribe and structure ALL visual information and its surrounding headings/context so every chart, table, and diagram is self-contained and searchable:",
 	"- Charts, plots, and graphs: title, axis labels, units, legend, every visible series and numeric value (as a Markdown table when tabular), and key annotations.",
-	"- Diagrams, flowcharts, org charts, and architecture figures: every component/node label, hierarchy, connection, and directional relationship.",
-	"- Complex tables (multi-level headers, merged cells, nested grids): accurate Markdown tables preserving headers, units, totals, and footnotes.",
+	"- Diagrams, flowcharts, org charts, infographics, and architecture figures: every component/node label, hierarchy, connection, and directional relationship.",
+	"- Complex tables or calendars (multi-level headers, merged cells, column-aligned grids): accurate Markdown tables preserving column alignment, headers, units, totals, and footnotes.",
 	"- Visual annotations, colored highlights, underlines, or red-marked sections: explicitly note what text or region is highlighted/marked and quote the marked text verbatim.",
 	"- Embedded photos, screenshots, callouts, formulas, or scanned text: verbatim visible text and concrete factual content.",
 	"Rules:",

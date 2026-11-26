@@ -2,10 +2,12 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, w
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createParsedMirrorMapper } from "../../src/agent/parsed-mirror-tools.ts";
+import { createParsedMirrorMapper, runMirrorGrep } from "../../src/agent/parsed-mirror-tools.ts";
+import { coalesceCrossMirrorPageHits } from "../../src/minsync/method.ts";
 import { minSyncDocumentPath, minSyncVisualDocumentPath, minSyncWorkspaceRoot } from "../../src/minsync/paths.ts";
 import { buildMinSyncPathMap, syncMinSyncWorkspace } from "../../src/minsync/workspace.ts";
 import {
+	detectMirrorStaleness,
 	loadMirrorIndex,
 	parsedVisualManifestPath,
 	parsedVisualOutputPath,
@@ -17,6 +19,7 @@ import {
 	loadVisualManifest,
 	type VisualMirrorSyncOptions,
 } from "../../src/mirror/visual-mirror.ts";
+import { ParseError } from "../../src/parser/errors.ts";
 import type { PageRenderer, RenderedPage } from "../../src/parser/page-render.ts";
 import { joinPages } from "../../src/parser/pages.ts";
 import { ParserRegistry } from "../../src/parser/registry.ts";
@@ -306,5 +309,213 @@ describe("visual-rich page gating and multi-mirror incremental sync", () => {
 		expect(combined).toContain("Visual details for page 4");
 		const pages = readPagesSidecar(parsedVisualOutputPath(root, virtualPath), combined);
 		expect(pages?.spans.map((s) => s.page)).toEqual([2, 4]);
+	});
+
+	it("handles simultaneous multi-file add, modify, delete, visual-removal, parse-failure, staleness, and single-file grep across both mirrors", async () => {
+		class FailingOnCorruptParser extends StubPagedPdfParser {
+			override async parse(input: ParseInput): Promise<ParseOutput> {
+				if (Buffer.from(input.bytes).toString("utf8").includes("CORRUPT")) {
+					throw new ParseError(this.name, input.virtualPath, new Error("corrupt pdf"));
+				}
+				return super.parse(input);
+			}
+		}
+
+		// Seed 6 files: a(visual), b(text), c(visual->will delete), d(text->will delete), e(visual->will become text), f(visual->will corrupt)
+		writeFileSync(join(docs, "a.pdf"), "A intro\fA CHART_TOKEN");
+		writeFileSync(join(docs, "b.pdf"), "B plain page 1\fB plain page 2");
+		writeFileSync(join(docs, "c.pdf"), "C CHART_OLD");
+		writeFileSync(join(docs, "d.pdf"), "D plain");
+		writeFileSync(join(docs, "e.pdf"), "E CHART_TEMP");
+		writeFileSync(join(docs, "f.pdf"), "F CHART_VALID_INITIAL");
+
+		const renderer: PageRenderer = {
+			fingerprint: "churn-renderer:v1",
+			supports: (vp) => vp.endsWith(".pdf"),
+			renderPages: async ({ bytes, pageNumbers }) => {
+				const rawPages = Buffer.from(bytes).toString("utf8").split("\f");
+				const wanted = pageNumbers ?? rawPages.map((_, idx) => idx + 1);
+				return wanted.map((p) => fakeRenderedPage(p, rawPages[p - 1] ?? ""));
+			},
+		};
+		const gateJudge = vi.fn(async ({ image }: { readonly image: { readonly data: Uint8Array } }) => {
+			const text = Buffer.from(image.data).toString("utf8");
+			const rich = text.includes("CHART_");
+			return {
+				visuallyRich: rich,
+				probability: rich ? 0.95 : 0.05,
+				model: "typesafe/jev-1.13",
+				backend: "openrouter",
+			};
+		});
+		const extractFn = vi.fn(
+			async ({ page, image }: { readonly page: number; readonly image: { readonly data: Uint8Array } }) => {
+				const text = Buffer.from(image.data).toString("utf8");
+				return {
+					markdown: `Visual extraction p.${page}: ${text.replace(/^PNG:\d+:/u, "")}`,
+					extractorKind: "vlm" as const,
+					extractorModel: "openrouter/google/gemini-3.5-flash-lite",
+				};
+			},
+		);
+
+		const registry = new ParserRegistry([new FailingOnCorruptParser()]);
+		const visualParse: VisualMirrorSyncOptions = {
+			renderer,
+			gate: { fingerprint: "jev-1.13:v1", judge: gateJudge },
+			extractor: { kind: "vlm", modelId: "gemini", fingerprint: "gemini:v1", extract: extractFn },
+			concurrency: 3,
+		};
+		const ws = minSyncWorkspaceRoot(root);
+
+		// 1. Initial sync WITHOUT visualParse, then check staleness WITH visualParse -> must report visual-parse-pending!
+		await syncParsedMirrors({ root, searchPaths: [docs], registry, batchSize: 2 });
+		const staleBefore = await detectMirrorStaleness({ root, searchPaths: [docs], registry, visualParse });
+		expect(staleBefore.length).toBe(6);
+		expect(staleBefore.every((d) => d.reason === "visual-parse-pending")).toBe(true);
+
+		// 2. Sync WITH visualParse and per-batch MinSync staging (batchSize = 2)
+		let batchRuns = 0;
+		await syncParsedMirrors({
+			root,
+			searchPaths: [docs],
+			registry,
+			visualParse,
+			batchSize: 2,
+			onBatch: async () => {
+				batchRuns += 1;
+				syncMinSyncWorkspace(root, { workspacePath: ws });
+				return undefined;
+			},
+		});
+		expect(batchRuns).toBeGreaterThanOrEqual(3);
+		expect(await detectMirrorStaleness({ root, searchPaths: [docs], registry, visualParse })).toEqual([]);
+		expect(existsSync(minSyncVisualDocumentPath(ws, "/docs/a.pdf"))).toBe(true);
+		expect(existsSync(minSyncVisualDocumentPath(ws, "/docs/b.pdf"))).toBe(false);
+		expect(existsSync(minSyncVisualDocumentPath(ws, "/docs/c.pdf"))).toBe(true);
+		expect(existsSync(minSyncVisualDocumentPath(ws, "/docs/e.pdf"))).toBe(true);
+		expect(existsSync(minSyncVisualDocumentPath(ws, "/docs/f.pdf"))).toBe(true);
+
+		// Verify single-file grep AND glob-filtered grep find hits inside BOTH base and visual mirrors!
+		const mapper = createParsedMirrorMapper({ workspaceRoot: root, searchPaths: [docs] });
+		const fileTarget = mapper.toMirrorTarget(join(docs, "a.pdf"));
+		expect(fileTarget?.kind).toBe("file");
+		const singleFileGrep = await runMirrorGrep({
+			mapper,
+			target: fileTarget!,
+			pattern: "Visual extraction p\\.2",
+		});
+		expect(singleFileGrep.matchCount).toBe(1);
+		expect(singleFileGrep.output).toContain("p.2");
+
+		const globGrep = await runMirrorGrep({
+			mapper,
+			target: mapper.toMirrorTarget(docs)!,
+			pattern: "CHART_TOKEN",
+			glob: "*.pdf",
+		});
+		// Matches BOTH base mirror and visual mirror of a.pdf
+		expect(globGrep.matchCount).toBe(2);
+
+		// 3. Simultaneous churn: add g(visual) & h(text), delete c & d, edit a(add p.3 visual keeping p.1/p.2 cached),
+		// edit e(no longer visual), corrupt f(parse failure)
+		await new Promise((r) => setTimeout(r, 25));
+		unlinkSync(join(docs, "c.pdf"));
+		unlinkSync(join(docs, "d.pdf"));
+		writeFileSync(join(docs, "a.pdf"), "A intro\fA CHART_TOKEN\fA CHART_NEW_P3");
+		writeFileSync(join(docs, "e.pdf"), "E plain text now");
+		writeFileSync(join(docs, "f.pdf"), "CORRUPT");
+		writeFileSync(join(docs, "g.pdf"), "G cover\fG CHART_ADDED");
+		writeFileSync(join(docs, "h.pdf"), "H plain added");
+
+		gateJudge.mockClear();
+		extractFn.mockClear();
+		await syncParsedMirrors({
+			root,
+			searchPaths: [docs],
+			registry,
+			visualParse,
+			batchSize: 2,
+			onBatch: async () => {
+				syncMinSyncWorkspace(root, { workspacePath: ws });
+				return undefined;
+			},
+		});
+
+		// Deleted files c & d: both base and visual mirrors + manifests + staged files are gone
+		expect(existsSync(minSyncDocumentPath(ws, "/docs/c.pdf"))).toBe(false);
+		expect(existsSync(minSyncVisualDocumentPath(ws, "/docs/c.pdf"))).toBe(false);
+		expect(existsSync(parsedVisualManifestPath(root, "/docs/c.pdf"))).toBe(false);
+		expect(existsSync(minSyncDocumentPath(ws, "/docs/d.pdf"))).toBe(false);
+
+		// Corrupted file f: stale visual mirror and manifest were removed by skipFile
+		expect(existsSync(parsedVisualOutputPath(root, "/docs/f.pdf"))).toBe(false);
+		expect(existsSync(parsedVisualManifestPath(root, "/docs/f.pdf"))).toBe(false);
+		expect(existsSync(minSyncVisualDocumentPath(ws, "/docs/f.pdf"))).toBe(false);
+
+		// File e became plain text: base mirror remains, visual mirror cleanly removed
+		expect(existsSync(minSyncDocumentPath(ws, "/docs/e.pdf"))).toBe(true);
+		expect(existsSync(minSyncVisualDocumentPath(ws, "/docs/e.pdf"))).toBe(false);
+
+		// File a: pages 1 & 2 reused from cache; page 3 accumulated!
+		const aVisual = readFileSync(minSyncVisualDocumentPath(ws, "/docs/a.pdf"), "utf8");
+		expect(aVisual).toContain("CHART_TOKEN");
+		expect(aVisual).toContain("CHART_NEW_P3");
+		const aPages = readPagesSidecar(parsedVisualOutputPath(root, "/docs/a.pdf"), aVisual);
+		expect(aPages?.spans.map((s) => s.page)).toEqual([2, 3]);
+
+		// Added files g & h: g has BOTH mirrors, h has ONLY base mirror
+		expect(existsSync(minSyncDocumentPath(ws, "/docs/g.pdf"))).toBe(true);
+		expect(existsSync(minSyncVisualDocumentPath(ws, "/docs/g.pdf"))).toBe(true);
+		expect(existsSync(minSyncDocumentPath(ws, "/docs/h.pdf"))).toBe(true);
+		expect(existsSync(minSyncVisualDocumentPath(ws, "/docs/h.pdf"))).toBe(false);
+
+		// Unchanged file b was NOT re-gated during churn!
+		const gatedImages = gateJudge.mock.calls.map(([arg]) => Buffer.from(arg.image.data).toString("utf8"));
+		expect(gatedImages.some((s) => s.includes("B plain"))).toBe(false);
+		// Pages 1 & 2 of a.pdf were NOT re-gated!
+		expect(gatedImages.some((s) => s.includes("A intro"))).toBe(false);
+		expect(gatedImages.some((s) => s.includes("CHART_TOKEN"))).toBe(false);
+		// Only genuinely new/changed pages were gated: a p.3, e p.1, g p.1-2, h p.1 = 5 calls total!
+		expect(gateJudge).toHaveBeenCalledTimes(5);
+	});
+
+	it("coalesces same-page text + visual hits into one slot without crowding out other pages", () => {
+		const coalesced = coalesceCrossMirrorPageHits([
+			{
+				id: "1",
+				source: "/docs/report.pdf",
+				content: "Page 7 prose text",
+				score: 0.95,
+				metadata: { pageStart: 7, pageEnd: 7 },
+			},
+			{
+				id: "2",
+				source: "/docs/report.pdf",
+				content: "Page 7 bar chart: Q4 = 48.2M",
+				score: 0.9,
+				metadata: { pageStart: 7, pageEnd: 7, mirrorKind: "visual" },
+			},
+			{
+				id: "3",
+				source: "/docs/report.pdf",
+				content: "Page 7 chart footnote: USD millions",
+				score: 0.85,
+				metadata: { pageStart: 7, pageEnd: 7, mirrorKind: "visual" },
+			},
+			{
+				id: "4",
+				source: "/docs/report.pdf",
+				content: "Page 12 conclusion",
+				score: 0.7,
+				metadata: { pageStart: 12, pageEnd: 12 },
+			},
+		]);
+		expect(coalesced).toHaveLength(2);
+		expect(coalesced[0]?.content).toContain("Page 7 prose text");
+		expect(coalesced[0]?.content).toContain("Page 7 bar chart: Q4 = 48.2M");
+		expect(coalesced[0]?.content).toContain("Page 7 chart footnote");
+		expect(coalesced[0]?.metadata?.hasVisualComplement).toBe(true);
+		expect(coalesced[1]?.metadata?.pageStart).toBe(12);
 	});
 });

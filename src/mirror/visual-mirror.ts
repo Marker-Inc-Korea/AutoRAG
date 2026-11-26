@@ -17,6 +17,9 @@ import { parsedVisualManifestPath, parsedVisualOutputPath } from "./paths.ts";
 
 const VISUAL_MANIFEST_VERSION = 1;
 
+/** Default parallel workers for per-page visual gating and extraction within one file. */
+export const DEFAULT_VISUAL_PAGE_CONCURRENCY = 4;
+
 /** Per-page cached visual-gating and VLM/OCR extraction record. */
 export interface VisualPageRecord {
 	readonly page: number;
@@ -55,6 +58,8 @@ export interface VisualMirrorSyncOptions {
 	readonly renderer?: PageRenderer;
 	readonly maxPagesPerFile?: number;
 	readonly maxWidthPx?: number;
+	/** Max concurrent page gate/extraction calls per file (default {@link DEFAULT_VISUAL_PAGE_CONCURRENCY}). */
+	readonly concurrency?: number;
 }
 
 export interface VisualMirrorDiagnostic {
@@ -335,8 +340,10 @@ export async function syncVisualMirrorForFile(input: {
 	};
 
 	let hadPageFailure = false;
+	const concurrency = Math.max(1, Math.floor(input.options.concurrency ?? DEFAULT_VISUAL_PAGE_CONCURRENCY));
+	let nextIndex = 0;
 
-	for (const rendered of renderedPages) {
+	const processPage = async (rendered: (typeof renderedPages)[number]): Promise<void> => {
 		if (input.signal?.aborted) throw abortReason(input.signal);
 		const pageKey = String(rendered.page);
 		const extractedText = baseTexts.get(rendered.page) ?? "";
@@ -352,7 +359,7 @@ export async function syncVisualMirrorForFile(input: {
 		if (gateCacheHit && !cached.visuallyRich) {
 			nextPages[pageKey] = cached;
 			pagesReused += 1;
-			continue;
+			return;
 		}
 
 		if (
@@ -363,7 +370,7 @@ export async function syncVisualMirrorForFile(input: {
 		) {
 			nextPages[pageKey] = cached;
 			pagesReused += 1;
-			continue;
+			return;
 		}
 
 		let visuallyRich: boolean;
@@ -393,7 +400,7 @@ export async function syncVisualMirrorForFile(input: {
 					message: `Page ${rendered.page} visual gate failed: ${error instanceof Error ? error.message : String(error)}`,
 				});
 				if (cached !== undefined) nextPages[pageKey] = cached;
-				continue;
+				return;
 			}
 		}
 
@@ -407,7 +414,7 @@ export async function syncVisualMirrorForFile(input: {
 				visuallyRich: false,
 				updatedAt: new Date().toISOString(),
 			};
-			continue;
+			return;
 		}
 
 		try {
@@ -444,7 +451,19 @@ export async function syncVisualMirrorForFile(input: {
 			});
 			if (cached !== undefined) nextPages[pageKey] = cached;
 		}
-	}
+	};
+
+	const workerCount = Math.min(concurrency, renderedPages.length);
+	await Promise.all(
+		Array.from({ length: workerCount }, async () => {
+			while (nextIndex < renderedPages.length) {
+				const currentIndex = nextIndex;
+				nextIndex += 1;
+				const rendered = renderedPages[currentIndex];
+				if (rendered !== undefined) await processPage(rendered);
+			}
+		}),
+	);
 
 	// Keep the final sourceVersion only when every rendered page completed, so a transient page error retries next run
 	// while still reusing every already-succeeded page from the manifest.

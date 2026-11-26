@@ -31,10 +31,11 @@ function baseConfig(visualParse?: CliConfig["visualParse"]): CliConfig {
 }
 
 describe("visualParse CLI config", () => {
-	it("normalizes a full VLM visualParse config", () => {
+	it("normalizes a full VLM visualParse config including top-level threshold and concurrency", () => {
 		const normalized = normalizeVisualParseConfig({
 			enabled: true,
-			gate: { backend: "bivia", model: "dec-1", threshold: 0.65 },
+			threshold: 0.65,
+			concurrency: 6,
 			extractor: {
 				kind: "vlm",
 				model: { provider: "openrouter", id: "google/gemini-3.5-flash-lite", name: "Gemini 3.5 Flash Lite" },
@@ -45,7 +46,8 @@ describe("visualParse CLI config", () => {
 		});
 		expect(normalized).toEqual({
 			enabled: true,
-			gate: { backend: "bivia", model: "dec-1", threshold: 0.65 },
+			threshold: 0.65,
+			concurrency: 6,
 			extractor: {
 				kind: "vlm",
 				model: { provider: "openrouter", id: "google/gemini-3.5-flash-lite", name: "Gemini 3.5 Flash Lite" },
