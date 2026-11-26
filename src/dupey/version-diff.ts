@@ -1,5 +1,7 @@
 import { readFile, stat } from "node:fs/promises";
 import { basename, resolve } from "node:path";
+import type { Api, AssistantMessage, Model } from "@earendil-works/pi-ai";
+import { completeSimple } from "@earendil-works/pi-ai/compat";
 import { createDefaultParserRegistry, type ParserRegistry } from "../parser/index.ts";
 import type { DupeyRelation } from "./cli.ts";
 
@@ -626,4 +628,136 @@ export async function buildVersionHistory(
 	});
 
 	return { versions };
+}
+
+/** Prompt + minimal system instruction in, short plain-text summary out. */
+export type VersionDiffCompleter = (input: {
+	readonly systemPrompt: string;
+	readonly userPrompt: string;
+}) => Promise<string>;
+
+export interface VersionDiffSummaryModel {
+	readonly model: Model<Api>;
+	readonly apiKey?: string;
+}
+
+export interface SummarizeDiffWithLlmInput {
+	readonly previousName: string;
+	readonly currentName: string;
+	readonly addedCount: number;
+	readonly removedCount: number;
+	readonly hunks: readonly VersionDiffHunk[];
+	/** UI language hint (e.g. "ko", "en", "ja", "zh"). Defaults to matching the diff's language. */
+	readonly language?: string;
+	/** Max character budget for diff lines included in the prompt. Defaults to 3500. */
+	readonly maxDiffChars?: number;
+}
+
+const DEFAULT_LLM_DIFF_CHARS = 3_500;
+const MAX_LLM_SUMMARY_CHARS = 240;
+
+const LANGUAGE_LABELS: Readonly<Record<string, string>> = {
+	ko: "Korean",
+	en: "English",
+	ja: "Japanese",
+	zh: "Simplified Chinese",
+};
+
+/** Keep the system prompt ultra-short for fast, low-token sLLM inference. */
+export function buildVersionDiffSystemPrompt(language?: string): string {
+	const lang = language !== undefined ? LANGUAGE_LABELS[language] : undefined;
+	const langRule = lang !== undefined ? ` Reply in ${lang}.` : " Match the document language.";
+	return `Summarize the document diff in 1-2 ultra-short sentences covering key additions and removals. Plain text only, no bullets or preamble.${langRule}`;
+}
+
+/** Format compact diff hunks within a tight character budget for the sLLM. */
+export function formatCompactDiffForLlm(
+	hunks: readonly VersionDiffHunk[],
+	maxChars: number = DEFAULT_LLM_DIFF_CHARS,
+): string {
+	const lines: string[] = [];
+	let used = 0;
+	for (const hunk of hunks) {
+		for (const line of hunk.lines) {
+			if (line.kind === "context") continue;
+			const trimmed = line.text.trim();
+			if (trimmed.length === 0) continue;
+			const prefix = line.kind === "added" ? "+" : "-";
+			const entry = `${prefix} ${trimmed.length > 180 ? `${trimmed.slice(0, 179)}…` : trimmed}`;
+			if (used + entry.length + 1 > maxChars) {
+				if (lines.length === 0) lines.push(entry.slice(0, maxChars));
+				return lines.join("\n");
+			}
+			lines.push(entry);
+			used += entry.length + 1;
+		}
+	}
+	return lines.join("\n");
+}
+
+export function buildVersionDiffUserPrompt(input: SummarizeDiffWithLlmInput): string {
+	const diffBody = formatCompactDiffForLlm(input.hunks, input.maxDiffChars ?? DEFAULT_LLM_DIFF_CHARS);
+	return `${input.previousName} -> ${input.currentName} (+${input.addedCount}/-${input.removedCount})\n${diffBody}`;
+}
+
+/** Clean model output into a tight, single-block 1–2 sentence summary. */
+export function cleanVersionDiffSummary(raw: string): string | null {
+	let text = raw
+		.replace(/```[\s\S]*?```/g, " ")
+		.replace(/^\s*[-*•]\s*/gm, "")
+		.replace(/\s+/g, " ")
+		.trim();
+	if ((text.startsWith('"') && text.endsWith('"')) || (text.startsWith("'") && text.endsWith("'"))) {
+		text = text.slice(1, -1).trim();
+	}
+	if (text.length === 0) return null;
+	if (text.length <= MAX_LLM_SUMMARY_CHARS) return text;
+	return `${text.slice(0, MAX_LLM_SUMMARY_CHARS - 1).trimEnd()}…`;
+}
+
+/**
+ * Summarize a document version diff into 1–2 short sentences using a small chat LLM
+ * (e.g. the query-decomposition sLLM). Returns `null` if there are no diff lines or empty output.
+ */
+export async function summarizeVersionDiffWithLlm(
+	complete: VersionDiffCompleter,
+	input: SummarizeDiffWithLlmInput,
+): Promise<string | null> {
+	const diffBody = formatCompactDiffForLlm(input.hunks, input.maxDiffChars ?? DEFAULT_LLM_DIFF_CHARS);
+	if (diffBody.length === 0) return null;
+	const raw = await complete({
+		systemPrompt: buildVersionDiffSystemPrompt(input.language),
+		userPrompt: `${input.previousName} -> ${input.currentName} (+${input.addedCount}/-${input.removedCount})\n${diffBody}`,
+	});
+	return cleanVersionDiffSummary(raw);
+}
+
+/** Completer over a pi-ai model (reusing the query-decomposition sLLM): minimal thinking, tiny output budget. */
+export function createModelVersionDiffCompleter(
+	target: VersionDiffSummaryModel,
+	signal?: AbortSignal,
+): VersionDiffCompleter {
+	return async ({ systemPrompt, userPrompt }) => {
+		const result: AssistantMessage = await completeSimple(
+			target.model,
+			{
+				systemPrompt,
+				messages: [{ role: "user", content: userPrompt, timestamp: Date.now() }],
+			},
+			{
+				...(target.apiKey !== undefined ? { apiKey: target.apiKey } : {}),
+				...(signal !== undefined ? { signal } : {}),
+				temperature: 0,
+				reasoning: "minimal",
+				maxTokens: 256,
+			},
+		);
+		if (result.stopReason === "error" || result.stopReason === "aborted") {
+			throw new Error(result.errorMessage ?? `version diff summary ${result.stopReason}`);
+		}
+		return result.content
+			.filter((part): part is Extract<(typeof result.content)[number], { type: "text" }> => part.type === "text")
+			.map((part) => part.text)
+			.join("");
+	};
 }

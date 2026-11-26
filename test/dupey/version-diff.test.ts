@@ -3,10 +3,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+	buildVersionDiffSystemPrompt,
+	buildVersionDiffUserPrompt,
 	buildVersionHistory,
+	cleanVersionDiffSummary,
 	compareDocumentVersions,
 	diffTextLines,
+	formatCompactDiffForLlm,
 	summarizeVersionDiff,
+	summarizeVersionDiffWithLlm,
 } from "../../src/dupey/index.ts";
 
 describe("diffTextLines", () => {
@@ -190,5 +195,88 @@ describe("compareDocumentVersions & buildVersionHistory", () => {
 		expect(history.versions[0]?.isLatest).toBe(true);
 		expect(history.versions[0]?.previousPath).toBe(a);
 		expect(history.versions[0]?.diff?.summary.addedHighlights).toEqual(["new"]);
+	});
+});
+
+describe("sLLM version diff summary", () => {
+	it("builds an ultra-short system prompt with optional language hint", () => {
+		const ko = buildVersionDiffSystemPrompt("ko");
+		expect(ko.length).toBeLessThan(200);
+		expect(ko).toContain("Korean");
+
+		const auto = buildVersionDiffSystemPrompt();
+		expect(auto.length).toBeLessThan(200);
+		expect(auto).toContain("document language");
+	});
+
+	it("formats only added/removed non-empty lines within the character budget", () => {
+		const diff = diffTextLines("keep\nold line\nkeep2", "keep\nnew line\nadded line\nkeep2");
+		const compact = formatCompactDiffForLlm(diff.hunks, 200);
+		expect(compact).toContain("- old line");
+		expect(compact).toContain("+ new line");
+		expect(compact).toContain("+ added line");
+		expect(compact).not.toContain("keep");
+	});
+
+	it("cleans markdown bullets, quotes, and trims overlong replies", () => {
+		expect(cleanVersionDiffSummary('  - "예산이 1억에서 1.2억으로 상향됨."  ')).toBe(
+			"예산이 1억에서 1.2억으로 상향됨.",
+		);
+		expect(cleanVersionDiffSummary("   ")).toBeNull();
+		const long = "가".repeat(300);
+		const cleaned = cleanVersionDiffSummary(long);
+		expect(cleaned?.length).toBeLessThanOrEqual(240);
+		expect(cleaned?.endsWith("…")).toBe(true);
+	});
+
+	it("calls the completer with a concise prompt and returns cleaned summary text", async () => {
+		const diff = diffTextLines("Budget: 100M\nStatus: Draft", "Budget: 120M\nStatus: Approved");
+		const calls: Array<{ systemPrompt: string; userPrompt: string }> = [];
+		const result = await summarizeVersionDiffWithLlm(
+			async (input) => {
+				calls.push(input);
+				return "예산을 100M에서 120M으로 상향하고 상태를 승인으로 변경했습니다.";
+			},
+			{
+				previousName: "plan_v1.md",
+				currentName: "plan_v2.md",
+				addedCount: diff.addedCount,
+				removedCount: diff.removedCount,
+				hunks: diff.hunks,
+				language: "ko",
+			},
+		);
+
+		expect(calls).toHaveLength(1);
+		expect(calls[0]?.systemPrompt).toContain("Korean");
+		expect(calls[0]?.userPrompt).toBe(
+			buildVersionDiffUserPrompt({
+				previousName: "plan_v1.md",
+				currentName: "plan_v2.md",
+				addedCount: diff.addedCount,
+				removedCount: diff.removedCount,
+				hunks: diff.hunks,
+			}),
+		);
+		expect(result).toBe("예산을 100M에서 120M으로 상향하고 상태를 승인으로 변경했습니다.");
+	});
+
+	it("skips calling the completer when hunks contain no non-empty changes", async () => {
+		let called = false;
+		const result = await summarizeVersionDiffWithLlm(
+			async () => {
+				called = true;
+				return "should not run";
+			},
+			{
+				previousName: "a.md",
+				currentName: "b.md",
+				addedCount: 0,
+				removedCount: 0,
+				hunks: [],
+			},
+		);
+		expect(called).toBe(false);
+		expect(result).toBeNull();
 	});
 });
