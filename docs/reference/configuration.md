@@ -97,7 +97,7 @@ The decision model is required; an absent section or `{}` uses the default backe
 
 | Field | Type | Default | Meaning |
 |---|---|---|---|
-| `backend` | `string` | `dazzi` \| `openrouter` | `dazzi`, a pi provider with decision models (`openrouter`, `openai`, `typesafe`, `vercel-ai-gateway`, `cloudflare-workers-ai`, `opencode`), or `sllm` |
+| `backend` | `string` | `dazzi` \| `openrouter` | `dazzi`, a pi provider with decision models (`openrouter`, `openai`, `typesafe`, `vercel-ai-gateway`, `cloudflare-workers-ai`, `opencode`, `bivia`), or `sllm` |
 | `model` | `string` | backend default | Decision model id within the backend. Not valid with `backend:"sllm"` |
 | `confidenceThreshold` | number 0–1 | per-source | Escalate verdicts below this confidence |
 | `sllm.model` | `AgentModelConfig` | decomposition model | The small chat LLM used with `backend:"sllm"` or as the fallback |

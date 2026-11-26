@@ -3,11 +3,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ClassifierApi, ClassifierModel } from "@earendil-works/pi-ai";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+	BIVIA_DEFAULT_MODEL,
+	BIVIA_PROVIDER_ID,
 	DECISION_PROVIDER_DEFAULT_MODELS,
 	type DecisionModelRuntime,
 	PiDecisionBackend,
+	registerDecisionProviders,
 } from "../../src/agent/decision-backends.ts";
 import { checkDecisionModel, DecisionModelUnavailableError } from "../../src/agent/decision-model-check.ts";
 import { createJevJudge } from "../../src/agent/jev-extension.ts";
@@ -24,9 +27,11 @@ beforeEach(async () => {
 		modelsPath: join(agentDir, "models.json"),
 		allowModelNetwork: false,
 	});
+	registerDecisionProviders(runtime);
 });
 
 afterEach(async () => {
+	vi.unstubAllEnvs();
 	await server?.close();
 	server = undefined;
 	rmSync(agentDir, { recursive: true, force: true });
@@ -60,6 +65,75 @@ describe("pi's decision-model catalog", () => {
 		expect(ids("openai")).toContain("gpt-6-luna");
 		expect(ids("openrouter")).toContain("openai/gpt-6-luna-decisions");
 		expect(ids("vercel-ai-gateway")).toContain("openai/gpt-6-luna-decisions");
+		expect(ids(BIVIA_PROVIDER_ID)).toContain(BIVIA_DEFAULT_MODEL);
+	});
+});
+
+describe("PiDecisionBackend over System One (Bivia)", () => {
+	it("authenticates with BIVIA_API_KEY and falls back to A8_API_KEY on System One", async () => {
+		server = await startFakeServer(() => ({
+			body: {
+				model: BIVIA_DEFAULT_MODEL,
+				answers: {
+					urgent: { type: "noul", noul: 0.94 },
+					team: {
+						type: "choice",
+						choice: "billing",
+						probabilities: { billing: 0.9, technical: 0.1 },
+						confidence: 0.9,
+					},
+					anger: { type: "score", score: 1.8, probabilities: { 0: 0.05, 1: 0.15, 2: 0.8 }, confidence: 0.8 },
+				},
+				usage: { input_tokens: 24, output_tokens: 0 },
+			},
+		}));
+
+		const withBiviaKey = createJevJudge({
+			backend: new PiDecisionBackend({
+				provider: BIVIA_PROVIDER_ID,
+				runtime: pointedAt(server.url),
+				env: { BIVIA_API_KEY: "bivia-key", A8_API_KEY: "a8-key" },
+			}),
+		});
+		const judgment = await withBiviaKey("Payouts have failed for three days.", [
+			{ id: "urgent", type: "noul", question: "Is this urgent?" },
+			{ id: "team", type: "choice", question: "Which team?", options: ["billing", "technical"] },
+			{ id: "anger", type: "score", question: "How angry?", levels: ["calm", "upset", "furious"] },
+		]);
+
+		expect(server.requests[0]?.url).toBe("/systemone");
+		expect(server.requests[0]?.headers.authorization).toBe("Bearer bivia-key");
+		expect(server.requests[0]?.json).toMatchObject({ model: BIVIA_DEFAULT_MODEL });
+		expect(judgment.backend).toBe(BIVIA_PROVIDER_ID);
+		expect(judgment.model).toBe(BIVIA_DEFAULT_MODEL);
+		expect(judgment.answers.urgent?.answer).toBe(0.94);
+		expect(judgment.answers.team?.answer).toBe("billing");
+		expect(judgment.answers.anger?.answer).toBe(1.8);
+
+		vi.stubEnv("BIVIA_API_KEY", undefined);
+		const withA8Key = createJevJudge({
+			backend: new PiDecisionBackend({
+				provider: BIVIA_PROVIDER_ID,
+				runtime: pointedAt(server.url),
+				env: { A8_API_KEY: "a8-fallback-key" },
+			}),
+		});
+		await withA8Key("Payouts have failed.", [{ id: "urgent", type: "noul", question: "Is this urgent?" }]);
+		expect(server.requests[1]?.headers.authorization).toBe("Bearer a8-fallback-key");
+
+		// Auto-selection picks bivia when only BIVIA_API_KEY (or A8_API_KEY) is present.
+		vi.stubEnv("OPENROUTER_API_KEY", undefined);
+		vi.stubEnv("OPENAI_API_KEY", undefined);
+		vi.stubEnv("TYPESAFE_API_KEY", undefined);
+		vi.stubEnv("AI_GATEWAY_API_KEY", undefined);
+		vi.stubEnv("CLOUDFLARE_API_KEY", undefined);
+		vi.stubEnv("OPENCODE_API_KEY", undefined);
+		vi.stubEnv("A8_API_KEY", undefined);
+		const autoMissing = await unavailable(
+			checkDecisionModel(createJevJudge({ backend: BIVIA_PROVIDER_ID, env: {}, agentDir })),
+		);
+		expect(autoMissing.reason).toBe("missing-credential");
+		expect(autoMissing.message).toMatch(/BIVIA_API_KEY/u);
 	});
 });
 

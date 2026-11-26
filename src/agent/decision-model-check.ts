@@ -44,7 +44,7 @@ export type DecisionModelFailureReason =
 const REMEDIES: Readonly<Record<DecisionModelFailureReason, string>> = {
 	disabled: "Remove `jev: false`; the decision model cannot be turned off.",
 	"missing-credential":
-		"Set the backend's API key (OPENROUTER_API_KEY for openrouter, OPENAI_API_KEY for openai, TYPESAFE_API_KEY for typesafe, AI_GATEWAY_API_KEY for vercel-ai-gateway) or sign in to Dazzi Models with /login, then ask again.",
+		"Set the backend's API key (OPENROUTER_API_KEY for openrouter, OPENAI_API_KEY for openai, TYPESAFE_API_KEY for typesafe, AI_GATEWAY_API_KEY for vercel-ai-gateway, BIVIA_API_KEY or A8_API_KEY for bivia) or sign in to Dazzi Models with /login, then ask again.",
 	unauthorized: "The backend rejected its credential; check or replace the API key, then ask again.",
 	"payment-required": "The backend account has no credit left; top it up or switch `jev.backend`, then ask again.",
 	"model-not-found": "The backend does not serve this model; set `jev.model` to a live decision model id.",

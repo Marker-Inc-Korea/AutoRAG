@@ -114,6 +114,7 @@ describe("models commands", () => {
 					"openrouter/openai/gpt-6-luna-decisions",
 					"openrouter/typesafe/jev-1.13",
 					"vercel-ai-gateway/liquid/d1",
+					"bivia/dec-1",
 					"dazzi/jev-1.13",
 				]),
 			);

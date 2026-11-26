@@ -97,6 +97,7 @@ describe("jev CLI config", () => {
 			"vercel-ai-gateway",
 			"cloudflare-workers-ai",
 			"opencode",
+			"bivia",
 		]) {
 			expect(normalizeJevConfig({ backend })).toEqual({ backend });
 		}

@@ -127,7 +127,7 @@ export interface WebSearchCliConfig {
 export interface JevCliConfig {
 	/**
 	 * `dazzi`, or a pi provider with decision models: `openrouter`, `openai`, `typesafe`,
-	 * `vercel-ai-gateway`, `cloudflare-workers-ai`, or `opencode` (`autorag models list --decision`).
+	 * `vercel-ai-gateway`, `cloudflare-workers-ai`, `opencode`, or `bivia` (`autorag models list --decision`).
 	 * `sllm` decides with the small chat LLM ({@link JevCliConfig.sllm}) and never calls Jev.
 	 */
 	backend?: string;
