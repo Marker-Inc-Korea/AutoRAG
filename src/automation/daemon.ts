@@ -237,6 +237,7 @@ export async function startAutomationDaemon(options: AutomationDaemonOptions = {
 	const startRules = async (automations: readonly Automation[]): Promise<RuleScheduler[]> => {
 		const built: RuleScheduler[] = [];
 		for (const automation of automations) {
+			if (!automation.enabled) continue;
 			built.push(
 				await createRuleScheduler({
 					automation,

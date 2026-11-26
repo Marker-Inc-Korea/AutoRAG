@@ -48,6 +48,9 @@ const manageAutomationsSchema = Type.Object({
 	automation: Type.Optional(
 		Type.Object(
 			{
+				enabled: Type.Optional(
+					Type.Boolean({ description: "Whether the background daemon runs this rule. Default true." }),
+				),
 				paths: Type.Array(Type.String(), {
 					description: "Folders to watch recursively; absolute or ~/ paths.",
 				}),
@@ -147,6 +150,7 @@ function requireId(action: string, id: string | undefined): string {
 
 function describeRule(rule: Automation): string {
 	const parts = [
+		...(rule.enabled ? [] : ["disabled"]),
 		`paths=${rule.paths.join(", ")}`,
 		`events=${rule.events.join(",")}`,
 		`include=${rule.include.join(",")}`,

@@ -32,6 +32,7 @@ describe("parseAutomations", () => {
 		const automation = only({ id: "pdf", paths: ["~/Downloads"], run: ["node", "~/s.ts"] });
 		expect(automation).toEqual({
 			id: "pdf",
+			enabled: true,
 			paths: [join(root, "Downloads")],
 			events: ["create", "update", "delete"],
 			include: ["**"],
@@ -41,6 +42,11 @@ describe("parseAutomations", () => {
 			debounceMs: 1000,
 			timeoutMs: 600_000,
 		});
+	});
+
+	it("parses enabled: false and rejects non-boolean enabled", () => {
+		expect(only({ id: "off", enabled: false, paths: [root], run: ["x"] }).enabled).toBe(false);
+		expect(() => only({ id: "bad", enabled: "no", paths: [root], run: ["x"] })).toThrow(/enabled/);
 	});
 
 	it("rejects relative watch paths", () => {
