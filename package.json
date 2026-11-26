@@ -63,7 +63,7 @@
     "@bubblyworld/xgboost-ts": "1.0.0",
     "@earendil-works/pi-agent-core": "^1.5.2",
     "@earendil-works/pi-ai": "^1.5.2",
-    "@earendil-works/pi-coding-agent": "1.5.2",
+    "@earendil-works/pi-coding-agent": "1.6.0",
     "@earendil-works/pi-tui": "1.5.2",
     "@llblab/pi-telegram": "0.59.1",
     "@modelcontextprotocol/server": "^2.4.0",
