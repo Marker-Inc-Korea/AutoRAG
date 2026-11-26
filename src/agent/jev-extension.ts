@@ -5,7 +5,12 @@ import { Jev, type JevBackend, type Judgment, type Question, type State } from "
 import { type Static, Type } from "typebox";
 import { isDazziSignedIn } from "../cloud/credential.ts";
 import { DazziJevBackend } from "../cloud/jev-backend.ts";
-import { DECISION_PROVIDER_ORDER, PiDecisionBackend } from "./decision-backends.ts";
+import {
+	BIVIA_PROVIDER_ID,
+	DECISION_PROVIDER_ORDER,
+	getBiviaEnvApiKey,
+	PiDecisionBackend,
+} from "./decision-backends.ts";
 import { toToolDefinition } from "./pi-session.ts";
 import { SLLM_BACKEND, SllmDecisionBackend, type SllmDecisionModel } from "./sllm-decision.ts";
 
@@ -15,15 +20,15 @@ export const JEV_TOOL_NAME = "jev";
 /**
  * Options for the decision model. Secrets never appear here: a pi provider's credential comes from
  * its environment variable (`OPENROUTER_API_KEY`, `OPENAI_API_KEY`, `TYPESAFE_API_KEY`,
- * `AI_GATEWAY_API_KEY`, `CLOUDFLARE_API_KEY`, `OPENCODE_API_KEY`) or pi's `auth.json`, and the
- * hosted `dazzi` backend uses the `/login` credential.
+ * `AI_GATEWAY_API_KEY`, `CLOUDFLARE_API_KEY`, `OPENCODE_API_KEY`, `BIVIA_API_KEY` / `A8_API_KEY`)
+ * or pi's `auth.json`, and the hosted `dazzi` backend uses the `/login` credential.
  */
 export interface JevToolOptions {
 	/**
 	 * The decision backend: `dazzi`, or any pi provider whose catalog carries decision models
-	 * (`openrouter`, `openai`, `typesafe`, `vercel-ai-gateway`, `cloudflare-workers-ai`, or `opencode`),
-	 * or `"sllm"` to decide with the small chat LLM in {@link JevToolOptions.sllm} and never
-	 * call Jev.
+	 * (`openrouter`, `openai`, `typesafe`, `vercel-ai-gateway`, `cloudflare-workers-ai`, `opencode`,
+	 * or `bivia`), or `"sllm"` to decide with the small chat LLM in {@link JevToolOptions.sllm} and
+	 * never call Jev.
 	 * Omit to take the Dazzi plan when signed in, else the first of
 	 * {@link DECISION_PROVIDER_ORDER} whose API key is set. A ready-made `jev-use` backend instance is a
 	 * programmatic seam (tests, custom transports); config only accepts names.
@@ -84,10 +89,14 @@ function resolveBackend(options: JevJudgeOptions): JevBackend {
 	const name =
 		backend ??
 		(isDazziSignedIn(agentDir) ? "dazzi" : undefined) ??
-		DECISION_PROVIDER_ORDER.find((provider) => getEnvApiKey(provider, providerEnv) !== undefined);
+		DECISION_PROVIDER_ORDER.find((provider) =>
+			provider === BIVIA_PROVIDER_ID
+				? getBiviaEnvApiKey(providerEnv) !== undefined
+				: getEnvApiKey(provider, providerEnv) !== undefined,
+		);
 	if (name === undefined) {
 		throw new Error(
-			"No Jev credentials found: set OPENROUTER_API_KEY, OPENAI_API_KEY, TYPESAFE_API_KEY, AI_GATEWAY_API_KEY, CLOUDFLARE_API_KEY, or OPENCODE_API_KEY, or sign in to Dazzi Models with /login.",
+			"No Jev credentials found: set OPENROUTER_API_KEY, OPENAI_API_KEY, TYPESAFE_API_KEY, AI_GATEWAY_API_KEY, CLOUDFLARE_API_KEY, OPENCODE_API_KEY, or BIVIA_API_KEY (or A8_API_KEY), or sign in to Dazzi Models with /login.",
 		);
 	}
 	if (name === "dazzi") return new DazziJevBackend({ env, agentDir });

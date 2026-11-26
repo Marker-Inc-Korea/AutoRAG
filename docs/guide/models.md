@@ -96,6 +96,7 @@ The default backend is `dazzi` when signed in to Dazzi Models, otherwise `openro
 | `vercel-ai-gateway` | `typesafe-ai/jev-1.13.0` |
 | `cloudflare-workers-ai` | `typesafe/jev` |
 | `opencode` | `jev-1.13` |
+| `bivia` | `dec-1` |
 
 List the candidates with `autorag models list --decision --available`; never invent a model id. A failing Jev stops `autorag search` with `[decision-model-unavailable]` and a typed `reason`: `missing-credential`, `unauthorized`, `model-not-found`, `payment-required`, `unreachable`, or `rate-limited`.
 

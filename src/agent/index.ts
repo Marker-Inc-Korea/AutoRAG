@@ -28,10 +28,17 @@ export {
 	toDatasourceAgentSkill,
 } from "./datasource-skill.ts";
 export {
+	BIVIA_API_KEY_ENV_VARS,
+	BIVIA_BASE_URL,
+	BIVIA_DEFAULT_MODEL,
+	BIVIA_PROVIDER_ID,
+	biviaProvider,
 	DECISION_PROVIDER_DEFAULT_MODELS,
 	type DecisionModelRuntime,
+	getBiviaEnvApiKey,
 	PiDecisionBackend,
 	type PiDecisionBackendOptions,
+	registerDecisionProviders,
 } from "./decision-backends.ts";
 export {
 	DECISION_MODEL_UNAVAILABLE_CODE,
