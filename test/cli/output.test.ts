@@ -185,6 +185,44 @@ describe("renderRefresh", () => {
 		expect(humanStr).toContain("fsearch: ok=false reason=binary-missing");
 	});
 
+	it("surfaces duplicate-scan-failed warnings in plain and JSON refresh output while keeping ok: true", () => {
+		const result: AutoRAGRefreshResult = {
+			scanned: 4,
+			written: 4,
+			deleted: 0,
+			skipped: 0,
+			indexPath: "/secret/path",
+			diagnostics: [
+				{
+					code: "duplicate-scan-failed",
+					severity: "warning",
+					source: "/root-a",
+					reason: "timeout",
+					message:
+						"Exact-duplicate scan timed out for /root-a; duplicates under this root were indexed: dupey timed out.",
+				},
+			],
+		};
+
+		const parsed = JSON.parse(renderRefresh(result, { json: true }));
+		expect(parsed.ok).toBe(true);
+		expect(parsed.diagnostics).toEqual([
+			{
+				code: "duplicate-scan-failed",
+				severity: "warning",
+				source: "/root-a",
+				reason: "timeout",
+				message:
+					"Exact-duplicate scan timed out for /root-a; duplicates under this root were indexed: dupey timed out.",
+			},
+		]);
+
+		const humanStr = renderRefresh(result, { json: false });
+		expect(humanStr).toContain("refresh: ok");
+		expect(humanStr).toContain("diagnostic: [warning] duplicate-scan-failed:");
+		expect(humanStr).toContain("/root-a");
+	});
+
 	it("reports ok: false when an installed fsearch-cli fails to index", () => {
 		const result: AutoRAGRefreshResult = {
 			scanned: 4,

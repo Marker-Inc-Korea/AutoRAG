@@ -16,11 +16,14 @@ export {
 } from "./cloud-fingerprints.ts";
 export type { ParsedMirrorEntry, ParsedMirrorIndex } from "./index-store.ts";
 export { emptyMirrorIndex, loadMirrorIndex } from "./index-store.ts";
+export type { PersistedDuplicateScanWarning } from "./paths.ts";
 export {
 	isParsedRefreshComplete,
 	parsedMirrorRoot,
 	parsedOutputPath,
+	readPersistedDuplicateScanWarnings,
 	refreshReadinessPath,
+	writeParsedRefreshReadiness,
 } from "./paths.ts";
 export type {
 	ParsedMirrorDiagnostic,
