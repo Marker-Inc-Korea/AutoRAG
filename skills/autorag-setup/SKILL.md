@@ -94,8 +94,8 @@ approval before indexing:
 | Windows | Documents, Downloads, Desktop shell folders | OneDrive document roots, user-named project docs |
 
 Supported parsed formats are `md`, `markdown`, `txt`, `text`, `pdf`, `docx`,
-`pptx`, `xlsx`, `xlsm`, `xlsb`, `xls`, `ods`, `csv`, `tsv`, `hwp`, `hwpx`, and `eml`. OCR for `jpg`, `jpeg`, `png`, `bmp`,
-and `tiff` is optional (`parserOptions.ocr.enabled`). Do not present legacy
+`pptx`, `xlsx`, `xlsm`, `xlsb`, `xls`, `ods`, `csv`, `tsv`, `hwp`, `hwpx`, and `eml`. OCR for `png`, `jpg`, `jpeg`,
+and `webp` is optional (`parserOptions.ocr.enabled`); `bmp` and `tiff` are not parsed. Do not present legacy
 `.doc` as a supported parsed format.
 
 Keep the first-run set small, usually one to three roots. Present a concrete

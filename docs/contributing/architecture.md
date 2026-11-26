@@ -59,7 +59,7 @@ Every area under `src/` owns one concern. The agent loop orchestrates them; they
 | `src/minsync/` | The MinSync retrieval method, binary resolution and the version floor, install, the workspace/staging sync, and embedder configuration |
 | `src/memory/` | Retrieval memory: judged evidence, curated results, similar past questions, long-term insights, and the `check_memory` tool |
 | `src/datasource/` | Datasource skill contracts, scope filtering, diagnostics, the connector/chunk-store framework, crawler and connector skills, and the built-in skills under `src/datasource/skills/` |
-| `src/parser/` | Document parsing (kordoc by default for HWP/PDF/DOCX/XLSX), OCR engine selection, spreadsheets, and the page index |
+| `src/parser/` | Document parsing (kordoc by default for HWP/PDF/DOCX), OCR engine selection, spreadsheets (SheetJS) and CSV/TSV, and the page index |
 | `src/mirror/` | Parsed-mirror sync, page sidecars, path mapping, atomic writes, and cloud fingerprinting |
 | `src/find/` | Query planning and ranking for name/content discovery |
 | `src/cli/` | The `autorag` CLI: argument parsing, config resolution, every `commands/*` implementation, and the TUI entry |
