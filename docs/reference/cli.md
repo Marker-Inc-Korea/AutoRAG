@@ -22,7 +22,7 @@ Every command accepts these flags. They resolve a value in the order **flag → 
 | `--memory-path <file>` | string | `$AUTORAG_HOME/memory.json` | Retrieval-memory file | `AUTORAG_MEMORY_PATH` |
 | `--model-provider <name>` | string | from config | Override the model provider where a model is resolved | `AUTORAG_MODEL_PROVIDER` |
 | `--model-id <id>` | string | from config | Override the model id where a model is resolved | `AUTORAG_MODEL_ID` |
-| `--permission-mode <m>` | `auto` \| `ask` \| `full` | `auto` | Approval gate for file changes by the agent | `AUTORAG_PERMISSION_MODE` |
+| `--permission-mode <m>` | `readonly` \| `full` | `readonly` | Disk permission mode for the agent | `AUTORAG_PERMISSION_MODE` |
 | `-h`, `--help` | boolean | — | Print command-specific usage | — |
 | `-V`, `--version` | boolean | — | Print the package version | — |
 
@@ -156,7 +156,7 @@ Runs the librarian agent loop: retrieval, reading, curation, numbered results. R
 | `--scope <scope>` | string | — | Narrow retrieval to a scope |
 | `--fast-thinking <lvl>` | `off,minimal,low,medium,high,xhigh,max` | minimal | Thinking level for the fast first answer |
 | `--final-thinking <lvl>` | same set | high | Thinking level for the verified answer |
-| `--permission-mode <m>` | `full` \| `auto` \| `ask` | `full` here (no terminal to approve) | Approval gate for file changes; `--permission-mode` and `AUTORAG_PERMISSION_MODE` override the config value |
+| `--permission-mode <m>` | `readonly` \| `full` | `readonly` | Disk permission mode; `--permission-mode` and `AUTORAG_PERMISSION_MODE` override the config value |
 
 Streaming output: tasks print progress lines, then the preliminary answer, then the final answer. Under `--json` each is a separate JSON line: `{"type":"progress","text":...}`, then the preliminary envelope, then the final envelope.
 
@@ -180,13 +180,56 @@ Shows the persisted source and chunk evidence attached to a search session, as r
 
 JSON output serializes `{sessionId, results:[...]}`. MCP clients normally use the `autorag.evidence` tool; this command stays available for terminal maintenance.
 
-## memory inspect
+## memory
 
 ```text
-autorag memory inspect
+autorag memory <inspect|export-ltr> [flags]
 ```
 
-Renders a path-opaque snapshot of judged evidence, curated results, evidence chunks, and insights. Model-free; the storage path is never emitted. Any other subcommand is a usage error (exit `2`).
+| Subcommand | Effect |
+|---|---|
+| `inspect` | Renders a path-opaque snapshot of judged evidence, curated results, evidence chunks, and insights. Model-free; the storage path is never emitted |
+| `export-ltr` | Writes the learning-to-rank log beside the memory file as LightGBM LambdaRank files: `train`/`valid` `.tsv` with `.query` and `.position` sidecars, row ids, and a manifest. Model-free; reads the log only |
+
+| Flag | Type | Default | Meaning |
+|---|---|---|---|
+| `--output <dir>` | path | none | `export-ltr` only; directory to write the dataset into (required) |
+| `--valid-fraction <0..1>` | number | `0.2` | `export-ltr` only; newest share of runs held out for validation |
+
+Any other subcommand is a usage error (exit `2`). See [learning-to-rank.md](../retrieval/learning-to-rank.md).
+
+```bash
+autorag memory export-ltr --output ./ltr --valid-fraction 0.2
+```
+
+## ltr
+
+```text
+autorag ltr <status|list|train|enable|disable|use|auto-train|delete> [flags]
+```
+
+Trains a learning-to-rank model from the search log and, only when enabled, serves it after the reranker. Training runs in process (XGBoost compiled to WebAssembly); nothing else needs installing.
+
+| Subcommand | Effect |
+|---|---|
+| `status` | Logged runs, trained models, and whether serving or retraining is due |
+| `list` | Trained models with their holdout verdict |
+| `train` | Fit a ranker on the log and store it. A model passes only when it beats the reranker's own order on the newest runs it never saw |
+| `enable`, `disable` | Turn serving on or off in the `ltr` block of the active config file |
+| `use <model-id\|latest>` | Serve one model, or the newest passing one |
+| `auto-train <on\|off>` | Retrain in the background once enough new runs are logged |
+| `delete <model-id>` | Remove a stored model |
+
+| Flag | Type | Default | Meaning |
+|---|---|---|---|
+| `--min-new-runs <n>` | integer > 0 | `200` | `auto-train` only; new logged runs between automatic retrains |
+
+Setting subcommands change only the `ltr` block of the active config file. See [learning-to-rank.md](../retrieval/learning-to-rank.md).
+
+```bash
+autorag ltr train
+autorag ltr enable
+```
 
 ## index
 
@@ -364,7 +407,7 @@ Opens Pi's interactive mode over the AutoRAG librarian. Pi owns the terminal UI,
 |---|---|---|---|
 | `--fast-thinking <lvl>` | thinking level | minimal | Thinking level for the fast first answer |
 | `--final-thinking <lvl>` | thinking level | high | Thinking level for the verified answer |
-| `--permission-mode <m>` | `auto` \| `ask` \| `full` | `auto` (or `full` with a bridge) | Approval gate; Shift+Tab or `/permissions` switches it in-session |
+| `--permission-mode <m>` | `readonly` \| `full` | `readonly` | Disk permission mode; Shift+Tab or `/permissions` toggles it in-session |
 | `--telegram` | boolean | off | Load the `@llblab/pi-telegram` bridge so a paired Telegram chat can ask, steer, and read answers |
 | `--whatsapp` | boolean | off | Control the session from WhatsApp (installs `whatsapp-pi`; pair once with `/whatsapp`) |
 | `--whatsapp-group <jid>` | string | — | With `--whatsapp`, answer only this WhatsApp group |
@@ -374,7 +417,7 @@ Typing while a search runs steers it: Enter applies a correction before the next
 
 ```bash
 autorag tui
-autorag tui --telegram --permission-mode ask
+autorag tui --telegram --permission-mode full
 ```
 
 ## models list

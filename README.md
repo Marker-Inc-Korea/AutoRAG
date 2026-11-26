@@ -13,6 +13,7 @@
   <a href="https://github.com/Marker-Inc-Korea/AutoRAG/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/Marker-Inc-Korea/AutoRAG/ci.yml?branch=main&label=CI&style=flat-square" alt="CI Status" /></a>
   <a href="https://autorag-docs.nomadamas.org"><img src="https://img.shields.io/badge/docs-autorag--docs.nomadamas.org-0ea5e9.svg?style=flat-square&logo=readthedocs&logoColor=white" alt="Documentation" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-green.svg?style=flat-square" alt="License: Apache-2.0" /></a>
+  <img src="https://img.shields.io/badge/platforms-macOS%20%7C%20Linux%20%7C%20Windows-0f766e.svg?style=flat-square" alt="Platforms: macOS | Linux | Windows" />
   <img src="https://img.shields.io/badge/node-%3E%3D24.0.0-informational.svg?style=flat-square" alt="Node >= 24" />
   <img src="https://img.shields.io/badge/bun-%3E%3D1.2-black.svg?style=flat-square&logo=bun" alt="Bun >= 1.2" />
 </p>
@@ -169,7 +170,7 @@ Prefer to do it yourself? See [Installation](docs/guide/installation.md) and [Ag
 
 ## One engine, every surface
 
-The app is one way in. The same librarian runs everywhere else:
+The app is one way in. The same librarian runs on **macOS, Linux, and Windows** across every surface:
 
 | Surface | Use it for | Start here |
 |---|---|---|

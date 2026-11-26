@@ -49,7 +49,7 @@ const USER_TOKEN_KEYS: ReadonlySet<string> = new Set([
 
 /** `discrawl --json attachments --all` prints about 1 KB per row; a large archive outgrows the 1 MiB default. */
 const ATTACHMENT_LIST_MAX_BUFFER_BYTES = 256 * 1024 * 1024;
-const SAFE_INHERITED_ENV_KEYS = new Set(["HOME", "LANG", "LC_ALL", "PATH", "TMPDIR", "TMP", "TEMP"]);
+const SAFE_INHERITED_ENV_KEYS = new Set(["HOME", "LANG", "LC_ALL", "PATH", "TMPDIR", "TMP", "TEMP", "INL_CACHE_DIR"]);
 const SAFE_DISCRAWL_ENV_PREFIX = "DISCRAWL_";
 
 type ProcessResult = {

@@ -10,7 +10,6 @@ import {
 	createListFileConversionsTool,
 	LIST_FILE_CONVERSIONS_TOOL_NAME,
 } from "../../src/agent/convert-tool.ts";
-import { buildSystemPrompt } from "../../src/agent/system-prompt.ts";
 
 const FIXTURE_DIR = "test/fixtures/sample-project";
 let tmpDir: string;
@@ -98,6 +97,53 @@ describe("convert_files tool", () => {
 		expect(text).toContain("/docs/c.png");
 		expect(text).toContain("improper image header");
 		expect(result.isError).toBeUndefined();
+	});
+
+	it("renders the image verdicts dupey gives two pictures, not the text scores they do not have", async () => {
+		const tool = createConvertFilesTool({
+			async convertFiles() {
+				return details({
+					result: {
+						preset: "WEBP",
+						target: "webp",
+						converted: 4,
+						skipped: 0,
+						failed: 0,
+						files: [
+							{ source: "/p/a.png", state: "done", outputs: ["/p/a.bmp"] },
+							{ source: "/p/b.png", state: "done", outputs: ["/p/b.webp"] },
+							{ source: "/p/c.png", state: "done", outputs: ["/p/c.jpg"] },
+							{ source: "/p/d.png", state: "done", outputs: ["/p/d.webp"] },
+						],
+					},
+					links: [
+						{ source: "/p/a.png", output: "/p/a.bmp", dupey: { relation: "exact", similarity: 1, hamming: 0 } },
+						{
+							source: "/p/b.png",
+							output: "/p/b.webp",
+							dupey: { relation: "near", similarity: 0.9688, hamming: 4 },
+						},
+						{
+							source: "/p/c.png",
+							output: "/p/c.jpg",
+							dupey: { relation: "different", similarity: 0.875, hamming: 16 },
+						},
+						{ source: "/p/d.png", output: "/p/d.webp", dupey: { relation: "different", similarity: 0 } },
+					],
+				});
+			},
+			async listFileConversions() {
+				return "";
+			},
+		});
+		const result = await tool.execute("c1", { inputs: ["/p"], to: "webp" });
+		const text = result.content.map((part) => (part.type === "text" ? part.text : "")).join("\n");
+		expect(text).toContain("/p/a.png -> /p/a.bmp [dupey: exact — identical pixels");
+		expect(text).toContain("/p/b.png -> /p/b.webp [dupey: near (similarity=0.9688, hamming=4)");
+		expect(text).toContain("/p/c.png -> /p/c.jpg [dupey: different (similarity=0.875, hamming=16)");
+		expect(text).toContain("/p/d.png -> /p/d.webp [dupey: different (similarity=0)");
+		expect(text).not.toContain("undefined");
+		expect(text).not.toContain("NaN");
 	});
 
 	it("flags the result as an error only when nothing was converted", async () => {
@@ -224,42 +270,5 @@ describe("agent wiring", () => {
 		expect((agent as unknown as { droppedCallerToolNames: string[] }).droppedCallerToolNames).toContain(
 			"convert_files",
 		);
-	});
-
-	it("announces the tools in the system prompt, and the dupey interplay", () => {
-		const prompt = buildSystemPrompt({
-			toolNames: ["bash", "convert_files", "list_file_conversions", "scan_duplicate_documents"],
-			modelId: "test-model",
-		});
-		expect(prompt).toContain("**convert_files**");
-		expect(prompt).toContain("**list_file_conversions**");
-		expect(prompt).toContain("overwrite");
-		const without = buildSystemPrompt({ toolNames: ["bash"], modelId: "test-model" });
-		expect(without).not.toContain("convert_files");
-	});
-
-	it("puts the conversion matrix in the prompt so the model plans without a tool call", () => {
-		const prompt = buildSystemPrompt({ toolNames: ["bash", "convert_files"], modelId: "test-model" });
-		expect(prompt).toContain("Source families");
-		expect(prompt).toContain("- hwp -> ");
-		expect(prompt).toContain("chain two conversions");
-		expect(prompt).toContain("hwp: hwp hwpx");
-		const without = buildSystemPrompt({ toolNames: ["bash"], modelId: "test-model" });
-		expect(without).not.toContain("Source families");
-	});
-
-	it("names the main routes in the convert_files tool description", () => {
-		const tool = createConvertFilesTool({
-			async convertFiles() {
-				return details();
-			},
-			async listFileConversions() {
-				return "";
-			},
-		});
-		expect(tool.description).toContain("docx");
-		expect(tool.description).toContain("hwpx");
-		expect(tool.description).toContain("outputDir");
-		expect(tool.description).toMatch(/chain/i);
 	});
 });

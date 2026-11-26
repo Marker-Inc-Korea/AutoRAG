@@ -5,7 +5,7 @@ description: "Install the AutoRAG CLI, meet its prerequisites, verify the setup 
 
 # Installation
 
-AutoRAG Agent ships as the npm package `@autorag/librarian`, which installs two executables: `autorag` (the CLI) and `autorag-mcp` (the model-free MCP server). This page covers prerequisites, installation, verification, platform notes, and updates.
+AutoRAG Agent ships as the npm package `@autorag/librarian` for **macOS, Linux, and Windows**, installing two executables: `autorag` (the CLI) and `autorag-mcp` (the model-free MCP server). This page covers prerequisites, installation, verification, platform notes, and updates.
 
 The fastest path is to hand a prompt to your coding agent: see [Agent skills](../agents/skills.md) for the `autorag-setup` and `autorag-lite-setup` skills, which install, configure, and verify AutoRAG for you.
 
@@ -13,6 +13,7 @@ The fastest path is to hand a prompt to your coding agent: see [Agent skills](..
 
 | Requirement | Version | Notes |
 |---|---|---|
+| Operating system | macOS, Linux, Windows | Official support across the CLI, TUI, MCP server, and agent integrations. |
 | Node.js | `>=24.0.0` | The package's `engines` field requires Node 24. |
 | Bun | `>=1.2` | Optional; Bun can install and run the CLI instead of Node. |
 | Rust toolchain | optional | Only needed to auto-install Jikji from crates.io; without it, `jikji-unavailable` and Jikji discovery is skipped. |
@@ -53,7 +54,7 @@ autorag --help          # prints the command list, exit 0
 autorag setup           # probes runtime and datasources, exit 0 when everything is ready
 ```
 
-`autorag setup` probes MinSync, the embedding backend (a configured remote endpoint, a running `minsync serve` daemon, or MinSync's in-process engine), and every known datasource. When no config exists yet it writes a default one first, using `--search-paths` and `--workspace`. It exits 0 when every probe is ready and 1 when something is blocked. Add `--format json` for machine-readable output.
+`autorag setup` probes MinSync, the embedding backend (a configured remote endpoint, a running `inl serve` daemon, or MinSync's in-process engine), and every known datasource. When no config exists yet it writes a default one first, using `--search-paths` and `--workspace`. It exits 0 when every probe is ready and 1 when something is blocked. Add `--format json` for machine-readable output.
 
 ```text
 setup: semantic
@@ -62,11 +63,11 @@ embedding: daemon (minsync/Qwen/Qwen3-Embedding-0.6B, 1024d)
   rss: skipped (not configured)
 ```
 
-**Note:** `autorag setup` only probes; it never starts the embedding daemon. Semantic search needs a running `minsync serve` daemon or a configured remote `minSync.embedder`. The write-side setup (indexing, model configuration) is covered in [Quickstart](quickstart.md).
+**Note:** `autorag setup` only probes; it never starts the embedding daemon. Semantic search needs a running `inl serve` daemon or a configured remote `minSync.embedder`. The write-side setup (indexing, model configuration) is covered in [Quickstart](quickstart.md).
 
 ## Platform notes
 
-**MinSync (all platforms).** MinSync is required and auto-installs into `<workspace>/.autorag/bin`, from crates.io (`cargo install minsync`) or, when cargo is unavailable, a verified GitHub release asset. Its model cache lives at `~/.cache/minsync/models`. There is no supported way to disable MinSync.
+**MinSync (all platforms).** MinSync is required and auto-installs into `<workspace>/.autorag/bin`, from crates.io (`cargo install minsync`) or, when cargo is unavailable, a verified GitHub release asset. It shares im-not-llm's model cache at `~/.cache/im-not-llm/models`. There is no supported way to disable MinSync.
 
 **Jikji (all platforms, optional).** AutoRAG auto-installs the pinned `jikji-cli` through cargo when a Rust toolchain exists. A `jikji` on `PATH` older than the pinned version is skipped and replaced by the cached build on the next refresh.
 

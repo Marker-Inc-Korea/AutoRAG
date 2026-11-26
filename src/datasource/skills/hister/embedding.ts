@@ -2,7 +2,7 @@
  * Sharing AutoRAG's embedding backend with Hister.
  *
  * Hister keeps its own vector store and embeds with whatever `semantic_search` in its config.yml names, so the
- * only way the two can use one model is to copy the shared endpoint (the `minsync serve` daemon by default) into
+ * only way the two can use one model is to copy the shared endpoint (the `inl serve` daemon by default) into
  * that block. Mismatched models are not an error anywhere: the vectors simply do not line up and results degrade
  * silently. This module derives the block from {@link ResolvedEmbeddingEndpoint}, reads what Hister currently has,
  * and rewrites only the six keys involved. Hister itself is never modified; its config.yml is its documented
@@ -78,7 +78,7 @@ export function deriveHisterSemanticSettings(endpoint: ResolvedEmbeddingEndpoint
 		return {
 			ok: false,
 			reason:
-				"the shared embedding backend is a remote endpoint: browsing text would leave this machine, and Hister's config would have to hold the API key. Run `minsync serve` to share a local model",
+				"the shared embedding backend is a remote endpoint: browsing text would leave this machine, and Hister's config would have to hold the API key. Run `inl serve` to share a local model",
 		};
 	}
 	const root = endpoint.baseUrl.replace(/\/+$/u, "").replace(/\/v1$/u, "");

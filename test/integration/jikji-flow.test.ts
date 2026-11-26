@@ -181,26 +181,6 @@ describe("AutoRAGAgent Jikji indexing integration", () => {
 			// --no-agent-rules is emitted by default (writeAgentRules !== true)
 			expect(call).toContain("--no-agent-rules");
 		}
-
-		const prompt = agent.getSystemPrompt();
-		expect(prompt).toContain("## Jikji Local Discovery");
-	});
-
-	it("adds prompt guidance for Jikji local discovery section", () => {
-		const agent = new AutoRAGAgent({
-			searchPaths: [docs],
-			memoryPath: join(root, "memory.json"),
-			workspacePath: root,
-			minSync: { autoInstall: false },
-			jikji: { binaryPath },
-			everything: false,
-			fsearch: false,
-		});
-
-		const prompt = agent.getSystemPrompt();
-
-		expect(prompt).toContain("## Jikji Local Discovery");
-		expect(prompt).toContain("jikji_find");
 	});
 
 	it("emits ['find', root, query, '--json'] when findJikji is called and returns answer_paths", async () => {

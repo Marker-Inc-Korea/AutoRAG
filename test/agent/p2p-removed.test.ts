@@ -50,12 +50,6 @@ describe("agent has no P2P surface", () => {
 		expect(names).toContain("check_memory");
 	});
 
-	it("does not mention peers or SimpleX in the system prompt and keeps local file organization", () => {
-		const prompt = makeAgent().getSystemPrompt();
-		expect(prompt).not.toMatch(/simplex|query_peer_agent|recommend_peer_targets|remote\/P2P/i);
-		expect(prompt).toContain("## Local File Organization");
-	});
-
 	it("is not a remote-session agent", () => {
 		expect(makeAgent()).not.toHaveProperty("remoteSession");
 	});

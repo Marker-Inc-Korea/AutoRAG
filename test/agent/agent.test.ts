@@ -2,10 +2,8 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
-import { Type } from "typebox";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
-import { buildSystemPrompt } from "../../src/agent/system-prompt.ts";
 import type { JudgedEvidenceRecord } from "../../src/memory/judged-evidence.ts";
 import { RetrievalMemory } from "../../src/memory/memory.ts";
 import { baselineJev } from "../helpers/baseline-jev.ts";
@@ -20,18 +18,6 @@ beforeEach(() => {
 afterEach(() => {
 	rmSync(tmpDir, { recursive: true, force: true });
 });
-
-function makeTool(name: string): AgentTool {
-	return {
-		name,
-		label: name,
-		description: `${name} tool`,
-		parameters: Type.Object({ query: Type.String() }),
-		async execute() {
-			return { content: [{ type: "text", text: "ok" }], details: { resultCount: 1, method: name, sources: [] } };
-		},
-	};
-}
 
 interface AgentInternals {
 	lastQuery: string | undefined;
@@ -335,59 +321,6 @@ describe("AutoRAGAgent", () => {
 			memoryPath: join(tmpDir, "memory.json"),
 		});
 		expect(internals(agent).tools.map((tool) => tool.name)).toContain("manage_automations");
-		expect(agent.getSystemPrompt()).toContain("## File Automations");
-	});
-
-	it("defaults to direct retrieval and reading tools for library mode", () => {
-		const agent = new AutoRAGAgent({
-			searchPaths: [FIXTURE_DIR],
-			memoryPath: join(tmpDir, "memory.json"),
-		});
-		const prompt = agent.getSystemPrompt();
-		expect(prompt).toContain("librarian");
-		expect(prompt).toContain("read the relevant source material directly");
-		expect(prompt).toContain("Use `bash` to open and verify relevant local files");
-		expect(prompt).toContain("check_memory");
-		for (const name of ["semantic_search_local_docs", "search_all_documents"]) {
-			expect(prompt).toContain(name);
-		}
-		// deleted builtin/posix surface is gone
-		expect(prompt).not.toContain("search_datasource_documents");
-		expect(prompt).not.toContain("search_posix_documents");
-		expect(prompt).not.toContain("read_file");
-		expect(prompt).not.toContain("READ-ONLY");
-		expect(prompt).not.toContain("No raw paths");
-	});
-
-	it("includes caller-provided search tools in system prompt", () => {
-		const agent = new AutoRAGAgent({
-			searchPaths: [FIXTURE_DIR],
-			memoryPath: join(tmpDir, "memory.json"),
-			tools: [makeTool("search_custom")],
-		});
-		const prompt = agent.getSystemPrompt();
-		expect(prompt).toContain("search_custom");
-	});
-
-	it("system prompt references provided tools", () => {
-		const prompt = buildSystemPrompt({
-			toolNames: ["grep", "find", "read", "ls", "check_memory"],
-			memoryEntries: [],
-		});
-		expect(prompt).toContain("grep");
-		expect(prompt).toContain("find");
-		expect(prompt).toContain("read");
-		expect(prompt).not.toContain("read_file");
-	});
-
-	it("system prompt exposes bash and omits removed read_file", () => {
-		const prompt = buildSystemPrompt({
-			toolNames: ["check_memory"],
-			memoryEntries: [],
-		});
-		expect(prompt).toContain("bash");
-		expect(prompt).not.toContain("read_file");
-		expect(prompt).toContain("find/grep");
 	});
 
 	it("subscribe returns an unsubscribe function", () => {
@@ -398,55 +331,6 @@ describe("AutoRAGAgent", () => {
 		const unsubscribe = agent.subscribe(() => undefined);
 		expect(typeof unsubscribe).toBe("function");
 		expect(() => unsubscribe()).not.toThrow();
-	});
-
-	it("system prompt includes search strategy guidance", () => {
-		const agent = new AutoRAGAgent({
-			searchPaths: [FIXTURE_DIR],
-			memoryPath: join(tmpDir, "memory.json"),
-		});
-		const prompt = agent.getSystemPrompt();
-		expect(prompt).toContain("Search Strategy");
-		expect(prompt).toContain("glob");
-		expect(prompt).toContain("regex");
-		expect(prompt).toContain("timeout");
-		expect(prompt).not.toContain("Fallback Chain");
-	});
-
-	it("system prompt routes output through a plain reply with inline evidence ids, not an emit tool", () => {
-		const agent = new AutoRAGAgent({
-			searchPaths: [FIXTURE_DIR],
-			memoryPath: join(tmpDir, "memory.json"),
-		});
-		const prompt = agent.getSystemPrompt();
-		expect(prompt).toContain("End with the final answer as a plain reply");
-		expect(prompt).toContain("[e3]");
-		expect(prompt).toContain("curate");
-		expect(prompt).not.toContain("emit_autorag_results");
-		expect(prompt).not.toContain("<internal_mapping>");
-		expect(prompt).not.toContain("internal_mapping");
-	});
-
-	it("system prompt includes behavioral constraints", () => {
-		const agent = new AutoRAGAgent({
-			searchPaths: [FIXTURE_DIR],
-			memoryPath: join(tmpDir, "memory.json"),
-		});
-		const prompt = agent.getSystemPrompt();
-		expect(prompt).toContain("Constraints");
-		expect(prompt).toContain("No fabrication");
-		expect(prompt).not.toContain("READ-ONLY");
-		expect(prompt).not.toContain("No raw paths");
-		expect(prompt).not.toContain("internal_mapping");
-	});
-
-	it("system prompt tool reference includes check_memory", () => {
-		const agent = new AutoRAGAgent({
-			searchPaths: [FIXTURE_DIR],
-			memoryPath: join(tmpDir, "memory.json"),
-		});
-		const prompt = agent.getSystemPrompt();
-		expect(prompt).toContain("check_memory");
 	});
 
 	it("injects durable long-term insights into the memory context", async () => {

@@ -439,27 +439,7 @@ describe("two-phase progressive answers (minimal-thinking fast → high-thinking
 		).toContain("e99");
 	});
 
-	it("asks for a delta-only final answer when the fast answer was already delivered", () => {
-		const model = fauxModel(true, fauxAssistantMessage("noop", { stopReason: "stop" }));
-		const agent = new AutoRAGAgent(agentOptions(model));
-
-		const delta = agent.buildRefinementPrompt(
-			"what approval do refund exceptions need?",
-			{},
-			"Fast: refund exceptions need director approval before payout [e1].",
-			true,
-		);
-		// The model must be able to see the exact first answer it is diffing against.
-		expect(delta).toContain("Fast: refund exceptions need director approval before payout [e1].");
-		expect(delta).toMatch(/MUST contain only/i);
-		expect(delta).toMatch(/never restate/i);
-
-		const complete = agent.buildRefinementPrompt("what approval do refund exceptions need?", {}, undefined, false);
-		expect(complete).toContain("the fast phase produced no answer");
-		expect(complete).not.toMatch(/MUST contain only/i);
-	});
-
-	it("walks the verification phase through the already-delivered fast answer as a delta task", async () => {
+	it("walks the verification phase through the already-delivered fast answer as a list of claims to correct", async () => {
 		const prompts: string[] = [];
 		const model = fauxModel(
 			true,
@@ -471,8 +451,8 @@ describe("two-phase progressive answers (minimal-thinking fast → high-thinking
 		const events = await collectEvents(agent, "what approval do refund exceptions need?");
 
 		const finalPrompt = prompts.at(-1) ?? "";
-		expect(finalPrompt).toContain("Fast answer: refund exceptions require director approval before payout.");
-		expect(finalPrompt).toMatch(/MUST contain only/i);
+		expect(finalPrompt).toContain("c1: Fast answer: refund exceptions require director approval before payout.");
+		expect(finalPrompt).toContain("revise_answer");
 		const complete = events.find((event) => event.type === "complete");
 		expect(complete?.type === "complete" && complete.response.answer).toContain("Correction:");
 	});
@@ -532,7 +512,7 @@ describe("two-phase progressive answers (minimal-thinking fast → high-thinking
 		const response = await agent.searchDocuments("what approval do refund exceptions need?");
 
 		const finalPrompt = prompts.at(-1) ?? "";
-		expect(finalPrompt).not.toMatch(/MUST contain only/i);
+		expect(finalPrompt).not.toContain("revise_answer");
 		expect(response.answer).toContain("Complete verified answer");
 	});
 });

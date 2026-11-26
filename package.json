@@ -1,6 +1,6 @@
 {
   "name": "@autorag/librarian",
-  "version": "2.13.13",
+  "version": "2.16.0",
   "description": "Personal librarian agent for office work on the Pi framework, with pluggable retrieval methods",
   "license": "Apache-2.0",
   "repository": {
@@ -54,17 +54,23 @@
   "engines": {
     "node": ">=24.0.0"
   },
+  "os": [
+    "darwin",
+    "linux",
+    "win32"
+  ],
   "dependencies": {
-    "@earendil-works/pi-agent-core": "^1.4.0",
-    "@earendil-works/pi-ai": "^1.4.0",
-    "@earendil-works/pi-coding-agent": "1.4.0",
-    "@earendil-works/pi-tui": "1.4.0",
-    "@llblab/pi-telegram": "0.58.3",
+    "@bubblyworld/xgboost-ts": "1.0.0",
+    "@earendil-works/pi-agent-core": "^1.5.2",
+    "@earendil-works/pi-ai": "^1.5.2",
+    "@earendil-works/pi-coding-agent": "1.5.2",
+    "@earendil-works/pi-tui": "1.5.2",
+    "@llblab/pi-telegram": "0.59.1",
     "@modelcontextprotocol/server": "^2.4.0",
     "@parcel/watcher": "2.6.0",
     "chardet": "^2.2.0",
     "discord.js": "14.27.0",
-    "fast-xml-parser": "^5.11.2",
+    "fast-xml-parser": "^5.12.1",
     "gpt-tokenizer": "^4.1.0",
     "iconv-lite": "^0.7.3",
     "jev-use": "^0.8.0",
@@ -82,12 +88,20 @@
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.6.4",
+    "@biomejs/biome": "2.6.8",
     "@modelcontextprotocol/client": "^2.4.0",
     "@types/node": "^26.6.6",
     "@types/ws": "^8.18.2",
     "typescript": "^7.0.2",
     "vitest": "^5.0.5",
     "yaml": "^2.9.1"
+  },
+  "overrides": {
+    "discord.js": {
+      "undici": "^6.29.1"
+    },
+    "@discordjs/rest": {
+      "undici": "^6.29.1"
+    }
   }
 }

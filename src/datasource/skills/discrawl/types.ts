@@ -101,7 +101,7 @@ export interface DiscrawlOptions {
 	readonly embeddingProvider?: string;
 	/**
 	 * Where discrawl should embed, written into a managed workspace config. A function is evaluated on each
-	 * `prepareEmbeddings`, because the endpoint of a `minsync serve` daemon exists only while it runs.
+	 * `prepareEmbeddings`, because the endpoint of an `inl serve` daemon exists only while it runs.
 	 */
 	readonly embeddingRuntime?: DiscrawlEmbeddingRuntime | (() => Promise<DiscrawlEmbeddingRuntime | undefined>);
 	/**

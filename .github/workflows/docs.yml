@@ -72,7 +72,7 @@ jobs:
           node scripts/docs/legacy-redirects.mjs legacy/docs/build/html docs/.vitepress/dist
           touch docs/.vitepress/dist/.nojekyll
 
-      - uses: actions/upload-pages-artifact@v4
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: docs/.vitepress/dist
 
@@ -91,4 +91,4 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5

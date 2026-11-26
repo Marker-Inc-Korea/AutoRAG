@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Set up Hermes cron jobs that keep the AutoRAG index fresh and watch for duplicate files. Standard library only
-(Python 3.9+, macOS and Linux).
+(Python 3.9+, macOS, Linux, and Windows).
 
 Both jobs are Hermes *no-agent* cron jobs: the script is the job, no model runs, and a script that prints nothing
 delivers nothing. This helper writes the script under `$HERMES_HOME/scripts/` and creates or updates the cron job
@@ -34,7 +34,8 @@ MAX_LISTED = 10
 INDEX_TIMEOUT_S = 3300  # under Hermes' default 1 h script timeout, so the job reports its own timeout
 SCAN_TIMEOUT_S = 1800
 # Environment a cron script gets from the job; only what AutoRAG needs, never the gateway's provider keys.
-KEEP_ENV = ("PATH", "HOME", "LANG", "LC_ALL", "TMPDIR", "AUTORAG_HOME", "AUTORAG_CONFIG", "AUTORAG_WORKSPACE",
+KEEP_ENV = ("PATH", "PATHEXT", "HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "SystemRoot", "COMSPEC",
+            "LANG", "LC_ALL", "TMPDIR", "TEMP", "TMP", "AUTORAG_HOME", "AUTORAG_CONFIG", "AUTORAG_WORKSPACE",
             "AUTORAG_SEARCH_PATHS")
 
 
@@ -317,7 +318,8 @@ def _write_script(home: Path, kind: str, ident: str, body: str) -> Path:
     path = script_path(home, kind, ident)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(body, encoding="utf-8")
-    path.chmod(0o755)
+    if os.name != "nt":
+        path.chmod(0o755)
     return path
 
 

@@ -1,58 +1,43 @@
-import { statSync } from "node:fs";
-import { isAbsolute, relative, sep } from "node:path";
-import type { ExtensionAPI, ExtensionContext, ExtensionFactory, SessionEntry } from "@earendil-works/pi-coding-agent";
-import { matchesKey } from "@earendil-works/pi-tui";
-import type { JevJudge } from "./jev-extension.ts";
+import { isAbsolute, relative, resolve, sep } from "node:path";
 import {
-	type Approval,
-	classifyCall,
-	DEFAULT_MAX_STATE_CHARS,
-	type FlaggedKind,
-	isGatedCall,
-	type PermissionKind,
-	successfulCalls,
-	summarizeCall,
-} from "./permission-judgment.ts";
-import { type ProposedCall, pathsNamedBy, resolveToolPath } from "./permission-paths.ts";
-import { cutMiddle, type UserRequestLog } from "./user-requests.ts";
-
-export {
-	AUTO_APPROVE_MIN_CONFIDENCE,
-	DEFAULT_MAX_STATE_CHARS,
-	PERMISSION_GATE_QUESTION_ID,
-} from "./permission-judgment.ts";
+	type BashOperations,
+	createBashToolDefinition,
+	createLocalBashOperations,
+	createLocalPowerShellOperations,
+	createPowerShellToolDefinition,
+	type ExtensionAPI,
+	type ExtensionContext,
+	type ExtensionFactory,
+} from "@earendil-works/pi-coding-agent";
+import { matchesKey } from "@earendil-works/pi-tui";
+import { createReadOnlySandbox, type ReadOnlySandbox, type ReadOnlySandboxOptions } from "./readonly-sandbox.ts";
 
 /**
- * How much the agent may do to the user's files without asking.
+ * Binary permission modes for the agent. No decision model (Jev) is consulted.
  *
- * - `full`: no gate; the agent does everything on its own, and Jev is never asked.
- * - `ask`: every `bash`, `write`, `edit`, and saved automation is put to the user. Jev is not used.
- * - `auto` (default): Jev classifies each of those calls first. One it finds safe runs; one it flags is approved
- *   by Jev when the user's request clearly covers it, and only what Jev will not approve confidently reaches
- *   the user.
+ * - `readonly` (default): disk writes are prevented at the OS level for `bash` (except inside the session's
+ *   dedicated scratch directory), and write-capable tools (`write`, `edit`, `convert_files`, `manage_automations`
+ *   mutations, `manage_ltr` mutations, `powershell`) are blocked.
+ * - `full`: unrestricted read/write access; the agent executes all tools and shell commands directly.
  */
-export type PermissionMode = "full" | "ask" | "auto";
+export type PermissionMode = "readonly" | "full";
 
 /** Order Shift+Tab cycles through. */
-export const PERMISSION_MODES: readonly PermissionMode[] = ["ask", "auto", "full"];
+export const PERMISSION_MODES: readonly PermissionMode[] = ["readonly", "full"];
 
 /** Mode a fresh interactive or CLI session starts in. */
-export const DEFAULT_PERMISSION_MODE: PermissionMode = "auto";
+export const DEFAULT_PERMISSION_MODE: PermissionMode = "readonly";
 
 const STATUS_KEY = "autorag-permissions";
 
-function pathExists(path: string): boolean {
-	try {
-		statSync(path);
-		return true;
-	} catch {
-		return false;
-	}
-}
-
+/**
+ * Parse a permission mode string case-insensitively.
+ * Accepts `"readonly"` (and `"read-only"` alias) and `"full"`. Rejects everything else.
+ */
 export function parsePermissionMode(value: unknown): PermissionMode | undefined {
 	if (typeof value !== "string") return undefined;
 	const normalized = value.trim().toLowerCase();
+	if (normalized === "read-only") return "readonly";
 	return PERMISSION_MODES.find((mode) => mode === normalized);
 }
 
@@ -62,18 +47,13 @@ export function cyclePermissionMode(mode: PermissionMode): PermissionMode {
 
 type ModeListener = (mode: PermissionMode) => void;
 
-/** What a session grant covers: one category of change, every call Jev could not classify, or (`ask`) every call. */
-export type GrantKey = PermissionKind | "unclassified" | "all";
-
 /**
- * Session-wide permission state: the mode, and what the user allowed for the rest of the session. One
- * controller is shared by every pi session of an agent.
+ * Session-wide permission state: either `readonly` or `full`. One controller is shared by every pi
+ * session of an agent so switching via Shift+Tab, `/permissions`, or the API takes effect immediately.
  */
 export class PermissionController {
 	private current: PermissionMode;
 	private readonly listeners = new Set<ModeListener>();
-	private readonly granted = new Set<GrantKey>();
-	private readonly created = new Set<string>();
 
 	constructor(mode: PermissionMode = DEFAULT_PERMISSION_MODE) {
 		this.current = mode;
@@ -83,11 +63,13 @@ export class PermissionController {
 		return this.current;
 	}
 
-	/** Switches mode. Session grants end with the mode they were given in. */
+	get isReadOnly(): boolean {
+		return this.current === "readonly";
+	}
+
 	set(mode: PermissionMode): void {
 		if (mode === this.current) return;
 		this.current = mode;
-		this.granted.clear();
 		for (const listener of [...this.listeners]) listener(mode);
 	}
 
@@ -100,74 +82,38 @@ export class PermissionController {
 		this.listeners.add(listener);
 		return () => this.listeners.delete(listener);
 	}
-
-	isGranted(key: GrantKey): boolean {
-		return this.granted.has(key);
-	}
-
-	grant(keys: readonly GrantKey[]): void {
-		for (const key of keys) this.granted.add(key);
-	}
-
-	/** Records paths a successful call brought into existence: the agent's own files, not the user's originals. */
-	markCreated(paths: readonly string[]): void {
-		for (const path of paths) this.created.add(path);
-	}
-
-	/** Whether the agent created this path, or a folder it lies in, earlier in this session. */
-	isCreated(path: string): boolean {
-		for (const root of this.created) {
-			if (path === root) return true;
-			const rel = relative(root, path);
-			if (rel !== "" && rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel)) return true;
-		}
-		return false;
-	}
 }
 
 export interface PermissionGateOptions {
 	readonly controller: PermissionController;
-	/** Jev, which classifies every gated call in `auto`. */
-	readonly judge: JevJudge;
 	/**
-	 * What the user has said in this conversation: the first question, every follow-up, every steer. Jev judges
-	 * the call against all of it. The host feeds it from the user's own input, so AutoRAG's internal phase
-	 * prompts are never in it.
+	 * Files the agent may write/edit even in `readonly` mode (for example the active config file during a
+	 * self-configuration turn). Empty by default.
 	 */
-	readonly requests?: UserRequestLog;
-	/** Cap on the state shown to Jev, in characters. Default: Jev's context ceiling with a safety margin. */
-	readonly maxStateChars?: number;
-	/** Files the agent may always write and edit without Jev being asked (the config its self-configuration turn edits). */
 	readonly trustedPaths?: readonly string[];
+	/** Options forwarded when constructing the OS-level read-only bash sandbox (used in tests). */
+	readonly sandboxOptions?: ReadOnlySandboxOptions;
+	/** Factory override for tests. Defaults to {@link createReadOnlySandbox}. */
+	readonly createSandbox?: (options?: ReadOnlySandboxOptions) => ReadOnlySandbox;
 }
 
-const ALLOW_ONCE = "Allow once";
-const DENY = "Deny";
-const DENY_WITH_NOTE = "Deny and tell the model what to do instead";
-
-/** Longest part of a command shown in a dialog or a notice. */
-const SHOWN_CALL_CHARS = 1200;
-
-/** Appended to the system prompt while a gate is active, so the model stays on the happy path. */
-export const PERMISSION_PROMPT_ADDENDUM = [
-	"File safety: the user's existing files are originals, and AutoRAG asks the user for approval before it deletes, moves, renames, overwrites, or edits one.",
-	"When you reorganize or change files on your own initiative, copy first and work on the copy: creating new files and folders, copying, reading, and searching never need approval.",
-	"When the user explicitly asks you to delete, move, rename, or edit a specific original, go ahead and run it (delete by moving to the OS trash, as above): do not refuse or ask for confirmation yourself, because the approval prompt is the confirmation.",
-	"If an approval is denied, do not retry it within that request: leave the original as it is and say what you did instead. A new request from the user, or a changed permission mode, is a fresh decision: run it again then.",
-].join(" ");
-
-/** `ask` addendum: the user sees every call, so the model should batch work and still not refuse requests. */
-export const ASK_PROMPT_ADDENDUM = [
-	"File safety: in this mode the user approves every bash, write, and edit call, and every saved automation, before it runs; reading, searching, and AutoRAG's own tools need no approval.",
-	"Keep such calls few: combine steps into one command where you can, and prefer copying to a new path over changing an original.",
-	"When the user explicitly asks you to delete, move, rename, or edit a specific original, go ahead and run it (delete by moving to the OS trash, as above): do not refuse or ask for confirmation yourself, because the approval prompt is the confirmation.",
-	"If an approval is denied, do not retry it within that request: leave the original as it is and say what you did instead. A new request from the user, or a changed permission mode, is a fresh decision: run it again then.",
+/** Appended to the system prompt while in `readonly` mode so the model knows writes will fail. */
+export const READONLY_PROMPT_ADDENDUM = [
+	"Permission mode: READ-ONLY.",
+	"This session has read-only access to the disk.",
+	"Direct file modifications (`write`, `edit`, `convert_files`, saving/deleting automations, changing LTR settings) are disabled,",
+	"and `bash` runs inside an OS-level read-only filesystem sandbox where creating, editing, moving, renaming, or deleting any file outside the session temp directory (`$TMPDIR`) is blocked by the kernel.",
+	"Read, search, inspect, and answer freely. If the user asks you to create, modify, organize, convert, or delete files, explain that the session is in read-only mode and tell them they can switch to `full` mode with Shift+Tab, `/permissions full`, or `--permission-mode full`.",
 ].join(" ");
 
 const MODE_SUMMARY: Readonly<Record<PermissionMode, string>> = {
-	ask: "you approve every bash, write, and edit call; Jev is not used",
-	auto: "Jev checks each call and approves first; asks you only when Jev will not",
-	full: "no approvals, the agent does everything itself",
+	readonly: "read-only disk access (OS-sandboxed bash, write/edit/mutating tools blocked)",
+	full: "full read and write access (no restrictions)",
+};
+
+const MODE_LABEL: Readonly<Record<PermissionMode, string>> = {
+	readonly: "permissions: read-only",
+	full: "permissions: full",
 };
 
 interface Decision {
@@ -175,51 +121,187 @@ interface Decision {
 	readonly reason?: string;
 }
 
-interface Review {
-	readonly call: ProposedCall;
-	/** The category grants this call needs. */
-	readonly needs: readonly GrantKey[];
-	/** Shown above the call in the dialog. */
-	readonly heading: string;
-	/** Why the user is being asked instead of Jev deciding, for a call that is blocked without a UI. */
-	readonly headlessReason: string;
-	readonly sessionChoice: string;
+function resolveToolPath(raw: string, cwd: string): string {
+	return resolve(cwd, raw);
 }
 
-function deny(call: ProposedCall, note?: string): Decision {
-	return {
-		block: true,
-		reason: `Denied by the user: ${cutMiddle(summarizeCall(call), 300)}. Do not retry it for this request. Leave the original untouched: copy it to a new file or folder and change the copy, or tell the user what you would have done. If the user asks again later, that is a new decision.${note === undefined ? "" : ` The user says: ${note}`}`,
-	};
+function isWithinDir(candidate: string, dir: string): boolean {
+	const rel = relative(dir, candidate);
+	return rel === "" || (!rel.startsWith(`..${sep}`) && rel !== ".." && !isAbsolute(rel));
 }
 
 /**
- * pi extension that gates what the agent does to existing files.
+ * Whether a tool call mutates disk/state and must be blocked in `readonly` mode.
+ * Returns a human-readable description of the blocked action, or `undefined` if read-only.
+ */
+export function describeReadOnlyBlock(
+	toolName: string,
+	input: Readonly<Record<string, unknown>>,
+	cwd: string,
+	trustedPaths: ReadonlySet<string>,
+	scratchDir: string | undefined,
+): string | undefined {
+	if (toolName === "write" || toolName === "edit") {
+		const rawPath = typeof input.path === "string" ? input.path : "";
+		if (rawPath !== "") {
+			const abs = resolveToolPath(rawPath, cwd);
+			if (trustedPaths.has(abs)) return undefined;
+			if (scratchDir !== undefined && isWithinDir(abs, scratchDir)) return undefined;
+		}
+		return `${toolName} (${rawPath || "file"})`;
+	}
+	if (toolName === "convert_files") {
+		const outputDir = typeof input.outputDir === "string" ? resolveToolPath(input.outputDir, cwd) : undefined;
+		if (outputDir !== undefined && scratchDir !== undefined && isWithinDir(outputDir, scratchDir)) {
+			return undefined;
+		}
+		return "convert_files";
+	}
+	if (toolName === "manage_automations") {
+		const action = typeof input.action === "string" ? input.action : "";
+		if (action === "list") return undefined;
+		return `manage_automations (${action || "mutate"})`;
+	}
+	if (toolName === "manage_ltr") {
+		const action = typeof input.action === "string" ? input.action : "";
+		if (action === "status") return undefined;
+		return `manage_ltr (${action || "mutate"})`;
+	}
+	return undefined;
+}
+
+function readOnlyBlockedReason(action: string): string {
+	return (
+		`Blocked: session is in read-only permission mode, so ${action} is not allowed. ` +
+		"Do not retry mutating operations in read-only mode. Tell the user they can switch to full mode " +
+		"(Shift+Tab or `/permissions full` in the TUI, or `--permission-mode full` on the CLI) if they want you to make changes."
+	);
+}
+
+/**
+ * pi extension enforcing binary `readonly` / `full` permissions with OS-level filesystem read-only
+ * sandboxing for `bash` (and Windows `powershell`). No decision model (Jev) and no per-call approval dialogs.
  *
- * Every `bash`, `write`, `edit`, and `manage_automations save` call is gated (reads, searches, and other tools
- * never touch originals and are not asked about). In `ask` each one is put to the user. In `auto` Jev
- * classifies it first: a call it finds safe runs, one it flags is approved by Jev when the user's request
- * clearly covers it, and otherwise put to the user. Shift+Tab and `/permissions` switch the mode; the footer
- * shows it.
+ * - Overrides the built-in `bash` (and on Windows, `powershell`) tool with a mode-aware wrapper: in `readonly`,
+ *   commands execute inside the OS read-only sandbox (`sandbox-exec` on macOS, `bwrap` on Linux, Low-Integrity
+ *   Restricted Token + Job Object on Windows, fail-closed otherwise) with a dedicated writable scratch dir
+ *   (`$TMPDIR`/`%TEMP%`); in `full`, commands execute via pi's standard local shell.
+ * - Intercepts `user_bash` (`!` shell escapes in the TUI) with the same read-only operations while in `readonly`.
+ * - Blocks write-capable tools (`write`, `edit`, `convert_files`, `manage_automations` mutations, `manage_ltr`
+ *   mutations) in `tool_call` while in `readonly`.
+ * - Adds `/permissions [readonly|full]` and Shift+Tab toggling in the TUI, with live footer status
+ *   (`permissions: read-only` vs `permissions: full`).
  */
 export function createPermissionGate(options: PermissionGateOptions): ExtensionFactory {
-	const { controller, judge, requests } = options;
-	const maxStateChars = options.maxStateChars ?? DEFAULT_MAX_STATE_CHARS;
-	const trustedPaths = new Set(options.trustedPaths ?? []);
+	const { controller } = options;
+	const trustedPaths = new Set((options.trustedPaths ?? []).map((p) => resolve(p)));
+	const sandboxFactory = options.createSandbox ?? createReadOnlySandbox;
 
 	return (pi: ExtensionAPI) => {
-		let dialogsOpen = 0;
-		/** Paths each gated call names that do not exist yet, until its result shows whether it made them. */
-		const pendingCreations = new Map<string, string[]>();
-		let queue: Promise<unknown> = Promise.resolve();
 		let boundUi: ExtensionContext["ui"] | undefined;
 		let unsubscribeKeys: (() => void) | undefined;
 		let unsubscribeMode: (() => void) | undefined;
+		let sandbox: ReadOnlySandbox | undefined;
+		let localOps: BashOperations | undefined;
+		let localShellPath: string | undefined;
+		let localPowerShellOps: BashOperations | undefined;
+
+		const ensureSandbox = (): ReadOnlySandbox => {
+			if (sandbox === undefined) {
+				sandbox = sandboxFactory({
+					...options.sandboxOptions,
+					...(trustedPaths.size > 0
+						? {
+								extraWritablePaths: [...(options.sandboxOptions?.extraWritablePaths ?? []), ...trustedPaths],
+							}
+						: {}),
+				});
+			}
+			return sandbox;
+		};
+
+		const getShellSettings = (): { readonly shellPath?: string; readonly shellCommandPrefix?: string } => {
+			try {
+				const settings = pi.getSettings?.();
+				return {
+					...(settings?.shellPath === undefined ? {} : { shellPath: settings.shellPath }),
+					...(settings?.shellCommandPrefix === undefined
+						? {}
+						: { shellCommandPrefix: settings.shellCommandPrefix }),
+				};
+			} catch {
+				return {};
+			}
+		};
+
+		const getLocalOps = (): BashOperations => {
+			const configuredShell = getShellSettings().shellPath;
+			if (localOps === undefined || configuredShell !== localShellPath) {
+				localShellPath = configuredShell;
+				localOps = createLocalBashOperations(
+					configuredShell === undefined ? undefined : { shellPath: configuredShell },
+				);
+			}
+			return localOps;
+		};
+
+		const getLocalPowerShellOps = (): BashOperations => {
+			if (localPowerShellOps === undefined) {
+				localPowerShellOps = createLocalPowerShellOperations();
+			}
+			return localPowerShellOps;
+		};
+
+		// Mode-aware BashOperations shared by the overridden `bash` tool and `user_bash`.
+		const modeAwareBashOps: BashOperations = {
+			exec: (command, cwd, execOptions) => {
+				const prefix = getShellSettings().shellCommandPrefix;
+				const fullCommand = prefix ? `${prefix}\n${command}` : command;
+				if (controller.isReadOnly) {
+					return ensureSandbox().operations.exec(fullCommand, cwd, execOptions);
+				}
+				return getLocalOps().exec(fullCommand, cwd, execOptions);
+			},
+		};
+
+		// Mode-aware PowerShellOperations for Windows sessions.
+		const modeAwarePowerShellOps: BashOperations = {
+			exec: (command, cwd, execOptions) => {
+				if (controller.isReadOnly) {
+					return ensureSandbox().powerShellOperations.exec(command, cwd, execOptions);
+				}
+				return getLocalPowerShellOps().exec(command, cwd, execOptions);
+			},
+		};
+
+		// Override pi's built-in `bash` (and `powershell` on Windows) tool so every model shell call routes
+		// through the OS read-only sandbox in `readonly` mode while preserving pi's schema, truncation,
+		// streaming output, and TUI renderers.
+		// Note: `pi.getSettings()` is an action method unavailable during extension load, so shell settings
+		// are resolved lazily inside `modeAwareBashOps.exec`.
+		if (typeof pi.registerTool === "function") {
+			const bashToolDef = createBashToolDefinition(process.cwd(), {
+				operations: modeAwareBashOps,
+			});
+			pi.registerTool(bashToolDef);
+			if ((options.sandboxOptions?.platform ?? process.platform) === "win32") {
+				const psToolDef = createPowerShellToolDefinition(process.cwd(), {
+					operations: modeAwarePowerShellOps,
+				});
+				pi.registerTool(psToolDef);
+			}
+		}
+
+		// Also route TUI `!cmd` user_bash through the read-only sandbox when in `readonly` mode.
+		pi.on("user_bash", () => {
+			if (!controller.isReadOnly) return undefined;
+			return { operations: ensureSandbox().operations };
+		});
 
 		const showStatus = (ui: ExtensionContext["ui"], mode: PermissionMode): void => {
-			const text = `permissions: ${mode}`;
-			const colored = mode === "full" ? "warning" : mode === "auto" ? "accent" : "success";
-			ui.setStatus(STATUS_KEY, ui.theme?.fg ? ui.theme.fg(colored, text) : text);
+			const text = MODE_LABEL[mode];
+			const color = mode === "full" ? "warning" : "success";
+			ui.setStatus(STATUS_KEY, ui.theme?.fg ? ui.theme.fg(color, text) : text);
 		};
 
 		const bindUi = (ui: ExtensionContext["ui"]): void => {
@@ -231,9 +313,8 @@ export function createPermissionGate(options: PermissionGateOptions): ExtensionF
 			unsubscribeMode = controller.subscribe((mode) => showStatus(ui, mode));
 			unsubscribeKeys = ui.onTerminalInput((data) => {
 				if (!matchesKey(data, "shift+tab")) return undefined;
-				if (dialogsOpen > 0) return { consume: true };
 				const mode = controller.cycle();
-				ui.notify(`Permission mode: ${mode} - ${MODE_SUMMARY[mode]}`, "info");
+				ui.notify(`Permission mode: ${mode} — ${MODE_SUMMARY[mode]}`, "info");
 				return { consume: true };
 			});
 		};
@@ -248,10 +329,12 @@ export function createPermissionGate(options: PermissionGateOptions): ExtensionF
 			unsubscribeKeys = undefined;
 			unsubscribeMode = undefined;
 			boundUi = undefined;
+			sandbox?.dispose();
+			sandbox = undefined;
 		});
 
 		pi.registerCommand("permissions", {
-			description: "Show or set the permission mode: ask, auto, or full (Shift+Tab cycles)",
+			description: "Show or set permission mode: readonly or full (Shift+Tab toggles)",
 			getArgumentCompletions: (prefix) => {
 				const items = PERMISSION_MODES.filter((mode) => mode.startsWith(prefix.trim().toLowerCase())).map(
 					(mode) => ({
@@ -281,147 +364,22 @@ export function createPermissionGate(options: PermissionGateOptions): ExtensionF
 					if (mode === undefined) return;
 				}
 				controller.set(mode);
-				ctx.ui.notify(`Permission mode: ${mode} - ${MODE_SUMMARY[mode]}`, "info");
+				ctx.ui.notify(`Permission mode: ${mode} — ${MODE_SUMMARY[mode]}`, "info");
 			},
 		});
 
 		pi.on("before_agent_start", (event) => {
-			if (controller.mode === "full") return undefined;
-			const addendum = controller.mode === "ask" ? ASK_PROMPT_ADDENDUM : PERMISSION_PROMPT_ADDENDUM;
-			return { systemPrompt: `${event.systemPrompt}\n\n${addendum}` };
+			if (!controller.isReadOnly) return undefined;
+			return { systemPrompt: `${event.systemPrompt}\n\n${READONLY_PROMPT_ADDENDUM}` };
 		});
 
-		pi.on("tool_call", async (event, ctx): Promise<Decision | undefined> => {
+		pi.on("tool_call", (event, ctx): Decision | undefined => {
+			if (!controller.isReadOnly) return undefined;
 			const input = event.input as Record<string, unknown>;
-			if (!isGatedCall(event.toolName, input)) return undefined;
-			const call: ProposedCall = { tool: event.toolName, input, cwd: ctx.cwd };
-			// Whatever the mode, a path this call names that is missing now and exists after it succeeded is the
-			// agent's own file: later calls on it are not changes to the user's originals.
-			pendingCreations.set(
-				event.toolCallId,
-				pathsNamedBy(call)
-					.map((entry) => entry.path)
-					.filter((path) => !pathExists(path)),
-			);
-			if (controller.mode === "full") return undefined;
-			if (
-				(event.toolName === "write" || event.toolName === "edit") &&
-				trustedPaths.has(resolveToolPath(String(input.path), ctx.cwd))
-			) {
-				return undefined;
-			}
-			const decision = await judgeCall(call, ctx);
-			if (decision?.block === true) pendingCreations.delete(event.toolCallId);
-			return decision;
+			const scratchDir = sandbox?.scratchDir;
+			const blocked = describeReadOnlyBlock(event.toolName, input, ctx.cwd, trustedPaths, scratchDir);
+			if (blocked === undefined) return undefined;
+			return { block: true, reason: readOnlyBlockedReason(blocked) };
 		});
-
-		pi.on("tool_result", (event) => {
-			const absent = pendingCreations.get(event.toolCallId);
-			pendingCreations.delete(event.toolCallId);
-			if (absent !== undefined && !event.isError) controller.markCreated(absent.filter(pathExists));
-			return undefined;
-		});
-
-		/** `ask` puts every gated call to the user; `auto` has Jev classify it and approve first. */
-		async function judgeCall(call: ProposedCall, ctx: ExtensionContext): Promise<Decision | undefined> {
-			if (controller.mode === "ask") return decide(askReviewOf(call), ctx);
-			const classification = await classifyCall(judge, {
-				call,
-				requests: requests?.entries() ?? [],
-				history: successfulCalls(branchOf(ctx)),
-				maxStateChars,
-				isCreated: (path) => controller.isCreated(path),
-			});
-
-			if (classification.status === "failed") {
-				return decide(
-					{
-						call,
-						needs: ["unclassified"],
-						heading: `Jev could not classify this call (${classification.why}), so it needs your approval. It may change your files.`,
-						headlessReason: `Jev could not classify this call (${classification.why}), so it needs approval`,
-						sessionChoice: "Allow all unclassified calls this session",
-					},
-					ctx,
-				);
-			}
-			if (classification.flagged.length === 0) return undefined;
-
-			if (classification.approval.approved) {
-				const kinds = classification.flagged.map((flagged) => flagged.kind);
-				ctx.ui.notify(`Jev approved (${kinds.join(", ")}): ${cutMiddle(summarizeCall(call), 300)}`, "info");
-				return undefined;
-			}
-			return decide(reviewOf(call, classification.flagged, classification.approval), ctx);
-		}
-
-		async function decide(review: Review, ctx: ExtensionContext): Promise<Decision | undefined> {
-			// One dialog at a time: overlapping tool calls wait their turn, then re-check grants.
-			const turn = queue.then(() => ask(review, ctx));
-			queue = turn.catch(() => undefined);
-			return turn;
-		}
-
-		async function ask(review: Review, ctx: ExtensionContext): Promise<Decision | undefined> {
-			if (controller.mode === "full") return undefined;
-			if (review.needs.every((key) => controller.isGranted(key))) return undefined;
-
-			if (!ctx.hasUI) {
-				return {
-					block: true,
-					reason: `Blocked: ${review.headlessReason}, and this session has nobody to ask. Do not retry; work on a copy instead, or ask the user to rerun with --permission-mode full.`,
-				};
-			}
-
-			const title = [
-				review.heading,
-				...(review.needs.includes("all") ? [] : [`    ${review.needs.join(", ")}`]),
-				`    $ ${cutMiddle(summarizeCall(review.call), SHOWN_CALL_CHARS)}`,
-			].join("\n");
-			dialogsOpen += 1;
-			let choice: string | undefined;
-			try {
-				choice = await ctx.ui.select(title, [ALLOW_ONCE, review.sessionChoice, DENY, DENY_WITH_NOTE]);
-				if (choice === DENY_WITH_NOTE) {
-					const note = (await ctx.ui.input("What should the model do instead?", "e.g. work on a copy"))?.trim();
-					return deny(review.call, note === undefined || note === "" ? undefined : note);
-				}
-			} finally {
-				dialogsOpen -= 1;
-			}
-			if (choice === ALLOW_ONCE) return undefined;
-			if (choice === review.sessionChoice) {
-				controller.grant(review.needs);
-				return undefined;
-			}
-			return deny(review.call);
-		}
-	};
-}
-
-function branchOf(ctx: ExtensionContext): readonly SessionEntry[] {
-	return ctx.sessionManager.getBranch();
-}
-
-/** The dialog for a call Jev flagged and would not approve confidently, shown with Jev's reason. */
-function reviewOf(call: ProposedCall, flagged: readonly FlaggedKind[], approval: Approval): Review {
-	const kinds = flagged.map((entry) => entry.kind);
-	return {
-		call,
-		needs: kinds,
-		heading: `Jev declined to approve this automatically (${approval.why}). Approve it yourself?`,
-		headlessReason: `this call ${kinds.join("/")}s existing files and Jev did not approve it (${approval.why}), so it needs approval`,
-		sessionChoice: `Allow all ${kinds.join("/")} operations this session`,
-	};
-}
-
-/** The dialog `ask` shows for every gated call: no classification, so no categories to name. */
-function askReviewOf(call: ProposedCall): Review {
-	return {
-		call,
-		needs: ["all"],
-		heading: `Approve this ${call.tool} call?`,
-		headlessReason: "ask mode needs the user's approval for every file-capable call",
-		sessionChoice: "Allow all such calls this session",
 	};
 }

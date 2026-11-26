@@ -5,7 +5,7 @@ description: "What AutoRAG Agent is: a personal librarian that searches local fi
 
 # Overview
 
-AutoRAG Agent is a personal librarian agent that finds, reads, and cites what is on your computer. This page explains what the engine does, which surfaces it runs on, and what stays on your machine.
+AutoRAG Agent is a personal librarian agent that finds, reads, and cites what is on your computer. It runs on **macOS, Linux, and Windows**. This page explains what the engine does, which surfaces it runs on, and what stays on your machine.
 
 ## What the librarian does
 
@@ -45,7 +45,7 @@ Agent Tools                 AutoRAGAgent (customized Pi agent)
 
 ## Privacy model
 
-- **Embedded on your machine.** Semantic indexing runs on MinSync's local `Qwen/Qwen3-Embedding-0.6B` engine (1024 dimensions), which MinSync provisions and runs in its own cache (`~/.cache/minsync/models`). AutoRAG owns no embedding model, and file contents are never sent to a remote embedder unless you explicitly configure a remote `minSync.embedder` endpoint.
+- **Embedded on your machine.** Semantic indexing runs on the local im-not-llm `Qwen/Qwen3-Embedding-0.6B` engine (1024 dimensions), which provisions and runs the model in its own cache (`~/.cache/im-not-llm/models`). AutoRAG owns no embedding model, and file contents are never sent to a remote embedder unless you explicitly configure a remote `minSync.embedder` endpoint.
 - **Keys stay out of config.** Sign-in tokens and provider API keys live in the platform's encrypted store or Pi's `auth.json`; a config file records only environment-variable names such as `apiKeyEnv`. See [Models and providers](models.md).
 - **Bring your own model.** You can use the hosted [Dazzi Models](models.md) plan, or connect your own provider credential and pay that provider directly.
 - **What leaves the machine.** The librarian's chat model, the required Jev decision model, an optional rerank model, and `web_search`/`web_fetch` calls all reach the network you configure for them. A search question is sent to the decision model. Retrieval, indexing, and local document reading stay local.

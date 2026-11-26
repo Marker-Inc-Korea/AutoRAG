@@ -85,7 +85,7 @@ The report's top-level `ok` is true when semantic mode is available or at least 
 
 ## Shared embedding runtime and native ownership
 
-AutoRAG owns no embedding model and bundles no native runtime. MinSync provisions the embedder (`Qwen/Qwen3-Embedding-0.6B`, 1024 dimensions) in its own cache, and one shared embedder serves everything that embeds inside AutoRAG: MinSync indexing and query, memory similar-question search, the chat-crawler sidecars, and the GitHub Gist vector index. It resolves a configured remote endpoint first, then a running `minsync serve` daemon, then MinSync's in-process engine. See [Embedding backends](../indexing/embedding-backends.md).
+AutoRAG owns no embedding model and bundles no native runtime. im-not-llm provisions the embedder (`Qwen/Qwen3-Embedding-0.6B`, 1024 dimensions) in its own cache, and one shared embedder serves everything that embeds inside AutoRAG: MinSync indexing and query, memory similar-question search, the chat-crawler sidecars, and the GitHub Gist vector index. It resolves a configured remote endpoint first, then a running `inl serve` daemon, then MinSync's in-process engine. See [Embedding backends](../indexing/embedding-backends.md).
 
 It is a provider boundary, not a shared archive: each datasource keeps its native archive, chunking, credentials, metadata, vector store, and source identity. Embedding requests contain text and the selected model only — no archive ids, source paths, or credentials.
 

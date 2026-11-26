@@ -2,7 +2,7 @@
 name: automate
 description: Run a Hermes agent task whenever files appear, change, or disappear in a folder, using AutoRAG's file automations plus Hermes cron. Use when the user wants something done automatically for new files ("when a PDF lands in Downloads, summarize it and message me"), or wants to list or remove such an automation. Not for one-off questions about files (use the search skill) and not for first-time setup of the index (use the setup skill).
 license: Apache-2.0
-compatibility: Needs Node.js >= 24, a running Hermes gateway (or `hermes cron tick`), and macOS or Linux with Python 3.9+ for the helper script.
+compatibility: Needs Node.js >= 24, a running Hermes gateway (or `hermes cron tick`), and Python 3.9+ for the helper script (macOS, Linux, or Windows).
 ---
 
 # AutoRAG file automations for Hermes
@@ -15,7 +15,7 @@ changed files. Hermes cron has no file trigger of its own, which is why AutoRAG 
 How one event travels:
 
 1. AutoRAG's daemon sees files change and batches them (default debounce 2 s).
-2. It runs the generated `fire.sh`, which writes the batch to a queue and runs `hermes cron run <job>`.
+2. It runs the generated `fire.py`, which writes the batch to a queue and runs `hermes cron run <job>`.
 3. The job's pre-run gate script drains the queue. No files queued means `wakeAgent: false`: **no model call**.
 4. Otherwise the agent runs with the file list as script data, and its answer goes to the job's `deliver` target.
 
@@ -66,7 +66,7 @@ The rule does nothing until AutoRAG's daemon runs. Start it once:
 npx -y -p @autorag/librarian@2.13.12 autorag automate install
 ```
 
-`install` registers it with launchd (macOS) or systemd `--user` (Linux) so it survives logout. `automate status`
+`install` registers it with launchd (macOS), systemd `--user` (Linux), or Task Scheduler (Windows) so it survives logout. `automate status`
 shows whether it runs and the last result of each rule.
 
 ## List and remove
@@ -76,7 +76,7 @@ python3 "${HERMES_SKILL_DIR}/scripts/autorag_automation.py" list
 python3 "${HERMES_SKILL_DIR}/scripts/autorag_automation.py" remove --id invoices
 ```
 
-`remove` deletes the rule, `fire.sh`, the gate and the queue. Then remove the cron job `autorag-<id>` with the
+`remove` deletes the rule, `fire.py`, the gate and the queue. Then remove the cron job `autorag-<id>` with the
 `cronjob` tool. It leaves other automations and any rule the user wrote by hand untouched.
 
 ## What the agent sees, and its limits
@@ -98,8 +98,8 @@ Safety rules the system enforces for you:
 | Symptom | Check |
 | --- | --- |
 | Nothing happens when a file lands | `autorag automate status`: is the daemon running and does the rule's glob match the file name? |
-| `hermes cron list` works but the job never fires | The daemon calls `fire.sh`; run it by hand with a file path on stdin to see its error. |
+| `hermes cron list` works but the job never fires | The daemon calls `fire.py`; run it by hand with a file path JSON array on stdin to see its error. |
 | Job runs but the output says "agent skipped" | The queue was empty (a sweep with nothing new). That is normal and costs no model call. |
 | Output says `BLOCKED` | Hermes' injection scanner rejected the assembled prompt. Rephrase the job prompt; do not weaken it. |
 | Setup says it cannot run `hermes` | Pass `--hermes` with the launcher of the Hermes install that serves this profile. |
-| Hermes was updated and runs stop | `fire.sh` falls back to the newest Hermes environment; if that fails too, run `setup` again with the same id. |
+| Hermes was updated and runs stop | `fire.py` falls back to the newest Hermes environment; if that fails too, run `setup` again with the same id. |

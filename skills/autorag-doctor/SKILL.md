@@ -135,27 +135,27 @@ autorag search "summarize the collection" --top-k 3 --json --debug
 
 ### Stuck embedding daemon
 
-AutoRAG owns no lock or pid file for embeddings. A running `minsync serve`
-publishes `host`, `port`, and `pid` under `~/.cache/minsync/serve/<instance>/`
+AutoRAG owns no lock or pid file for embeddings. A running `inl serve`
+publishes `host`, `port`, and `pid` under `~/.cache/im-not-llm/serve/<instance>/`
 and removes them on a clean stop. A leftover file from a crashed daemon is
 harmless: AutoRAG only adopts a daemon whose `GET /health` answers as a loopback
 server of the wanted model, so a stale entry is skipped.
 
 ```bash
-ls ~/.cache/minsync/serve/* 2>/dev/null
+ls ~/.cache/im-not-llm/serve/* 2>/dev/null
 autorag setup --format json
 ```
 
 To diagnose an embedding backend that is not alive, `setup --format json` and
 `status` say so (`embedding.reason`, and the `embedding-unavailable`
-diagnostic). AutoRAG never starts the daemon: run `minsync serve
+diagnostic). AutoRAG never starts the daemon: run `inl serve
 --idle-timeout 0` by hand (or as a launchd/systemd service, see
 `docs/indexing/embedding-backends.md`) and read its own error, or press Ctrl+Shift+E in the
 TUI. When no daemon answers and the in-process addon
 (`@nomadamas/minsync-native`) is missing, that is the `embedder-unavailable`
 state. The daemon stops itself after `--idle-timeout` seconds (default 300), so
 a semantic failure after a quiet spell usually means it timed out. Stop an
-orphaned daemon by the pid from `~/.cache/minsync/serve/<instance>/pid` after
+orphaned daemon by the pid from `~/.cache/im-not-llm/serve/<instance>/pid` after
 confirming no live refresh holds it.
 
 Index locks are owned by their engines: MinSync/tantivy locks under
@@ -170,9 +170,9 @@ that holds it.
 pgrep -fl 'autorag|minsync' | grep -v pgrep
 ```
 
-A refresh that was killed mid-run can leave a `minsync serve` daemon or a
+A refresh that was killed mid-run can leave an `inl serve` daemon or a
 `minsync` child alive. A daemon idle-stops itself; stop a confirmed orphan by
-the pid from `~/.cache/minsync/serve/<instance>/pid`, and only kill a PID
+the pid from `~/.cache/im-not-llm/serve/<instance>/pid`, and only kill a PID
 directly when it is confirmed orphaned (no parent CLI, no live refresh).
 Re-run `autorag status --json` afterwards to confirm `inFlight: false`.
 
@@ -187,7 +187,7 @@ autorag index rebuild --method minsync
 ```
 
 The default is MinSync's local `Qwen/Qwen3-Embedding-0.6B` engine at 1024
-dimensions, reached through a running `minsync serve` daemon or, failing that,
+dimensions, reached through a running `inl serve` daemon or, failing that,
 MinSync's in-process engine. Both report one identity (`provider: minsync`), so
 a store never re-embeds because the daemon appeared or went away. Vectors
 written by the removed local Q8_0 gateway engine are **not** compatible: their
@@ -252,13 +252,15 @@ to retry those files once without re-indexing healthy ones.
 | `jikji-unsupported-version` | Jikji older than 0.2.0 was found and not run; message names the version and path | `autorag refresh --method jikji` installs the pinned build, or upgrade it yourself |
 | `everything-index-failed` | Windows Everything instance could not start or index; message carries ES exit code and stderr | Fix the reported cause, `autorag refresh --method everything --json` |
 | `embedding-identity-mismatch` | Indexed vectors use a different embedder | `autorag index rebuild --method minsync` |
-| `embedder-unavailable` | No remote endpoint answered, no daemon could start, and the in-process addon is missing or failed | Run `minsync serve` by hand to read its error, install MinSync (`cargo install minsync`) or `@nomadamas/minsync-native`, or configure a remote `minSync.embedder` |
+| `embedder-unavailable` | No remote endpoint answered, no daemon could start, and the in-process addon is missing or failed | Run `inl serve` by hand to read its error, install MinSync (`cargo install minsync`) or `@nomadamas/minsync-native`, or configure a remote `minSync.embedder` |
 | `datasource-index-failed` | Backing CLI failed to index | Run that CLI's own doctor |
 | `datasource-empty` | Store has no matching content | Re-sync with the CLI, or accept as empty |
 | `unknown-datasource-skill` | Config name is not a known template | Fix the name or add `"type"` |
 | `retrieval-method-failed` | One method errored during the query | Read `--debug` diagnostics |
 | `retrieval-source-missing` | Warning: hits whose source file was moved or deleted since the last refresh were skipped (paths listed); the other hits are returned | Run `autorag refresh` to drop the stale entries |
 | `rerank-disabled` | Warning: the `rerank` block names no model, so reranking is off and each source contributes its own top 10 to the first answer | Set `rerank.model` to turn it on, or remove the block; nothing else is wrong |
+| `ltr-unavailable` | Warning: `ltr.enabled` is true but nothing could serve (no trained model passed its holdout check, or the selected `ltr.model` does not exist); the reranker's order was kept | `autorag ltr status`, then `autorag ltr train` once enough searches are logged, or `autorag ltr use latest` |
+| `ltr-failed` | Warning: the served learning-to-rank model threw while scoring; the reranker's order was kept | Retrain with `autorag ltr train` (a model trained on an older feature layout is refused at load), or `autorag ltr disable` |
 | `datasource-auth-error` | Datasource credentials missing or rejected | Report the env var name |
 | `query-route-fallback` | Jev routing unavailable (often `OPENROUTER_API_KEY` unset); searched local with the original question | `test -n "$OPENROUTER_API_KEY"`; report the env var name, never its value |
 | `query-decomposition-failed` | Decomposition model call failed; searched the original question | Check `queryDecomposition.model` resolves (`autorag models list --provider openrouter`) |

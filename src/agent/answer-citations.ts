@@ -1,4 +1,5 @@
 import { isAbsolute } from "node:path";
+import { evidenceChunkKey } from "../retrieval/evidence-id.ts";
 import type { CitationNumbers } from "./citation-numbers.ts";
 import { answerMarkers } from "./citations.ts";
 import { type EvidenceLedger, isRegularFile } from "./evidence-ledger.ts";
@@ -40,7 +41,7 @@ interface CitedSource {
  * source can back several chunks, so a chunk is judged and excluded on its own.
  */
 export function citedChunkKey(ref: { readonly source: string; readonly content?: string }): string {
-	return `${ref.source}\0${ref.content ?? ""}`;
+	return evidenceChunkKey(ref.source, ref.content ?? "");
 }
 
 /** The sentence ending at `end`, stripped of list marks and other citation markers. */

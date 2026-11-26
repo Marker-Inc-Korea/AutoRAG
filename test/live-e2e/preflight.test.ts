@@ -7,7 +7,7 @@ const response = (body: unknown, status = 200): FetchResponse => ({
 	status,
 	json: async () => body,
 });
-/** What `minsync serve` answers on GET /health. */
+/** What `inl serve` answers on GET /health. */
 const readyFetch = async (): Promise<FetchResponse> =>
 	response({
 		status: "ok",

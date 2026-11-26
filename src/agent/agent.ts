@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, watch as fsWatch, mkdirSync, realpathSync, statSync, writeFileSync } from "node:fs";
-import { basename, dirname, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { Agent, AgentEvent, AgentMessage, AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import type { Api, ImageContent, Model, TextContent } from "@earendil-works/pi-ai";
 import { clampThinkingLevel } from "@earendil-works/pi-ai/compat";
@@ -78,10 +78,14 @@ import {
 	planJikjiSourceRoots,
 } from "../jikji/index.ts";
 import { DEFAULT_LANGUAGES, type LanguageTag } from "../language.ts";
+import { applyLtrPatch, type LtrSettings, runAutoTrain } from "../ltr/manager.ts";
+import { createLtrScorer } from "../ltr/scorer.ts";
+import { trainLtrModel } from "../ltr/trainer.ts";
 import { createCheckMemoryTool } from "../memory/check-memory-tool.ts";
 import { loadMemoryContext, type MemoryContext, type MemoryContextOptions } from "../memory/context.ts";
 import { EVIDENCE_SUPPORT_THRESHOLD, type JudgedEvidenceRecord } from "../memory/judged-evidence.ts";
 import { RetrievalMemory } from "../memory/memory.ts";
+import { RankingLogStore, RankingRunRecorder, rankingLogPath } from "../memory/ranking-log.ts";
 import { memoryVectorStorePath } from "../memory/similar-queries.ts";
 import { resolveMinSyncBinary } from "../minsync/binary.ts";
 import { unionChannelResults } from "../minsync/channel-union.ts";
@@ -98,6 +102,7 @@ import {
 	type MinSyncVectorMethodOptions,
 } from "../minsync/index.ts";
 import { MinSyncStageError } from "../minsync/stage.ts";
+import type { FirstBuildSession } from "../minsync/workspace-lock.ts";
 import { cloudFingerprintExclusions, loadCloudFingerprints } from "../mirror/cloud-fingerprints.ts";
 import { PARSED_MIRROR_SUBDIR, refreshReadinessPath } from "../mirror/paths.ts";
 import {
@@ -136,33 +141,20 @@ import type {
 } from "../retrieval/types.ts";
 import { executeWebSearch } from "../web/search/index.ts";
 import { type ModelNativeSearchAuth, modelNativeAuthFromAgentModel } from "../web/search/model-auth.ts";
-import { citedChunks, deriveResultsFromAnswer } from "./answer-citations.ts";
+import { citedChunkKey, citedChunks, deriveResultsFromAnswer } from "./answer-citations.ts";
 import {
-	ANSWER_BULLET_RULE,
-	ANSWER_CITATION_RULE,
 	ANSWER_DELIVERABLE_DELTA_RULE,
-	ANSWER_DELIVERABLE_RULE,
-	ANSWER_EMPHASIS_RULE,
 	ANSWER_IMAGE_DELTA_RULE,
-	ANSWER_IMAGE_EMBED_RULE,
-	ANSWER_LANGUAGE_RULE,
-	ANSWER_LEAD_RULE,
-	ANSWER_RELEVANCE_RULE,
-	ANSWER_UNCERTAINTY_RULE,
 	ANSWER_UNCONFIRMED_FAST_RULE,
-	ANSWER_UNCONFIRMED_FINAL_RULE,
 } from "./answer-guidelines.ts";
+import { AnswerRevisionSession, type Revision, type RevisionCitations, splitClaims } from "./answer-revision.ts";
 import { ASK_USER_TOOL_NAME, resolveAskUserExtensionPath } from "./ask-user.ts";
 import { createManageAutomationsTool, MANAGE_AUTOMATIONS_TOOL_NAME } from "./automation-tool.ts";
-import {
-	CALCULATOR_FAST_PHASE_RULE,
-	CALCULATOR_PROMPT_RULE,
-	CALCULATOR_TOOL_NAME,
-	createCalculatorTool,
-} from "./calculator-tool.ts";
+import { CALCULATOR_FAST_PHASE_RULE, CALCULATOR_TOOL_NAME, createCalculatorTool } from "./calculator-tool.ts";
 import { createCitationLinks } from "./citation-links.ts";
 import { CitationNumbers } from "./citation-numbers.ts";
 import { CITATION_RELEVANCE_FLOOR, judgeCitationRelevance } from "./citation-relevance.ts";
+import { answerMarkers } from "./citations.ts";
 import { createCloudReleaseExtension } from "./cloud-release-extension.ts";
 import { ConversationQueries } from "./conversation-queries.ts";
 import {
@@ -193,7 +185,7 @@ import {
 import { createEmbeddingControls } from "./embedding-controls.ts";
 import { createEverythingSearchTool, EVERYTHING_SEARCH_TOOL_NAME } from "./everything-search-tool.ts";
 import { type EvidenceJudgmentUnit, judgeEvidence } from "./evidence-judgment.ts";
-import { EvidenceLedger } from "./evidence-ledger.ts";
+import { EvidenceLedger, isRegularFile } from "./evidence-ledger.ts";
 import { EvidenceOriginIndex } from "./evidence-origins.ts";
 import { createEvidencePersistence } from "./evidence-persistence.ts";
 import { createFSearchSearchTool, FSEARCH_SEARCH_TOOL_NAME } from "./fsearch-search-tool.ts";
@@ -216,7 +208,9 @@ import {
 	type MergedJikjiPolicy,
 } from "./jikji-find-tool.ts";
 import { loadLocalAutoRAGModel } from "./local-model.ts";
+import { createManageLtrTool, MANAGE_LTR_TOOL_NAME } from "./ltr-tool.ts";
 import { loadPackagedSkill, ORGANIZE_SKILL_NAME, type PackagedAgentSkill, SETUP_SKILL_NAME } from "./packaged-skill.ts";
+import { createParsedMirrorToolsExtension } from "./parsed-mirror-tools.ts";
 import { createPermissionGate, PermissionController, type PermissionMode } from "./permission-gate.ts";
 import {
 	type AutoRAGInputDisposition,
@@ -251,6 +245,7 @@ import {
 	writeRefreshProgress,
 } from "./refresh-progress.ts";
 import type { AutoRAGResultsDetails } from "./results.ts";
+import { createReviseAnswerTool, REVISE_ANSWER_PROMPT_RULE, REVISE_ANSWER_TOOL_NAME } from "./revise-answer-tool.ts";
 import { createSearchAllDocumentsTool, SEARCH_ALL_DOCUMENTS_TOOL_NAME } from "./search-all-tool.ts";
 import {
 	createEmptySearchDocumentsResponse,
@@ -822,7 +817,7 @@ export interface AutoRAGAgentOptions {
 	jev?: JevToolOptions;
 	/**
 	 * The embedder shared by memory and the datasources. Omitted, it is built from `minSync.embedder`: a
-	 * configured remote endpoint, else MinSync's `minsync serve` daemon, else MinSync's in-process engine.
+	 * configured remote endpoint, else the `inl serve` daemon, else MinSync's in-process engine.
 	 * `refresh` brings it up (starting the daemon when none runs); a search only reads from it.
 	 */
 	embedder?: ManagedEmbedder;
@@ -832,6 +827,28 @@ export interface AutoRAGAgentOptions {
 	 * memory search keyword-only.
 	 */
 	memoryEmbedder?: Embedder | false;
+	/**
+	 * Learning-to-rank training log beside the memory file (`<memoryPath>.ranking.db`): every finished search run's
+	 * candidate pool, serve-time per-channel ranks and scores, what the model was shown, and the outcome labels.
+	 * Local only; chunk text is never stored. Default on; `false` stops logging. See docs/retrieval/learning-to-rank.md.
+	 */
+	rankingLog?: boolean;
+	/**
+	 * Opt-in learning-to-rank reorder of the baseline: after the baseline reranker, a trained XGBoost model picks the
+	 * order the model reads the candidates in. `enabled` defaults to false; `model` is a model id or `latest` (the
+	 * newest model that passed its holdout gate). Needs the ranking log. See docs/retrieval/learning-to-rank.md.
+	 */
+	ltr?: {
+		readonly enabled?: boolean;
+		readonly model?: string;
+		/** Retrain by itself once the log has grown; see `autorag ltr auto-train`. */
+		readonly autoTrain?: { readonly enabled?: boolean; readonly minNewRuns?: number };
+		/**
+		 * Saves a settings change made through the `manage_ltr` tool (the CLI writes the `ltr` block of the config
+		 * file). Without it the tool can train and report but cannot change settings.
+		 */
+		readonly persist?: (settings: LtrSettings) => void;
+	};
 	/**
 	 * Agent self-configuration. When set, Jev gains a `config` branch for
 	 * questions about AutoRAG's own settings: the turn skips the fast answer,
@@ -913,13 +930,13 @@ export interface AutoRAGAgentOptions {
 	 */
 	telegram?: boolean;
 	/**
-	 * Approval gate for what the agent does to existing files. `full` (the programmatic default) installs a
-	 * gate that never asks; `ask` and `auto` approve deletes, moves, renames, and in-place edits of originals
-	 * (copying and creating new files never ask). `auto` asks Jev first and only falls back to the user when
-	 * Jev will not approve. See {@link PermissionMode}.
+	 * Disk permission mode for the agent. `readonly` enforces OS-level read-only disk access for `bash`
+	 * (outside a dedicated session scratch directory) and blocks write/edit/mutating tools; `full` (the
+	 * programmatic default) allows unrestricted reads and writes. No decision model (Jev) is consulted.
+	 * See {@link PermissionMode}.
 	 */
 	permissionMode?: PermissionMode;
-	/** Share one controller (mode, session grants) with a host that switches modes itself. Wins over `permissionMode`. */
+	/** Share one controller (mode) with a host that switches modes itself. Wins over `permissionMode`. */
 	permissionController?: PermissionController;
 }
 
@@ -1061,6 +1078,10 @@ export class AutoRAGAgent {
 	/** Everything the user typed in this conversation; Jev reads it to judge whether a citation relates to what was asked. */
 	private readonly conversationQueries = new ConversationQueries();
 	private preliminaryCallback: ((response: SearchDocumentsResponse) => void) | undefined;
+	/** Receives each correction the verification phase makes to the preliminary answer the caller already holds. */
+	private revisionCallback: ((revision: Revision) => void) | undefined;
+	/** The claims of the preliminary answer a caller received, while the verification phase may still correct them. */
+	private revisionSession: AnswerRevisionSession | undefined;
 	/** Per-phase thinking levels of the two-phase search. */
 	private readonly fastThinkingLevel: AutoRAGThinkingLevel;
 	private readonly finalThinkingLevel: AutoRAGThinkingLevel;
@@ -1115,6 +1136,8 @@ export class AutoRAGAgent {
 	private readonly jevExtension: ExtensionFactory;
 	/** pi extension releasing the cloud files the agent opened during a run. */
 	private readonly cloudRelease: ExtensionFactory;
+	/** pi extension routing `grep` and `read` through parsed markdown mirrors for configured search folders. */
+	private readonly parsedMirrorTools: ExtensionFactory;
 	/** Jev and its sLLM fallback: the session check picks which one {@link jevJudge} asks. */
 	private readonly decisionModels: DecisionModels;
 	/** Jev judge shared by the `jev` tool, the query router, the judgments, and the permission gate. */
@@ -1154,6 +1177,15 @@ export class AutoRAGAgent {
 	private readonly embedder: ManagedEmbedder;
 	private readonly memoryEmbedder: Embedder | undefined;
 	private readonly memoryVectorPath: string;
+	/** Where finished runs are logged for learning to rank; undefined when `rankingLog: false`. */
+	private readonly rankingLogPath: string | undefined;
+	/** The learning-to-rank settings in effect; `manage_ltr` replaces them in place so the next search sees the change. */
+	private ltrSettings: LtrSettings;
+	private readonly ltrPersist: ((settings: LtrSettings) => void) | undefined;
+	private ltrTraining: Promise<unknown> | undefined;
+	private readonly memoryFilePath: string;
+	/** Collects the in-flight run's ranking candidates and labels; undefined between runs. */
+	private rankingRun: RankingRunRecorder | undefined;
 	/** Every retrieval result of the in-flight run with the query/method that surfaced it. */
 	private readonly evidenceOrigins = new EvidenceOriginIndex();
 	/**
@@ -1325,6 +1357,18 @@ export class AutoRAGAgent {
 		this.memory = new RetrievalMemory({ storagePath: memPath });
 		this.memory.load();
 		this.memoryVectorPath = memoryVectorStorePath(memPath);
+		this.rankingLogPath = options.rankingLog === false ? undefined : rankingLogPath(memPath);
+		this.memoryFilePath = memPath;
+		this.ltrSettings = {
+			enabled: options.ltr?.enabled === true,
+			...(options.ltr?.model !== undefined ? { model: options.ltr.model } : {}),
+			...(options.ltr?.autoTrain !== undefined ? { autoTrain: options.ltr.autoTrain } : {}),
+		};
+		this.ltrPersist = options.ltr?.persist;
+		// Every retrieval tool funnels its ranked list through the ledger, so this one hook sees what the model was shown.
+		this.evidenceLedger.observeResults((tool, query, results) =>
+			this.rankingRun?.tool({ surface: tool, query, results }),
+		);
 		this.minSyncEmbedderConfig = options.minSync?.embedder;
 		this.minSyncBinaryPath = options.minSync?.binaryPath;
 		this.embedder = options.embedder ?? createEmbedderFromConfig({ embedder: options.minSync?.embedder });
@@ -1361,7 +1405,24 @@ export class AutoRAGAgent {
 		const convertFilesTool = this.fileeOptions === false ? undefined : createConvertFilesTool(this);
 		const listFileConversionsTool = this.fileeOptions === false ? undefined : createListFileConversionsTool(this);
 		const manageAutomationsTool = createManageAutomationsTool();
+		const manageLtrTool = createManageLtrTool({
+			memoryPath: memPath,
+			settings: () => this.ltrSettings,
+			update: (patch) => {
+				if (this.ltrPersist === undefined) throw new Error("this session has no config file to save settings to");
+				const next = applyLtrPatch(this.ltrSettings, patch);
+				this.ltrPersist(next);
+				this.ltrSettings = next;
+				return next;
+			},
+			train: () => trainLtrModel({ memoryPath: memPath }),
+		});
 		const calculatorTool = createCalculatorTool();
+		const reviseAnswerTool = createReviseAnswerTool({
+			session: () => this.revisionSession,
+			announce: (revision) => this.revisionCallback?.(revision),
+			unsupported: (text) => this.unsupportedCitations(text),
+		});
 		this.decisionModels = createDecisionModels({ ...options.jev, agentDir: options.piAgentDir });
 		this.jevJudge = this.decisionModels.judge;
 		this.jevExtension = createJevExtension(this.jevJudge);
@@ -1370,13 +1431,17 @@ export class AutoRAGAgent {
 		this.permissions = options.permissionController ?? new PermissionController(options.permissionMode ?? "full");
 		this.permissionGate = createPermissionGate({
 			controller: this.permissions,
-			judge: this.jevJudge,
-			requests: this.userRequests,
-			// The self-configuration turn edits AutoRAG's own config at the user's request; that is never a gated original.
+			// The self-configuration turn edits AutoRAG's own config at the user's request.
 			...(this.selfConfig === undefined ? {} : { trustedPaths: [resolve(this.selfConfig.configPath)] }),
 		});
 		this.cloudRelease = createCloudReleaseExtension({
 			probe: this.cloudProbe,
+			cloudRoots: () => this.cloudRoots(),
+		});
+		this.parsedMirrorTools = createParsedMirrorToolsExtension({
+			workspaceRoot: this.workspaceProjectRoot,
+			searchPaths: this.searchPaths,
+			ledger: this.evidenceLedger,
 			cloudRoots: () => this.cloudRoots(),
 		});
 		this.queryDecompositionModel =
@@ -1423,7 +1488,9 @@ export class AutoRAGAgent {
 			CONVERT_FILES_TOOL_NAME,
 			LIST_FILE_CONVERSIONS_TOOL_NAME,
 			CALCULATOR_TOOL_NAME,
+			REVISE_ANSWER_TOOL_NAME,
 			MANAGE_AUTOMATIONS_TOOL_NAME,
+			MANAGE_LTR_TOOL_NAME,
 			JEV_TOOL_NAME,
 			WEB_SEARCH_TOOL_NAME,
 			WEB_FETCH_TOOL_NAME,
@@ -1452,7 +1519,9 @@ export class AutoRAGAgent {
 			...(convertFilesTool !== undefined ? [convertFilesTool] : []),
 			...(listFileConversionsTool !== undefined ? [listFileConversionsTool] : []),
 			calculatorTool,
+			reviseAnswerTool,
 			manageAutomationsTool,
+			manageLtrTool,
 			...(jikjiFindTool !== undefined ? [jikjiFindTool] : []),
 			...(everythingSearchTool !== undefined ? [everythingSearchTool] : []),
 			...(fsearchSearchTool !== undefined ? [fsearchSearchTool] : []),
@@ -1620,13 +1689,26 @@ export class AutoRAGAgent {
 		);
 		const methodToken = (value: string): string => `_${value.toLowerCase().replace(/[^a-z0-9]+/gu, "_")}_`;
 		const idsLongestFirst = catalog.map((entry) => entry.datasourceId).sort((a, b) => b.length - a.length);
+		// Retrieval reports real paths (MinSync resolves symlinks; macOS /var is /private/var), so a root matches by its
+		// configured spelling and by its real path.
+		const localRoots = [
+			...new Set(
+				this.configuredSearchPaths.flatMap((configuredRoot) => {
+					let real = configuredRoot;
+					try {
+						real = realpathSync(configuredRoot);
+					} catch {
+						// A missing root keeps only its configured spelling.
+					}
+					return [configuredRoot, real].map((path) => path.replaceAll("\\", "/").replace(/\/+$/u, ""));
+				}),
+			),
+		];
 		return ({ source, method }) => {
 			if (/^https?:\/\//u.test(source)) return "web";
 			const normalizedSource = source.replaceAll("\\", "/");
-			for (const configuredRoot of this.configuredSearchPaths) {
-				const normalizedRoot = configuredRoot.replaceAll("\\", "/").replace(/\/+$/u, "");
-				if (normalizedSource === normalizedRoot || normalizedSource.startsWith(`${normalizedRoot}/`))
-					return "local files";
+			for (const localRoot of localRoots) {
+				if (normalizedSource === localRoot || normalizedSource.startsWith(`${localRoot}/`)) return "local files";
 			}
 			const root = normalizedSource.startsWith("/") ? (normalizedSource.split("/")[1] ?? "") : "";
 			if (nonDatasourceRoots.has(root)) return undefined;
@@ -1683,6 +1765,7 @@ export class AutoRAGAgent {
 		if (details.mapping.length === 0) return undefined;
 		const resultByNumber = new Map(details.results.map((result) => [result.number, result]));
 		const units: (EvidenceJudgmentUnit & {
+			readonly chunkKey: string;
 			readonly record: Omit<JudgedEvidenceRecord, "probability" | "createdAt">;
 		})[] = [];
 		for (const entry of details.mapping) {
@@ -1698,6 +1781,7 @@ export class AutoRAGAgent {
 				const id = `${entry.number}:${ref.stableEvidenceId}`;
 				units.push({
 					id,
+					chunkKey: citedChunkKey(ref),
 					resultNumber: entry.number,
 					title: result.title,
 					summary: result.summary,
@@ -1722,6 +1806,17 @@ export class AutoRAGAgent {
 		}
 		if (units.length === 0) return undefined;
 		const judgment = await judgeEvidence(this.jevJudge, { question, answer: details.answer, units });
+		if (judgment.fallbackReason !== undefined) this.rankingRun?.supported(undefined);
+		else {
+			const support = new Map<string, number>();
+			for (const unit of units) {
+				const probability = judgment.probabilities[unit.id];
+				// One chunk can back several results; its label is the best support Jev gave it.
+				if (probability !== undefined)
+					support.set(unit.chunkKey, Math.max(support.get(unit.chunkKey) ?? 0, probability));
+			}
+			this.rankingRun?.supported(support);
+		}
 		const diagnostic: SearchDocumentDiagnostic =
 			judgment.fallbackReason !== undefined
 				? {
@@ -1746,6 +1841,62 @@ export class AutoRAGAgent {
 		);
 		this.memory.save();
 		return diagnostic;
+	}
+
+	/**
+	 * Start a background retrain when the settings ask for one and the log has grown enough. Fire and forget: the
+	 * answer never waits on it, one runs at a time per process (and one per memory directory, through the claim lock),
+	 * and a failure is dropped here because every attempt is recorded where `autorag ltr status` shows it.
+	 */
+	private maybeAutoTrainLtr(): void {
+		if (this.ltrSettings.autoTrain?.enabled !== true || this.ltrTraining !== undefined) return;
+		this.ltrTraining = runAutoTrain({ memoryPath: this.memoryFilePath, settings: this.ltrSettings })
+			.catch(() => undefined)
+			.finally(() => {
+				this.ltrTraining = undefined;
+			});
+	}
+
+	/**
+	 * Freeze the run's ranking candidates and labels and append them to the learning-to-rank log. Features are taken
+	 * as they are now, at serve time: the memory prior counts only evidence judged before the run started, and the
+	 * similar-question prior is the one this run's memory context actually found (missing when it was never loaded,
+	 * so logging never triggers an extra embedding call). A failed write is reported and never fails the search.
+	 */
+	private async persistRankingRun(details: AutoRAGResultsDetails): Promise<SearchDocumentDiagnostic | undefined> {
+		const run = this.rankingRun;
+		const path = this.rankingLogPath;
+		this.rankingRun = undefined;
+		if (run === undefined || path === undefined) return undefined;
+		const cachedContext = this.memoryContextCache?.query === this.lastQuery ? this.memoryContextCache : undefined;
+		const similarQuestions = cachedContext === undefined ? undefined : (await cachedContext.context).related;
+		const record = run.finish({
+			finalCitationKeys: details.mapping.flatMap((entry) =>
+				(entry.evidenceRefs.length > 0 ? entry.evidenceRefs : [entry]).map((ref) => citedChunkKey(ref)),
+			),
+			finishedAt: Date.now(),
+			priorEvidence: this.memory.getJudgedEvidence(),
+			...(similarQuestions !== undefined ? { similarQuestions } : {}),
+			origin: this.evidenceAttribution(this.listDatasources()),
+		});
+		if (record.candidates.length === 0) return undefined;
+		try {
+			const store = new RankingLogStore(path);
+			try {
+				store.append(record);
+			} finally {
+				store.close();
+			}
+			this.maybeAutoTrainLtr();
+			return undefined;
+		} catch (error) {
+			return {
+				code: "ranking-log-failed",
+				severity: "warning",
+				message: `The learning-to-rank log could not record this search; the answer is unaffected. ${error instanceof Error ? error.message : String(error)}`,
+				source: "memory",
+			};
+		}
 	}
 
 	private async resolveSessionModel(): Promise<{
@@ -1809,7 +1960,7 @@ export class AutoRAGAgent {
 			customTools: this.steerableTools(),
 			// The model sees each steer framed as a correction of the running search.
 			contextTransform: (messages) => this.withMemoryContext(frameSteers(messages, this.interactive.steerTexts)),
-			extensionFactories: [this.permissionGate, this.jevExtension, this.cloudRelease],
+			extensionFactories: [this.permissionGate, this.parsedMirrorTools, this.jevExtension, this.cloudRelease],
 			extensionToolNames: [JEV_TOOL_NAME],
 		});
 		const agent = piSession.session.agent;
@@ -1846,15 +1997,18 @@ export class AutoRAGAgent {
 			this.interactive.harnessAbort = true;
 			void this.activeSession?.abort();
 		}
-		if (event.type === "tool_execution_start" && this.searchToolNames.has(event.toolName)) {
-			const query: unknown = event.args?.query;
+		if (
+			event.type === "tool_execution_start" &&
+			(this.searchToolNames.has(event.toolName) || event.toolName === "grep")
+		) {
+			const query: unknown = event.toolName === "grep" ? event.args?.pattern : event.args?.query;
 			if (typeof query === "string") this.searchToolQueries.set(event.toolCallId, query);
 			const window = windowForTrace(event.args);
 			if (window !== undefined) this.searchToolWindows.set(event.toolCallId, window);
 			return;
 		}
 		if (event.type !== "tool_execution_end" || !this.lastQuery) return;
-		if (!this.searchToolNames.has(event.toolName)) return;
+		if (!this.searchToolNames.has(event.toolName) && event.toolName !== "grep") return;
 		const details = event.result.details as
 			| {
 					method?: string;
@@ -1946,6 +2100,7 @@ export class AutoRAGAgent {
 			onKey: (key) => this.handleInteractiveKey(key),
 			extensionFactories: [
 				this.permissionGate,
+				this.parsedMirrorTools,
 				this.cloudRelease,
 				createUserRequestPersistence(this.userRequests),
 				createEvidencePersistence(this.evidenceLedger, this.citationNumbers, this.conversationQueries),
@@ -1954,7 +2109,7 @@ export class AutoRAGAgent {
 				createEmbeddingControls({
 					embedder: this.embedder,
 					remote: remoteEmbedderFromMinSync(this.minSyncEmbedderConfig) !== undefined,
-					resolveBinary: () =>
+					resolveMinSyncBinary: () =>
 						resolveMinSyncBinary({
 							root: this.workspaceProjectRoot,
 							...(this.minSyncBinaryPath === undefined ? {} : { binaryPath: this.minSyncBinaryPath }),
@@ -2083,6 +2238,10 @@ export class AutoRAGAgent {
 			userMessages: this.conversationQueries.all(),
 			chunks,
 		});
+		this.rankingRun?.cited(
+			chunks.map((chunk) => chunk.key),
+			relevance.fallbackReason === undefined ? relevance.probabilities : undefined,
+		);
 		if (relevance.fallbackReason !== undefined) {
 			this.routingDiagnostics.push({
 				code: "citation-relevance-fallback",
@@ -2114,6 +2273,46 @@ export class AutoRAGAgent {
 			});
 		}
 		return derived.details;
+	}
+
+	/** How the revision tool reads citations: against this run's evidence, and as the numbers the caller is shown. */
+	private revisionCitations(): RevisionCitations {
+		const options = { allowLocalFiles: true };
+		return {
+			inspect: (text) => {
+				let resolved = 0;
+				const unresolved: string[] = [];
+				for (const marker of answerMarkers(text, isLocalFile)) {
+					if (marker.kind === "number") {
+						unresolved.push(`[${marker.number}]`);
+						continue;
+					}
+					const references = marker.kind === "evidence" ? marker.ids : [marker.path];
+					for (const reference of references) {
+						if (this.evidenceLedger.lookup(reference, options).length > 0) resolved += 1;
+						else unresolved.push(marker.kind === "evidence" ? `[${reference}]` : `[file:${reference}]`);
+					}
+				}
+				return { resolved, unresolved };
+			},
+			display: (text) =>
+				deriveResultsFromAnswer(text, this.evidenceLedger, { ...options, numbers: this.citationNumbers }).details
+					.answer,
+		};
+	}
+
+	/**
+	 * Sources among the text's citations that Jev finds unrelated to the sentences citing them. The same check
+	 * {@link deriveAnswer} applies to a final answer, run when the model proposes a correction so it can fix the
+	 * citation in the same turn instead of losing it silently afterwards.
+	 */
+	private async unsupportedCitations(text: string): Promise<readonly string[]> {
+		const chunks = citedChunks(text, this.evidenceLedger, { allowLocalFiles: true });
+		const relevance = await judgeCitationRelevance(this.jevJudge, {
+			userMessages: this.conversationQueries.all(),
+			chunks,
+		});
+		return [...new Set(chunks.filter((chunk) => relevance.rejected.has(chunk.key)).map((chunk) => chunk.source))];
 	}
 
 	/**
@@ -2409,6 +2608,7 @@ export class AutoRAGAgent {
 		// A run that owns no transcript is its own conversation, so earlier runs' memory messages have nothing to sit in.
 		if (this.boundPiRuntime === undefined) this.memoryMessages = [];
 		this.routingDiagnostics = [];
+		this.revisionSession = undefined;
 		if (decisionModel !== undefined) {
 			this.routingDiagnostics.push({
 				code: "decision-model-checked",
@@ -2436,6 +2636,15 @@ export class AutoRAGAgent {
 		}
 		this.conversationQueries.add(trimmedQuery);
 		this.lastSessionId = sessionId;
+		this.rankingRun =
+			this.rankingLogPath === undefined
+				? undefined
+				: new RankingRunRecorder({
+						runId: sessionId,
+						conversationId: this.conversationId,
+						question: trimmedQuery,
+						startedAt: Date.now(),
+					});
 		let captured: AutoRAGResultsDetails | undefined;
 		let fastCaptured: AutoRAGResultsDetails | undefined;
 		/** True when this run took a Jev branch whose report is not retrieved evidence (`config`, `organize`, or an `extra` turn that cited nothing); it never feeds retrieval memory. */
@@ -2623,6 +2832,7 @@ export class AutoRAGAgent {
 				// Esc aborted the phase that just ran: the user stopped the search.
 				const stopped = (): boolean => this.interactive.userAborted;
 				if (stopped()) return;
+				this.rankingRun?.plan({ searchQueries: plan.queries, datasources: plan.datasources, web: plan.web });
 				// Only `local` reaches here: `config`, `organize`, and `extra` ended
 				// the run in their own single turn above.
 				const baseline = await this.prefetchInitialRetrievalContext(
@@ -2674,6 +2884,10 @@ export class AutoRAGAgent {
 				setThinking(this.finalThinkingLevel);
 				// Only a preliminary consumer actually received may turn the final answer into a delta.
 				const fastAnswerDelivered = preliminary !== undefined && this.preliminaryCallback !== undefined;
+				// A caller that holds the first answer is shown the verification phase's corrections of it, claim by claim.
+				if (fastAnswerDelivered && fastText !== undefined) {
+					this.revisionSession = new AnswerRevisionSession(fastText, this.revisionCitations());
+				}
 				// The model gets its own first answer verbatim, with the [eN] ids it
 				// wrote: the caller's copy was renumbered to [n], and the prompt tells
 				// the model its [eN] ids are still valid.
@@ -2692,13 +2906,22 @@ export class AutoRAGAgent {
 				// A steer typed after verification's last model request is still owed an
 				// answer within this search: pi holds it queued, so verify once more.
 				while (!stopped() && !planAbort.signal.aborted && this.interactive.queuedSteers.length > 0) {
-					await activeSession.prompt(buildSteerContinuationPrompt(this.interactive.steers));
+					await activeSession.prompt(buildSteerContinuationPrompt(this.interactive.steers, fastAnswerDelivered));
 				}
 				// Synchronous with the check above: a later steer is refused, not left unanswered.
 				steering.acceptingSteers = false;
 				if (stopped()) return;
 				const finalText = finalAnswerText(transcript());
-				if (finalText !== undefined) captured = await this.deriveAnswer(finalText);
+				const revisions = this.revisionSession;
+				if (revisions === undefined || !revisions.changed()) {
+					// Nothing was corrected through the tool: the model's reply is the answer, as it always was.
+					if (finalText !== undefined) captured = await this.deriveAnswer(finalText);
+				} else {
+					// The answer is the first answer with every correction applied. The model's closing reply is a note on
+					// what changed, unless it cites evidence: then it also wrote something new, and dropping it would lose it.
+					const revised = composeRevisedAnswer(revisions.revisedText(), finalText);
+					if (revised !== "") captured = await this.deriveAnswer(revised);
+				}
 			})().finally(() => {
 				// Every early return decides synchronously after its last steer check.
 				steering.acceptingSteers = false;
@@ -2761,10 +2984,14 @@ export class AutoRAGAgent {
 			const memoryDiagnostic = isolatedRun
 				? undefined
 				: await this.recordJudgedEvidence(sessionId, trimmedQuery, captured);
+			const rankingDiagnostic = isolatedRun ? undefined : await this.persistRankingRun(captured);
+			const extraDiagnostics = [memoryDiagnostic, rankingDiagnostic].filter(
+				(diagnostic): diagnostic is SearchDocumentDiagnostic => diagnostic !== undefined,
+			);
 			const response: SearchDocumentsResponse =
-				memoryDiagnostic === undefined
+				extraDiagnostics.length === 0
 					? recorded
-					: { ...recorded, diagnostics: [...(recorded.diagnostics ?? []), memoryDiagnostic] };
+					: { ...recorded, diagnostics: [...(recorded.diagnostics ?? []), ...extraDiagnostics] };
 			this.runLogger.write({
 				event: "search_completed",
 				timestamp: new Date().toISOString(),
@@ -2807,6 +3034,8 @@ export class AutoRAGAgent {
 			this.activeSession = undefined;
 			this.activeRetrievalOptions = undefined;
 			this.preliminaryCallback = undefined;
+			this.revisionCallback = undefined;
+			this.revisionSession = undefined;
 			this.activeRun = false;
 			this.memoryContextCache = undefined;
 		}
@@ -2863,6 +3092,11 @@ export class AutoRAGAgent {
 		});
 		this.preliminaryCallback = (response) => {
 			queue.push({ type: "preliminary", response });
+			wake?.();
+			wake = undefined;
+		};
+		this.revisionCallback = (revision) => {
+			queue.push({ type: "revision", revision });
 			wake?.();
 			wake = undefined;
 		};
@@ -2940,6 +3174,7 @@ export class AutoRAGAgent {
 					return (agentSelf.searchFilterCache.get(datasourceId) ?? []).map((filter) => filter.name);
 				},
 				searchFilters: () => agentSelf.searchFilterCache.get(datasourceId) ?? [],
+				attachmentRoots: () => skill.attachmentRoots?.() ?? [],
 			});
 		}
 		return specs;
@@ -3430,6 +3665,16 @@ export class AutoRAGAgent {
 				const method = typeof result.metadata.method === "string" ? result.metadata.method : fallback;
 				this.evidenceOrigins.add({ query: searchQuery, method, source: result.source, content: result.content });
 			}
+			// Each surface's own ranked list, before interleaving, dedup, rerank, or cut: the raw features a ranker learns from.
+			this.rankingRun?.retrieved({ surface: "minsync", query: searchQuery, results: vector });
+			for (const [datasourceIndex, results] of perDatasource.entries()) {
+				this.rankingRun?.retrieved({
+					surface: `datasource:${datasources[datasourceIndex] ?? ""}`,
+					query: searchQuery,
+					results,
+				});
+			}
+			this.rankingRun?.retrieved({ surface: "web", query: searchQuery, results: webSearch.results });
 		}
 		if (webFailures.length > 0) {
 			this.routingDiagnostics.push({
@@ -3475,6 +3720,16 @@ export class AutoRAGAgent {
 			if (!signal.aborted) this.reportRerankFailure(error);
 		}
 		if (reranked !== undefined) {
+			const descriptor = this.reranker?.describe();
+			this.rankingRun?.reranked({
+				provider: descriptor?.provider ?? "unknown",
+				model: descriptor?.model ?? "unknown",
+				results: reranked,
+			});
+			// The log keeps the reranker's own rank and score (training's baseline); only the order shown changes.
+			const shown = this.applyLtr(reranked);
+			this.rankingRun?.exposed({ surface: "baseline", query, results: shown });
+			reranked = shown;
 			const baseline = formatRerankedBaseline(
 				reranked,
 				reranked.map((result) => this.evidenceLedger.registerResult("baseline", result)),
@@ -3510,6 +3765,12 @@ export class AutoRAGAgent {
 			shownDatasource = shownDatasource.slice(0, quota[1]);
 			shownWeb = shownWeb.slice(0, quota[2]);
 		}
+		// The sections below are shown in this order, so this is the order the model reads the candidates in.
+		this.rankingRun?.exposed({
+			surface: "baseline",
+			query,
+			results: [...shownMinSync, ...shownDatasource, ...shownWeb],
+		});
 		if (shownMinSync.length > 0) {
 			sections.push(
 				`MinSync semantic initial candidates:\n${shownMinSync
@@ -3644,6 +3905,43 @@ export class AutoRAGAgent {
 	}
 
 	/**
+	 * Opt-in learning-to-rank step: reorder the reranked baseline with the configured model. A disabled setting does
+	 * nothing at all. An enabled setting that cannot serve (no model passed its gate, the model is gone or no longer
+	 * matches this build's features, or scoring throws) leaves the reranker's order untouched and says why in a
+	 * diagnostic; evidence is never added or dropped.
+	 */
+	private applyLtr(reranked: readonly RetrievalResult[]): RetrievalResult[] {
+		if (this.ltrSettings.enabled !== true || this.rankingRun === undefined) return [...reranked];
+		const scorer = createLtrScorer({
+			enabled: true,
+			...(this.ltrSettings.model !== undefined ? { model: this.ltrSettings.model } : {}),
+			memoryPath: this.memoryFilePath,
+		});
+		if (scorer.status === "disabled") return [...reranked];
+		if (scorer.status !== "active") {
+			this.routingDiagnostics.push({
+				code: "ltr-unavailable",
+				severity: "warning",
+				message: `Learning-to-rank is enabled but not used: ${scorer.reason}. The reranker's order was kept.`,
+				source: "ltr",
+			});
+			return [...reranked];
+		}
+		const outcome = scorer.rank(this.rankingRun.snapshot({ finishedAt: Date.now() }), reranked);
+		if (outcome.error !== undefined) {
+			this.routingDiagnostics.push({
+				code: "ltr-failed",
+				severity: "warning",
+				message: `Learning-to-rank model ${scorer.modelId} failed and the reranker's order was kept: ${outcome.error}`,
+				source: "ltr",
+			});
+			return outcome.results;
+		}
+		this.rankingRun.servedBy(scorer.modelId);
+		return outcome.results;
+	}
+
+	/**
 	 * Surface a rerank failure the way a model error is surfaced: a diagnostic on
 	 * the response and, in the TUI, a visible notice in the transcript. The run
 	 * continues on the retrieval-order fallback.
@@ -3662,58 +3960,40 @@ export class AutoRAGAgent {
 	}
 
 	/**
-	 * Sentence for the phase prompts that forbid tool calls: `ask_user` is not a search tool, and a request
-	 * that hinges on a choice only the user can make must be asked, not guessed. Empty when the session does
-	 * not offer the tool.
+	 * Exception for the fast phase: `ask_user` is allowed only when nothing in hand can settle a choice
+	 * that belongs to the user. Empty when the session does not offer the tool.
 	 */
 	private askUserException(): string {
 		return this.askUserOffered
-			? `This rule does not cover ${ASK_USER_TOOL_NAME}: use it only when nothing you already have can settle something or the choice is the user's alone, and then ask through it instead of in plain text; never guess. `
+			? ` ${ASK_USER_TOOL_NAME} is allowed only when a choice belongs solely to the user and cannot be verified; never guess.`
 			: "";
 	}
 
 	/**
-	 * Fast-phase exception to the no-tools rule, naming only the web tools this
-	 * session actually registered. Empty when web tools are off, so the prompt
-	 * never mentions a tool the model does not have.
+	 * Fast-phase exception for web tools when enabled, for public facts the baseline lacks.
 	 */
 	private fastPhaseWebHint(): string {
 		const names = new Set(this.tools.map((tool) => tool.name));
 		if (!names.has(WEB_SEARCH_TOOL_NAME)) return "";
-		const fetch = names.has(WEB_FETCH_TOOL_NAME) ? ` or ${WEB_FETCH_TOOL_NAME}` : "";
-		return ` ${WEB_SEARCH_TOOL_NAME}${fetch} is allowed: when the question concerns public facts that may be recent or that changed since your training and the baseline lacks them, call it before answering.`;
+		const fetch = names.has(WEB_FETCH_TOOL_NAME) ? ` / ${WEB_FETCH_TOOL_NAME}` : "";
+		return ` ${WEB_SEARCH_TOOL_NAME}${fetch} is allowed if current public facts are needed and missing from the baseline.`;
 	}
 
 	/**
-	 * Fast-phase prompt for two-phase searches. The baseline retrieval context
-	 * is already gathered, so the model answers immediately with minimal thinking,
-	 * as plain text, without further retrieval; the web tools are the only
-	 * exception, for public facts the baseline cannot settle.
+	 * Fast-phase prompt for two-phase searches: give the best immediate answer from
+	 * the prefetched baseline with minimal latency, without local retrieval calls.
 	 */
 	buildFastAnswerPrompt(query: string, options: RetrievalOptions, baseline: string): string {
 		const limit = typeof options.topK === "number" ? ` Cite at most ${options.topK} sources.` : "";
-		const scope = options.scope ? ` Restrict search to virtual path scope ${options.scope}.` : "";
+		const scope = options.scope ? ` Restrict scope to ${options.scope}.` : "";
 		return (
-			`Answer this original query immediately: ${query}${limit}${scope}\n\n` +
-			`Baseline retrieval evidence (already gathered for you):\n${baseline}\n\n` +
-			`Produce the best complete, self-contained answer you can RIGHT NOW from this evidence. Do NOT call any local search, retrieval, datasource, or file-reading tool and do NOT wait for more evidence.${this.fastPhaseWebHint()} ${CALCULATOR_FAST_PHASE_RULE} ${this.askUserException()}` +
-			`If the query is answerable from general knowledge alone, answer directly.\n\n` +
-			`Formatting and content rules for the answer:\n` +
-			`- Unless the user explicitly requests a different format or length, provide the core answer to the user's question in at most 5 bullet points. If additional explanation is necessary, append it after the bullet points.\n` +
-			`- ${ANSWER_LEAD_RULE}\n` +
-			`- ${ANSWER_BULLET_RULE}\n` +
-			`- ${ANSWER_EMPHASIS_RULE}\n` +
-			`- ${ANSWER_LANGUAGE_RULE}\n` +
-			`- Unless the user explicitly requests otherwise, answer the question directly. Do not include specific file paths, datasource descriptions, or retrieval mechanics in the answer text.\n` +
-			`- ${ANSWER_DELIVERABLE_RULE}\n` +
-			`- ${ANSWER_CITATION_RULE}\n` +
-			`- ${ANSWER_IMAGE_EMBED_RULE}\n` +
-			`- Do not report per-source negative findings (e.g. "no information found in Slack" or "checked Drive but found nothing").\n` +
-			`- When evidence conflicts, treat the freshest (most recent) information as the correct source of truth.\n` +
-			`- ${ANSWER_RELEVANCE_RULE}\n` +
+			`Query: ${query}${limit}${scope}\n\n` +
+			`Baseline retrieval evidence:\n${baseline}\n\n` +
+			`Goal: provide the best complete, immediate first answer you can from this baseline (or from stable general knowledge if no records are needed).\n` +
+			`Constraints for this fast pass:\n` +
+			`- Do not call local retrieval, datasource, or file-reading tools (a verification pass will search deeper if needed).${this.fastPhaseWebHint()} ${CALCULATOR_FAST_PHASE_RULE}${this.askUserException()}\n` +
 			`- ${ANSWER_UNCONFIRMED_FAST_RULE}\n` +
-			`- ${ANSWER_UNCERTAINTY_RULE}\n\n` +
-			`Write the answer as your reply, then stop.`
+			`- End with your reply as plain text.`
 		);
 	}
 
@@ -3729,96 +4009,32 @@ export class AutoRAGAgent {
 
 	/**
 	 * Prompt for a request Jev routed to `organize`: act on files and folders
-	 * (move, rename, convert, sort). No route changes the active tools any more,
-	 * so the prompt names the tools the task uses and the ones it must not, and
-	 * carries the loaded organize skill with the rules. No retrieval ran and no
-	 * verification follows; the model's plain final message is the answer.
+	 * safely and report every change for reversibility.
 	 */
 	buildOrganizePrompt(query: string, skill: PackagedAgentSkill): string {
 		return (
-			`The user asks you to organize files and folders: ${query}\n\n` +
-			`${this.organizeToolScope()}\n\n` +
+			`Goal: carry out the user's file/folder organization request on disk: ${query}\n\n` +
+			`Scope: this is a local file-action task, not a document or web search — stay off content-retrieval, datasource, and web tools.\n\n` +
 			`${formatSkillInvocation(skill)}\n\n` +
-			`Finish with a short report as your final message, with no tool call: every change as old path → new path (one per line), what you skipped and why, and anything that needs the user. Write in the language of the request.`
+			`Finish with a concise report in the user's language (no tool call): every change as \`old path → new path\`, anything skipped and why, and any follow-up needed.`
 		);
 	}
 
 	/**
-	 * The tool-scope sentence of an `organize` turn: the tools the task uses and
-	 * the content-retrieval and web tools it must not call. Every route keeps the
-	 * whole tool set now, so the prompt is what scopes the turn; both lists name
-	 * only tools this agent actually registered, so the prompt never points the
-	 * model at a tool the session does not have.
-	 */
-	private organizeToolScope(): string {
-		const registered = new Set(this.tools.map((tool) => tool.name));
-		const discovery = [JIKJI_FIND_TOOL_NAME, EVERYTHING_SEARCH_TOOL_NAME, FSEARCH_SEARCH_TOOL_NAME].filter((name) =>
-			registered.has(name),
-		);
-		const usable = [
-			"bash",
-			"read",
-			"edit",
-			"write",
-			"ls",
-			...[CONVERT_FILES_TOOL_NAME, LIST_FILE_CONVERSIONS_TOOL_NAME, SCAN_DUPLICATE_DOCUMENTS_TOOL_NAME].filter(
-				(name) => registered.has(name),
-			),
-			...discovery,
-		];
-		const forbidden = this.tools
-			.map((tool) => tool.name)
-			.filter(
-				(name) =>
-					!discovery.includes(name) &&
-					(this.searchToolNames.has(name) || name === WEB_SEARCH_TOOL_NAME || name === WEB_FETCH_TOOL_NAME),
-			);
-		return (
-			`This is a file-organization task, not a document search: work with ${usable.join(", ")}` +
-			`${forbidden.length === 0 ? "" : `, and do NOT call the retrieval, datasource, or web tools (${forbidden.join(", ")})`}.`
-		);
-	}
-
-	/**
-	 * Prompt for a request Jev routed to `extra`: no branch had a confident
-	 * non-local verdict, and handling it needs no search of the user's records
-	 * first. Nothing was retrieved and nothing follows this turn — no fast
-	 * answer, follow-up check, or verification — so the single tool-capable
-	 * turn either answers the question or carries the task out. No tool is
-	 * forbidden: the model looks facts up itself when they are not its own.
+	 * Prompt for a request Jev routed to `extra`: complete the request in one turn
+	 * with full tool access (knowledge answer, targeted lookup, or execution task).
 	 */
 	buildExtraPrompt(query: string): string {
-		const registered = new Set(this.tools.map((tool) => tool.name));
-		// Name the tools that can settle a question this turn cannot answer from
-		// memory alone: the retrieval tools this agent registered, plus the web
-		// tools when they are on. Never name a tool the model does not have.
-		const lookups = [...registered].filter(
-			(name) => this.searchToolNames.has(name) || name === WEB_SEARCH_TOOL_NAME || name === WEB_FETCH_TOOL_NAME,
-		);
-		const lookupHint = lookups.length === 0 ? "" : ` (${lookups.join(", ")})`;
 		const askUser = this.askUserOffered
-			? `ask through ${ASK_USER_TOOL_NAME} rather than guessing`
-			: "say so in the reply rather than guessing";
+			? `ask via ${ASK_USER_TOOL_NAME} rather than guessing`
+			: "state the missing detail rather than guessing";
 		return (
-			`Handle this request now, in this one turn, with the tools you have: ${query}\n\n` +
-			`Nothing has been retrieved for you and no other turn follows: the message you end with is the final answer.\n\n` +
-			`How to handle it:\n` +
-			`- Answer from your own knowledge when that reliably settles the question: stable general knowledge, a definition, simple reasoning, or small talk.\n` +
-			`- Look it up first when the answer depends on the user's own records (their files, chats, mail, notes, calendar, or history) or on facts that may be recent, specific, or changed${lookupHint}.\n` +
-			`- Any arithmetic, date, time, or time zone question: ${CALCULATOR_PROMPT_RULE}\n` +
-			`- Otherwise carry the task out with the tools.\n\n` +
-			`Rules for your reply:\n` +
-			`- ${ANSWER_LEAD_RULE}\n` +
-			`- ${ANSWER_BULLET_RULE}\n` +
-			`- ${ANSWER_EMPHASIS_RULE}\n` +
-			`- ${ANSWER_LANGUAGE_RULE}\n` +
-			`- ${ANSWER_RELEVANCE_RULE}\n` +
-			`- ${ANSWER_UNCONFIRMED_FINAL_RULE}\n` +
-			`- ${ANSWER_UNCERTAINTY_RULE}\n` +
-			`- ${ANSWER_CITATION_RULE}\n` +
-			`- When you did work instead of answering a question, reply with a short report as your final message, with no tool call: what you did, the result, and anything that still needs the user. The answer-format rules above do not apply to a report; write it in the language of the request.\n` +
-			`- When something you need is not available to you and only the user can settle it, ${askUser}.\n\n` +
-			`Write the answer or the report as your final message, then stop.`
+			`Goal: handle this request completely in this single turn (no prefetched retrieval and no follow-up turn): ${query}\n\n` +
+			`- Answer directly from stable general knowledge when that reliably settles it.\n` +
+			`- Look up the user's records or current public facts with your tools whenever the answer depends on them.\n` +
+			`- For action/coding/command tasks, execute the work with your tools and end with a concise outcome report.\n` +
+			`- If a required choice belongs only to the user, ${askUser}.\n` +
+			`- End with your final answer or report as plain text.`
 		);
 	}
 
@@ -3849,31 +4065,10 @@ export class AutoRAGAgent {
 		return finalAnswerText(transcript());
 	}
 
-	/** Discovery-tool hint naming only the registered discovery tools; empty when none. */
-	private discoveryHint(sentence: (tools: string) => string): string {
-		const names = this.tools
-			.map((tool) => tool.name)
-			.filter((name) => name === JIKJI_FIND_TOOL_NAME || name === EVERYTHING_SEARCH_TOOL_NAME);
-		return names.length === 0 ? "" : sentence(names.join(" and "));
-	}
-
 	/**
-	 * Verification-phase nudge toward the internet, for when the web was not
-	 * selected before the fast answer or its evidence fell short: when local
-	 * evidence is missing, thin, or possibly stale, the agent searches the web. Empty when web tools are off.
-	 */
-	private webFallbackHint(): string {
-		const names = new Set(this.tools.map((tool) => tool.name));
-		if (!names.has(WEB_SEARCH_TOOL_NAME)) return "";
-		const fetch = names.has(WEB_FETCH_TOOL_NAME) ? ` (and ${WEB_FETCH_TOOL_NAME} to read a promising page)` : "";
-		return `When local evidence is missing, thin, or possibly outdated — or the question concerns current events, recent releases, prices, or other public facts — use ${WEB_SEARCH_TOOL_NAME}${fetch} to confirm or correct claims and fill gaps; use URLs as result sources for web-derived evidence. `;
-	}
-
-	/**
-	 * Verification-phase prompt for two-phase searches. The fast answer, when a
-	 * consumer already received it, is embedded verbatim so the model can diff
-	 * against it; the model then verifies with thinking on and ends with the
-	 * final answer as a plain reply, returning only the delta.
+	 * Verification-phase prompt for two-phase searches. Focuses on verifying
+	 * factual accuracy, freshness, and completeness, applying claim-level edits
+	 * via `revise_answer` when the fast answer already reached the user.
 	 */
 	buildRefinementPrompt(
 		query: string,
@@ -3884,77 +4079,27 @@ export class AutoRAGAgent {
 		jikjiStartingPoints: readonly string[] = [],
 	): string {
 		const limit = typeof options.topK === "number" ? ` Cite at most ${options.topK} sources.` : "";
-		const scope = options.scope ? ` Restrict search to virtual path scope ${options.scope}.` : "";
+		const scope = options.scope ? ` Restrict scope to ${options.scope}.` : "";
 		const firstAnswer = formatFirstAnswerContext(fastAnswer, fastAnswerDelivered);
-		const answerRules = fastAnswerDelivered
-			? `Rules for your final answer (DELTA ONLY; the system prompt's answer guidelines still apply):\n` +
-				`- The user already has the first answer above. Your final answer MUST contain only the delta against it: (a) corrections to anything in the first answer that is wrong, unsupported, or outdated, and (b) newly verified findings that were not present in the first answer. Mark each item as a correction or a new finding.\n` +
-				`- NEVER restate first-answer facts that remain correct or repeat its bullet list. If verification changed nothing and found nothing new, the final answer is ONE short line and nothing more (if the first answer said the answer was not confirmed yet, the line says it still could not be confirmed): no mention of what was found instead (no "only X exists" contrast), no account of where or how you searched or what the documents contain.\n` +
-				`- Do not include specific file paths, datasource descriptions, or retrieval mechanics in the answer text.\n` +
-				`- A correction or new finding that relies on evidence the first answer cited must cite that evidence's id again.\n` +
-				`- ${ANSWER_LANGUAGE_RULE}\n` +
-				`- Leave out unrelated or merely adjacent findings.\n` +
+		const jikjiBlock =
+			jikjiStartingPoints.length === 0
+				? ""
+				: `Jikji candidate files (unverified starting points):\n${jikjiStartingPoints.map((path) => `- ${path}`).join("\n")}\n\n`;
+		const modeInstructions = fastAnswerDelivered
+			? `Delivery mode (first answer already shown to the user):\n` +
+				`- ${REVISE_ANSWER_PROMPT_RULE}\n` +
+				`- Support every replacement or addition with a cited \`[eN]\` or \`[file:<abs path>]\` source and a short reason in the user's language; retract unsupported claims.\n` +
 				`- ${ANSWER_DELIVERABLE_DELTA_RULE}\n` +
-				`- ${ANSWER_IMAGE_DELTA_RULE}`
-			: `Formatting and content rules for the final answer (COMPLETE — no first answer reached the caller):\n` +
-				`- Unless the user explicitly requests a different format or length, provide the core answer to the user's question in at most 5 bullet points. If additional explanation is necessary, append it after the bullet points.\n` +
-				`- ${ANSWER_LEAD_RULE}\n` +
-				`- ${ANSWER_BULLET_RULE}\n` +
-				`- ${ANSWER_EMPHASIS_RULE}\n` +
-				`- ${ANSWER_LANGUAGE_RULE}\n` +
-				`- ${ANSWER_UNCERTAINTY_RULE}\n` +
-				`- ${ANSWER_RELEVANCE_RULE}\n` +
-				`- ${ANSWER_UNCONFIRMED_FINAL_RULE}\n` +
-				`- Unless the user explicitly requests otherwise, answer the question directly. Do not include specific file paths, datasource descriptions, or retrieval mechanics in the answer text.\n` +
-				`- ${ANSWER_DELIVERABLE_RULE}${fastAnswer !== undefined ? ` ${ANSWER_DELIVERABLE_DELTA_RULE}` : ""}\n` +
-				`- ${ANSWER_CITATION_RULE}\n` +
-				`- ${ANSWER_IMAGE_EMBED_RULE}\n` +
-				`- Do not report per-source negative findings (e.g. "no information found in Slack").\n` +
-				`- When evidence conflicts, treat the freshest (most recent) information as the correct source of truth.`;
+				`- ${ANSWER_IMAGE_DELTA_RULE}\n` +
+				`- End with ONE short line summarizing what changed (or confirming the first answer held up / remains unconfirmed) — do not restate unchanged claims or describe how you searched.`
+			: `Delivery mode (no first answer reached the user): write the complete final answer following the system prompt's Answer Guidelines.${fastAnswer !== undefined ? ` ${ANSWER_DELIVERABLE_DELTA_RULE}` : ""}`;
 		return (
 			`Original query: ${query}${limit}${scope}\n\n` +
 			`${firstAnswer}\n\n` +
 			formatSteerContext(steers) +
-			(jikjiStartingPoints.length === 0
-				? ""
-				: `Jikji's file discovery found these local files for the query. They are unverified candidates, not evidence: start exploring from them.\n${jikjiStartingPoints.map((path) => `- ${path}`).join("\n")}\n\n`) +
-			`Now verify it rigorously. ${this.discoveryHint((tools) => `Actively use ${tools} when discovering or exploring local files and folders. `)}Check important claims against source files with bash when needed, correct anything wrong or unsupported, fill gaps with retrieval tools, and resolve conflicts and freshness. ${this.webFallbackHint()} ${CALCULATOR_PROMPT_RULE} Recompute every number or date in the first answer with it when you have not already.\n\n` +
-			`${answerRules}\n\n` +
-			`Do not use broad grep/find or recursive filesystem scans: only inspect a path or narrow neighborhood surfaced by retrieval, and only when evidence clearly points there. ` +
-			`Avoid spinning repeated near-identical queries against the same datasource; once additional attempts stop surfacing new evidence, conclude from the evidence available. ` +
-			`When finished, reply with the final answer and no tool call: that last reply is what the user receives, so keep progress notes out of it.`
-		);
-	}
-
-	buildSearchPrompt(query: string, options: RetrievalOptions, initialRetrievalContext?: string): string {
-		const limit = typeof options.topK === "number" ? ` Cite at most ${options.topK} sources.` : "";
-		const scope = options.scope ? ` Restrict search to virtual path scope ${options.scope}.` : "";
-		return (
-			`Find and curate information for this original query: ${query}${limit}${scope}\n\n` +
-			`Start by deciding whether this is answerable from general knowledge or memory. If it is a generic, stable question, answer it immediately without retrieval. ` +
-			`Otherwise, baseline MinSync and Jikji retrieval is already running in parallel; do not give the final answer until its next message arrives.\n\n` +
-			`Baseline retrieval context:\n${initialRetrievalContext ?? "Pending; continue only with a brief progress statement."}\n\n` +
-			`Treat candidates as unverified evidence, verify important claims against source files when needed, and use additional tools when needed. ` +
-			`Judge relevance, conflicts, freshness, and sufficiency in this agent loop.\n\n` +
-			`Formatting and content rules for the answer:\n` +
-			`- Unless the user explicitly requests a different format or length, provide the core answer to the user's question in at most 5 bullet points. If additional explanation is necessary, append it after the bullet points.\n` +
-			`- ${ANSWER_LEAD_RULE}\n` +
-			`- ${ANSWER_BULLET_RULE}\n` +
-			`- ${ANSWER_EMPHASIS_RULE}\n` +
-			`- ${ANSWER_LANGUAGE_RULE}\n` +
-			`- Unless the user explicitly requests otherwise, answer the question directly. Do not include specific file paths, datasource descriptions, or retrieval mechanics in the answer text.\n` +
-			`- ${ANSWER_DELIVERABLE_RULE}\n` +
-			`- ${ANSWER_CITATION_RULE}\n` +
-			`- ${ANSWER_IMAGE_EMBED_RULE}\n` +
-			`- Do not report per-source negative findings (e.g. "no information found in Slack").\n` +
-			`- When evidence conflicts, treat the freshest (most recent) information as the correct source of truth.\n` +
-			`- ${ANSWER_RELEVANCE_RULE}\n` +
-			`- ${ANSWER_UNCONFIRMED_FINAL_RULE}\n` +
-			`- ${ANSWER_UNCERTAINTY_RULE}\n\n` +
-			`${CALCULATOR_PROMPT_RULE}\n` +
-			`${this.discoveryHint((tools) => `When exploring local files and folders, actively use ${tools} rather than exploratory bash commands. `)}Do not use broad grep/find or recursive filesystem scans: only inspect a path or narrow neighborhood surfaced by retrieval, and only when evidence clearly points there. ` +
-			`Avoid spinning repeated near-identical queries against the same datasource; once additional attempts stop surfacing new evidence, conclude from the evidence available. ` +
-			`When finished, reply with the final answer and no tool call: that last reply is what the user receives, so keep progress notes out of it.`
+			jikjiBlock +
+			`Goal: rigorously verify the answer against primary sources, fill any evidence gaps with your tools, resolve conflicts in favor of the freshest facts, and verify any numbers or dates with \`${CALCULATOR_TOOL_NAME}\`.\n\n` +
+			`${modeInstructions}`
 		);
 	}
 
@@ -3997,6 +4142,8 @@ export class AutoRAGAgent {
 		const forwardAbort = (): void => syncAbort.abort(signal?.reason);
 		signal?.addEventListener("abort", forwardAbort, { once: true });
 		let minSyncPipeline: PipelinedSync | undefined;
+		// A refresh that builds the index from nothing lets queries read beside all its syncs, not only the first.
+		const firstBuild = needsParsed && wants("minsync") ? this.minSyncMethod.beginFirstBuild() : undefined;
 		try {
 			writeRefreshProgress(this.workspaceProjectRoot, progress);
 			// MinSync indexes the parsed mirrors. When both run, the first committed batch starts a sync while
@@ -4033,6 +4180,7 @@ export class AutoRAGAgent {
 										total: syncTotal,
 									});
 								},
+								firstBuild,
 							);
 							minSyncBatches.push(result);
 							// Every sync indexes the whole staged mirror, so a successful one also
@@ -4304,6 +4452,7 @@ export class AutoRAGAgent {
 		} finally {
 			signal?.removeEventListener("abort", forwardAbort);
 			await minSyncPipeline?.settle();
+			firstBuild?.end();
 			this.refreshState = {
 				...this.refreshState,
 				inFlight: false,
@@ -4328,7 +4477,7 @@ export class AutoRAGAgent {
 				message:
 					health.backend === "remote"
 						? `The configured remote embedding endpoint is not answering (${health.detail ?? "no response"}); semantic search is unavailable until it is back.`
-						: "No embedding backend is running, so semantic search is unavailable (keyword search still works). Start `minsync serve --idle-timeout 0` (docs/indexing/embedding-backends.md), press Ctrl+Shift+E in the TUI, or set minSync.embedder to a remote endpoint.",
+						: "No embedding backend is running, so semantic search is unavailable (keyword search still works). Start `inl serve --idle-timeout 0` (docs/indexing/embedding-backends.md), press Ctrl+Shift+E in the TUI, or set minSync.embedder to a remote endpoint.",
 				source: "embedding",
 			},
 		];
@@ -4675,12 +4824,17 @@ export class AutoRAGAgent {
 		return { excluded };
 	}
 
+	/**
+	 * `session` marks this as one sync of a refresh that builds the index from nothing, which queries may read beside; only the
+	 * refresh passes it.
+	 */
 	async syncMinSync(
 		force = false,
 		signal?: AbortSignal,
 		onProgress?: (progress: MinSyncSyncProgress) => void,
+		session?: FirstBuildSession,
 	): Promise<MinSyncSyncResult> {
-		const result = await this.minSyncMethod.sync(force, signal, onProgress);
+		const result = await this.minSyncMethod.sync(force, signal, onProgress, session);
 		this.refreshState = { ...this.refreshState, minsync: result };
 		return result;
 	}
@@ -5354,11 +5508,27 @@ function formatSteerContext(steers: readonly string[]): string {
 }
 
 /** One more verification turn for steers that arrived after the last phase's final model request. */
-function buildSteerContinuationPrompt(steers: readonly string[]): string {
-	return (
-		`${formatSteerContext(steers)}Apply the latest correction: search or verify further if it needs that, ` +
-		`then reply with the complete final answer to the original question and no tool call.`
-	);
+function buildSteerContinuationPrompt(steers: readonly string[], correctWithTool = false): string {
+	const finish = correctWithTool
+		? `correct the first answer with ${REVISE_ANSWER_TOOL_NAME} where the correction needs it, then reply with one short line and no tool call.`
+		: `then reply with the complete final answer to the original question and no tool call.`;
+	return `${formatSteerContext(steers)}Apply the latest correction: search or verify further if it needs that, ${finish}`;
+}
+
+function isLocalFile(path: string): boolean {
+	return isAbsolute(path) && isRegularFile(path);
+}
+
+/**
+ * The first answer with the model's corrections applied, followed by the model's closing reply only when that reply
+ * cites evidence: a plain closing note ("removed the payout claim") only describes corrections the tool already
+ * carries. When every claim was retracted, the closing reply is all there is to say.
+ */
+function composeRevisedAnswer(revised: string, closing: string | undefined): string {
+	if (closing === undefined) return revised;
+	if (revised === "") return closing;
+	const cites = answerMarkers(closing, isLocalFile).some((marker) => marker.kind !== "number");
+	return cites ? `${revised}\n\n${closing}` : revised;
 }
 
 /**
@@ -5372,10 +5542,13 @@ function formatFirstAnswerContext(fastAnswer: string | undefined, delivered: boo
 	if (fastAnswer === undefined) {
 		return "(the fast phase produced no answer — write the complete answer)";
 	}
-	const header = delivered
-		? "The user has ALREADY received this immediate first answer (its citations were renumbered for the user; the [eN] ids below are still valid for you):"
-		: "An internal first-pass draft was produced but was NOT shown to the caller; write the complete answer:";
-	return `${header}\n${fastAnswer}`;
+	if (!delivered) {
+		return `An internal first-pass draft was produced but was NOT shown to the caller; write the complete answer:\n${fastAnswer}`;
+	}
+	const listed = splitClaims(fastAnswer)
+		.map((claim) => `${claim.id}: ${claim.text.replace(/\n/gu, "\n    ")}`)
+		.join("\n");
+	return `The user has ALREADY received this immediate first answer. It is split into claims you can name (the [eN] ids are the ones you wrote and are still valid for you):\n${listed}`;
 }
 
 /**

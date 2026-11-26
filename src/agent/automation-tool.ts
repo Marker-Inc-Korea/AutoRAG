@@ -118,7 +118,8 @@ const manageAutomationsSchema = Type.Object({
 	),
 	events: Type.Optional(
 		Type.Array(Type.Object({ type: eventType, path: Type.String() }), {
-			description: "Test events for run; only events that match the rule are passed to it.",
+			description:
+				"Synthetic test events for run (only matching events are passed to the rule). Test events need no real file on disk — never create or modify files just to test a rule.",
 		}),
 	),
 });
@@ -197,7 +198,7 @@ export function createManageAutomationsTool(
 		name: MANAGE_AUTOMATIONS_TOOL_NAME,
 		label: "Manage Automations",
 		description:
-			"Create, list, change, delete, and test file-triggered automations, and start or stop the background daemon that runs them. A rule watches folders and runs a command when files are created, updated, or deleted there; changed files arrive on the command's stdin as JSON [{type, path}].",
+			"Create, list, change, delete, and test file-triggered automations, and start or stop the background daemon that runs them. A rule watches folders and runs a command or agent when files are created, updated, or deleted there; changed files arrive on stdin as JSON [{type, path}]. Never let a rule write outputs inside a watched folder unless `exclude` covers those outputs (self-triggering rules are disabled after 20 runs/min).",
 		parameters: manageAutomationsSchema,
 		async execute(_toolCallId, params): Promise<AgentToolResult<ManageAutomationsDetails>> {
 			const { action } = params;

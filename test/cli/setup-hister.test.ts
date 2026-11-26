@@ -351,8 +351,8 @@ describe("setup: Hister shares the global embedding model", () => {
 			deps: deps(f, { embedder: embedder(null) }),
 		});
 		expect(report.hister?.embedding).toMatchObject({ inSync: false, applied: false });
-		expect(report.hister?.embedding?.reason).toContain("minsync serve");
-		expect(report.hister?.remediation).toContain("minsync serve --idle-timeout 0");
+		expect(report.hister?.embedding?.reason).toContain("inl serve");
+		expect(report.hister?.remediation).toContain("inl serve --idle-timeout 0");
 	});
 
 	it("does not sync when the datasource has semantic switched off", async () => {

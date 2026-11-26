@@ -35,8 +35,10 @@ Relative paths in the config file (and in a migrated legacy config) resolve agai
 | `webSearch` | object | enabled | `web_search` + `web_fetch` tools |
 | `jev` | object | `{backend:<default>}` | The required decision model |
 | `queryDecomposition` | object \| `false` | `{model:<default>}` | Question decomposition; `false` lets the session model decompose |
-| `permissionMode` | `"auto"` \| `"ask"` \| `"full"` | `"auto"` | Approval gate for file changes by the agent |
+| `permissionMode` | `"readonly"` \| `"full"` | `"readonly"` | Disk permission mode (`readonly`: OS-sandboxed read-only; `full`: read/write) |
 | `rerank` | object \| `false` | absent (off) | Post-merge reranking; opt-in |
+| `rankingLog` | `boolean` | `true` | `false` stops writing the learning-to-rank log beside the memory file |
+| `ltr` | object | absent (off) | Opt-in learning-to-rank serving and retraining (see below) |
 | `parserOptions` | object | `{}` | Parser and OCR tuning |
 | `dupey` | object | `{enabled:true}` | Exact/near-duplicate scan settings |
 | `excludeExactDuplicates` | `boolean` | `true` | Drop exact-duplicate copies from the local index |
@@ -114,6 +116,17 @@ Opt-in: reranking runs only when `model` is named. A block without a model is tr
 | `baseUrl` | `string` | provider default | Override the provider base URL |
 | `topN` | integer > 0 | `25` | Return only the top N merged results |
 | `timeoutMs` | integer > 0 | provider default | Per-request timeout |
+
+### ltr
+
+Opt-in: with no `ltr` block, or `enabled` not `true`, search order is exactly what the merger and reranker produce. See [learning-to-rank.md](../retrieval/learning-to-rank.md).
+
+| Field | Type | Default | Meaning |
+|---|---|---|---|
+| `enabled` | `boolean` | `false` | Reorder the baseline with a trained model |
+| `model` | `string` | `"latest"` | A model id from `autorag ltr list`, or `latest`: the newest model that passed its holdout gate |
+| `autoTrain.enabled` | `boolean` | `false` | Retrain in the background once enough new runs are logged |
+| `autoTrain.minNewRuns` | integer > 0 | `200` | New logged runs between automatic retrains |
 
 ### everything
 
@@ -283,7 +296,7 @@ Secrets never appear in the config: a connector references a credential by envir
     "apiKeyEnv": "OPENROUTER_API_KEY",
     "topN": 25
   },
-  "permissionMode": "auto",
+  "permissionMode": "readonly",
 
   "parserOptions": { "ocr": { "enabled": false }, "fileTimeoutMs": 120000 },
 
@@ -311,7 +324,7 @@ Malformed config fails fast with a `ConfigError`; the command exits `2`. Unknown
 - ``Config field 'excludePaths' must be a non-empty string array``.
 - `MinSync is required and cannot be disabled; remove `minSync: false` / `minSync.enabled: false` from the config.`
 - `jev.enabled is no longer supported: ...` — the old `enabled` switch was removed; the decision model is required.
-- `--permission-mode must be one of: ask, auto, full`.
+- `--permission-mode must be one of: readonly, full`.
 - `rerank.provider must be one of: openrouter, dazzi`.
 
 ::: warning **Secrets**

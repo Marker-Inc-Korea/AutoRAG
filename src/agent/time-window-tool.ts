@@ -13,7 +13,7 @@ export const timeWindowProperties = {
 	since: Type.Optional(
 		Type.String({
 			description:
-				"Optional ISO-8601 lower bound, inclusive: only evidence dated at or after it. A date-only value such as 2026-09-01 is that day's local midnight. Resolve relative phrases ('last month', 'this week') against the current date in the prompt.",
+				"Optional ISO-8601 lower bound, inclusive: only evidence dated at or after it. A date-only value such as 2026-09-01 is that day's local midnight. Resolve relative phrases ('last month', 'this week') against <current_date>. Local files are dated by last modification time, not authorship. A time window only narrows results — always keep a topical query alongside it.",
 		}),
 	),
 	until: Type.Optional(

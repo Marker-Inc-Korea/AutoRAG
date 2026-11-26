@@ -23,9 +23,9 @@ tier: community
 category: tools
 requires_hermes: ">=0.22.3"
 docs_url: https://github.com/Marker-Inc-Korea/AutoRAG/tree/main/plugins/hermes
-platforms: [macos]
+platforms: [macos, linux, windows]
 known_issues:
-  - "Verified on macOS only; Linux and Windows have not been verified for this plugin."
+  - "KakaoTalk (`lazykatok`) is macOS-only; all other local file and datasource search features support macOS, Linux, and Windows."
   - "Local chat/mail search requires existing configured crawler archives; installation does not sign into those services."
 capabilities:
   provides_tools: []

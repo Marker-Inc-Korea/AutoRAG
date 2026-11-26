@@ -57,13 +57,14 @@ const agent = new AutoRAGAgent({
 
 ## Streaming search
 
-`searchDocumentsStream` yields `progress`, `preliminary`, and `complete` events. The `preliminary` response is the fast first answer; the `complete` response is the verified final one.
+`searchDocumentsStream` yields `progress`, `preliminary`, `revision`, and `complete` events. The `preliminary` response is the fast first answer; the `complete` response is the verified final one.
 
 ```ts
 const run = (async () => {
   for await (const event of agent.searchDocumentsStream("When is the launch?")) {
     if (event.type === "progress") console.log(event.text);
     if (event.type === "preliminary") console.log("Quick:", event.response.answer);
+    if (event.type === "revision") console.log(`Corrected ${event.revision.claimId}:`, event.revision.reason);
     if (event.type === "complete") console.log("Final:", event.response.answer);
   }
 })();
@@ -73,6 +74,20 @@ agent.steer("Use the June plan, not the April one.");
 // agent.abort() stops the whole search, including every later phase.
 await run;
 ```
+
+**Corrections of the first answer.** A search that verifies its first answer corrects it in place instead of writing a second answer next to it. The `preliminary` answer is split into claims (`c1`, `c2`, … one per list item, sentence, table, or code block); the verification phase names the claims it changes through the `revise_answer` tool, and each applied change is a `revision` event between `preliminary` and `complete`:
+
+| `revision.op` | Meaning | Fields |
+|---|---|---|
+| `replace` | The claim was wrong; this is the corrected claim. | `claimId`, `original`, `replacement`, `reason` |
+| `retract` | The claim was wrong or unsupported and is removed. | `claimId`, `original`, `reason` |
+| `add` | A new verified finding the first answer lacked. | `replacement`, `reason` |
+| `confirm` | The claim was checked and holds. | `claimId`, `original`, `reason` |
+
+`original` is the claim exactly as the caller read it in `preliminary.response.answer`, and citations in both `original` and `replacement` use the `[n]` numbers of the responses' `results`. `reason` is one line in the user's language. A claim is revised once. A correction that cites evidence must cite sources the run retrieved and that Jev finds relevant to the text: otherwise the tool call fails and the model fixes it in the same turn, so a `revision` is only emitted for an applied change.
+
+`complete.response.answer` depends on what the verification phase did. When it applied at least one `replace`, `retract` or `add`, the answer is the preliminary answer with every correction applied, so a caller that swaps its first answer for it shows the corrected answer; a closing reply of the model that cites evidence is appended after it, and a plain closing note is not part of the answer. When it applied no correction (it confirmed claims, or changed nothing), the answer is the model's own reply, a short note as before, and the caller keeps its first answer. `autorag search` prints each revision as it arrives: `{"type": "revision", "revision": {…}}` with `--json`, and a `Corrected c1 — reason` headline with the original as `− ` lines (U+2212, so a claim that is itself a bullet does not read `- - `) and the replacement as `+ ` lines otherwise.
+
 
 `steer()` reaches the search's next model request (including between phases), cuts in-flight retrieval and the baseline prefetch short, and always runs verification, whose prompt restates the correction. It returns `false` when no search is running, the search was stopped, or it is past its last model request — ask the correction as a new question then.
 
@@ -205,7 +220,9 @@ const server = createAutoRAGMcpServer(lite, { readOnly: true });
 
 ## Profiles entry point
 
-`@autorag/librarian/profiles` exposes agent profiles — a system prompt, a tool set, and a thinking level turned into an in-memory Pi session on the agent's own model. `createProfileSession`, `listAutomationProfiles`, `getAutomationProfile`, `registerAutomationProfile`, and `createRetrievalToolkit` are the primary exports.
+`@autorag/librarian/profiles` exposes agent profiles — a system prompt, a tool set, and a thinking level turned into an in-memory Pi session on the agent's own model. `createProfileSession`, `listAutomationProfiles`, `getAutomationProfile`, `registerAutomationProfile`, `createRetrievalToolkit`, and `createWebTools` are the primary exports.
+
+`createWebTools` opts a profile into the librarian's own `web_search` / `web_fetch` tools (in that order), sharing one fresh evidence ledger and never touching retrieval memory. `search`/`fetch` accept the corresponding `AutoRAGAgent` options, or `false` to leave that tool out.
 
 ## See also
 

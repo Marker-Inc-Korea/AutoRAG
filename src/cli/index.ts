@@ -37,6 +37,9 @@ const VALUE_FLAGS = new Set([
 	"languages",
 	"workspace",
 	"memory-path",
+	"output",
+	"valid-fraction",
+	"min-new-runs",
 	"model-provider",
 	"model-id",
 	"top-k",
@@ -82,6 +85,7 @@ const COMMANDS = [
 	"search",
 	"evidence",
 	"memory",
+	"ltr",
 	"index",
 	"watch",
 	"health",
@@ -117,6 +121,9 @@ Commands:
   search <query>       Search and curate documents (requires a configured model)
   evidence <session>   Show persisted source/chunk evidence (--result N)
   memory inspect       Inspect the retrieval memory snapshot
+  memory export-ltr    Export the learning-to-rank log as LightGBM files (--output)
+  ltr status|list|train  Learning-to-rank: train a ranking model from the search log
+  ltr enable|disable|use Serve a trained model after the reranker (opt-in); auto-train on|off
   index reset          Remove parsed/minsync indexes (--method)
   index rebuild        Reset then re-run a refresh (--method minsync|all)
   health               Check model/provider auth and completion access (no index check)
@@ -150,7 +157,7 @@ Global flags:
   --languages <csv>    OCR/parser languages (also AUTORAG_LANGUAGES)
   --model-provider <name>  Override the model provider
   --model-id <id>          Override the model
-  --permission-mode <m>    Approval gate for file changes by the agent: auto (default; full for search and bridged tui), ask, full
+  --permission-mode <m>    Disk permission mode for the agent: readonly (default; OS-level read-only), full
   --once               For watch: run one refresh tick and exit (for cron)
   --immediate          For watch: refresh once before reading fs events (default true)
   --debounce-ms <n>    For watch: debounce milliseconds for fs events (default 1500)
@@ -252,6 +259,10 @@ async function dispatch(command: CommandName, ctx: CommandContext): Promise<numb
 			const { runMemory } = await import("./commands/memory.ts");
 			return runMemory(ctx);
 		}
+		case "ltr": {
+			const { runLtr } = await import("./commands/ltr.ts");
+			return runLtr(ctx);
+		}
 		case "index": {
 			const { runIndex } = await import("./commands/index.ts");
 			return runIndex(ctx);
@@ -340,8 +351,8 @@ export async function main(argv: readonly string[]): Promise<number> {
 		return 1;
 	} finally {
 		// MinSync's in-process model runs native threads that would keep the process alive after its answer
-		// is on stdout. Unload it here, where every command is covered; a `minsync serve` daemon is MinSync's
-		// own process and is left to stop itself when idle.
+		// is on stdout. Unload it here, where every command is covered; an `inl serve` daemon is its own
+		// process and is left to stop itself when idle.
 		await releaseEmbedders();
 	}
 }

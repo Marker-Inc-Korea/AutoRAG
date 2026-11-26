@@ -150,6 +150,7 @@ export const SECTIONS: readonly Section[] = [
 					{ text: "Jev decisions", link: "/retrieval/jev" },
 					{ text: "Evidence and citations", link: "/retrieval/evidence-and-citations" },
 					{ text: "Retrieval memory", link: "/retrieval/memory" },
+					{ text: "Learning to rank", link: "/retrieval/learning-to-rank" },
 				],
 			},
 		],

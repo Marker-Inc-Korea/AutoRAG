@@ -12,6 +12,7 @@ import { DiscrawlSidecar, type DiscrawlSidecarOptions } from "../../../../src/da
 import { DiscrawlSkill, type DiscrawlSkillClient } from "../../../../src/datasource/skills/discrawl/skill.ts";
 import type { DiscrawlStatusResult } from "../../../../src/datasource/skills/discrawl/types.ts";
 import { buildDatasourceSkills } from "../../../../src/datasource/skills/factory.ts";
+import { unwrapAttachments } from "../../../helpers/attachments.ts";
 
 let root: string;
 let crawlerDb: string;
@@ -393,7 +394,7 @@ describe("Discord sidecar factory configuration", () => {
 				: { databasePath: join(root, "wrong.db"), sidecar: { crawlerDbPath: crawlerDb } }),
 		};
 		const { skills } = buildDatasourceSkills({ discord: { connector } }, root);
-		const value = skills[0];
+		const value = unwrapAttachments(skills[0]);
 		if (!(value instanceof DiscrawlSkill)) throw new Error("Expected a Discord skill");
 		opened.push(value);
 		const method = value.retrievalMethods().find((entry) => entry.describe().name === "discord-hybrid");

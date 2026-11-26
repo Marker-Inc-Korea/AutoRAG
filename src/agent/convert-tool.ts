@@ -48,7 +48,7 @@ export function createConvertFilesTool(
 		name: CONVERT_FILES_TOOL_NAME,
 		label: "Convert Files",
 		description:
-			"Convert local files to another format offline with the Filee command line (documents, spreadsheets, slides, HWP/HWPX, images, e-books, archives, audio, video, data, subtitles; 240+ formats). Works on any path. Examples: docx/hwp/hwpx/md/html/pdf convert among themselves and to epub, txt, png; xlsx/csv to json/yaml/xml/pdf; images to pdf/webp/docx; mp4 to mp3/gif/srt; zip to 7z/tar. The system prompt holds the full route table: when no direct route exists, chain two conversions through an intermediate format written to a scratch outputDir. Reports each output path and whether dupey sees the converted copy as the same document as its source.",
+			"Convert local files to another format offline with Filee (documents, spreadsheets, slides, HWP/HWPX, images, e-books, archives, audio, video, data, subtitles; 290+ formats) on any path. Examples: docx/hwp/hwpx/md/html/pdf convert among themselves and to epub, txt, png; pdf/docx/html tables to xlsx/csv; xlsx/csv to json/yaml/xml/pdf; images to pdf/webp/docx; mp4 to mp3/gif/srt; zip to 7z/tar/iso. Use list_file_conversions when unsure of a route; when no direct route exists, chain two conversions via a scratch outputDir. Reports each output path and dupey's relation to the source.",
 		parameters: convertFilesSchema,
 		async execute(_id, params, signal): Promise<AgentToolResult<ConvertFilesDetails>> {
 			const details = await provider.convertFiles(params, signal);
@@ -122,6 +122,11 @@ function renderConvertReport(details: ConvertFilesDetails): string {
 
 function describeRelation(link: ConvertedCopyLink): string {
 	const relation = link.dupey;
+	if (relation.relation === "unsupported") {
+		return "dupey: unsupported — dupey cannot compare this pair (an unreadable format, or an image against a document), so it will never be grouped with the source";
+	}
+	if (relation.relation === "unavailable") return `dupey: unavailable (${relation.reason})`;
+	if ("similarity" in relation) return describeImageRelation(relation);
 	switch (relation.relation) {
 		case "exact":
 			return "dupey: exact — same canonical text as the source; an exact duplicate family";
@@ -131,9 +136,25 @@ function describeRelation(link: ConvertedCopyLink): string {
 			return `dupey: contains (jaccard=${relation.jaccard}) — one holds most of the other`;
 		case "different":
 			return `dupey: different (near=${relation.nearScore}) — not grouped with the source; extracted text differs (layout-only formats such as PDF often do)`;
-		case "unsupported":
-			return "dupey: unsupported — dupey cannot read this format, so it will never be grouped with the source";
-		case "unavailable":
-			return `dupey: unavailable (${relation.reason})`;
+	}
+}
+
+/** Two pictures are judged by their decoded pixels and a perceptual hash, never by text. */
+function describeImageRelation(relation: {
+	readonly relation: string;
+	readonly similarity: number;
+	readonly hamming?: number;
+}): string {
+	const scores =
+		relation.hamming === undefined
+			? `similarity=${relation.similarity}`
+			: `similarity=${relation.similarity}, hamming=${relation.hamming}`;
+	switch (relation.relation) {
+		case "exact":
+			return "dupey: exact — identical pixels; an exact duplicate family";
+		case "near":
+			return `dupey: near (${scores}) — looks the same after a resize or re-encode; near family, review before treating as duplicate`;
+		default:
+			return `dupey: different (${scores}) — not grouped with the source; the pictures differ (a flat colour has no perceptual hash, so only identical pixels match)`;
 	}
 }

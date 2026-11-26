@@ -50,13 +50,9 @@ function parseThinkingFlags(flags: CommandContext["flags"]): AutoRAGAgentOptions
  * the local model runtime is never forced before the user can log in.
  */
 async function createTuiAgent(ctx: CommandContext): Promise<AutoRAGAgent> {
-	// A session with a remote bridge is driven from a chat as well, where no terminal dialog can be answered:
-	// it defaults to no gate, and an explicit --permission-mode, environment variable, or config value still wins.
-	const bridged = ctx.flags.telegram === true || ctx.flags.discord === true || ctx.flags.whatsapp === true;
 	const config = resolveConfig({
 		flags: ctx.flags,
 		cwd: ctx.cwd,
-		...(bridged ? { defaultPermissionMode: "full" as const } : {}),
 	});
 	const options: AutoRAGAgentOptions = { ...buildAgentOptions(config) };
 	// A bridged session can serve other people, so it must not load the local user's identity.

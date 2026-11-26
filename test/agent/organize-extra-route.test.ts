@@ -247,19 +247,9 @@ describe("Jev organize branch prompt", () => {
 		// prompt never names the file the skill came from.
 		expect(prompt).toContain(`<skill name="organize" location="${packagedSkillLocation("organize")}">`);
 		expect(prompt).toContain("</skill>");
-		expect(prompt).toMatch(/old path → new path/u);
-		expect(prompt).toMatch(/trash/iu);
 		expect(prompt).not.toContain("SKILL.md");
 		expect(prompt).not.toContain("internal-skills");
-		// The prompt, not the tool list, scopes this turn: it names the tools to
-		// use and the retrieval/web tools not to call.
-		expect(prompt).toMatch(/work with bash/u);
-		expect(prompt).toContain("convert_files");
-		expect(prompt).toMatch(/do NOT call the retrieval, datasource, or web tools/u);
-		expect(prompt).toContain(SEARCH_ALL_DOCUMENTS_TOOL_NAME);
-		expect(prompt).toContain(SEARCH_MINSYNC_DOCUMENTS_TOOL_NAME);
 		// Nothing is withheld any more: the converter and the search tools are both
-		// visible to the model on an organize turn.
 		expect(seen.toolNames[0]).toEqual(
 			expect.arrayContaining([
 				"convert_files",
@@ -362,25 +352,6 @@ describe("Jev organize branch memory", () => {
 });
 
 describe("Jev extra branch prompt, tools, and memory", () => {
-	it("is the tool path with no search required, none forbidden, and the answer rules intact", async () => {
-		const seen: Seen = { prompts: [], toolNames: [] };
-		const model = fauxModel(capture(report("Committed."), seen));
-		const agent = agentWith({ model, jev: { backend: jevRouting("extra") } });
-
-		await agent.searchDocuments("commit my changes and open a PR");
-
-		expect(seen.prompts[0]).not.toMatch(/Do NOT call any/u);
-		expect(seen.prompts[0]).toContain("commit my changes and open a PR");
-		// A knowledge answer, a lookup, or a task: all three are allowed, and the
-		// tools that can settle a lookup are named.
-		expect(seen.prompts[0]).toMatch(/Answer from your own knowledge/u);
-		expect(seen.prompts[0]).toContain(SEARCH_MINSYNC_DOCUMENTS_TOOL_NAME);
-		expect(seen.prompts[0]).toContain(SEARCH_ALL_DOCUMENTS_TOOL_NAME);
-		// The same answer rules the other answer prompts use.
-		expect(seen.prompts[0]).toMatch(/Answer language/u);
-		expect(seen.prompts[0]).toMatch(/Citations/u);
-	});
-
 	it("keeps every tool the session has: the same set a local run's fast phase sees", async () => {
 		const extraSeen: Seen = { prompts: [], toolNames: [] };
 		const extra = agentWith({

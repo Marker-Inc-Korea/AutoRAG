@@ -1,15 +1,15 @@
 ---
 title: "Embedding backends"
-description: "MinSync owns the embedding model; choose a local daemon, the in-process engine, a remote endpoint, or a sparse-only index."
+description: "im-not-llm owns the embedding model and daemon; choose a local daemon, the in-process engine, a remote endpoint, or a sparse-only index."
 ---
 
 # Embedding backends
 
 This page explains which embedding model AutoRAG uses, how it resolves a backend, how to run the embedding daemon, and where the embedding state lives.
 
-## MinSync owns the embedding model
+## im-not-llm owns the embedding model
 
-AutoRAG owns no embedding model, no llama.cpp, and no GGUF assets, and it does not download, cache, import, or verify model weights. MinSync provisions `Qwen/Qwen3-Embedding-0.6B` at 1024 dimensions in its own cache at `~/.cache/minsync/models` and runs the engine. The default local path needs no Ollama, no TEI adapter, and no API key.
+AutoRAG owns no embedding model, no llama.cpp, and no GGUF assets, and it does not download, cache, import, or verify model weights. The im-not-llm daemon (`inl`) provisions `Qwen/Qwen3-Embedding-0.6B` at 1024 dimensions in its own cache at `~/.cache/im-not-llm/models` and runs the engine. MinSync links the same `inl-server` and serves the same models through the same cache, so the two share one runtime. The default local path needs no Ollama, no TEI adapter, and no API key.
 
 MinSync is required. AutoRAG auto-installs its binary when no usable executable is found on `PATH` or in the workspace cache. `minSync: false` and `minSync.enabled: false` are rejected as config errors; `minSync.autoInstall: false` only stops the auto-install. A search or query never starts indexing infrastructure, and never answers from the other retrieval paths when MinSync is missing — it fails with a `MinSyncRequiredError` and a non-zero exit.
 
@@ -20,7 +20,7 @@ One shared embedder serves everything that embeds inside AutoRAG: MinSync indexi
 The shared embedder resolves a backend in this order. `autorag setup` and `autorag status` report which one is alive (`daemon`, `in-process`, or `remote`) with provider, model, and dimension, or why none is alive. Neither starts anything.
 
 1. **Remote endpoint.** If `minSync.embedder` names a remote endpoint, it is used for everything; no daemon is started and no local model is loaded. `id` names the protocol and model (`openai:<model>`, `tei:<model>`, or any id together with `baseUrl`). OpenAI uses `POST {baseUrl}/v1/embeddings`; TEI uses `POST {baseUrl}/embed`; `openai:` without a `baseUrl` means `https://api.openai.com`. Optional fields: `apiKeyEnv` (the **name** of an environment variable holding the bearer token, never the token), `dimension`, `batchSize`, and `timeoutMs`.
-2. **`minsync serve` daemon.** Otherwise a running daemon is preferred. It is loopback only. It serves TEI `POST /embed`, OpenAI `POST /v1/embeddings`, and `GET /health`. Running instances are discovered through `~/.cache/minsync/serve/<instance>/` (`host`, `port`, `pid`, `lock`). AutoRAG never starts or stops it for you; it is looked up again on every call, so one you start or stop while AutoRAG runs is noticed.
+2. **`inl serve` daemon.** Otherwise a running im-not-llm daemon is preferred. It is loopback only. It serves TEI `POST /embed`, OpenAI `POST /v1/embeddings`, and `GET /health`. Running instances are discovered through `~/.cache/im-not-llm/serve/<instance>/` (`host`, `port`, `pid`, `lock`); a matching daemon is found by the `kind` and `model_id` its `/health` reports, never by a directory name. AutoRAG never starts or stops it for you; it is looked up again on every call, so one you start or stop while AutoRAG runs is noticed. `minsync serve` is a compatible launcher for the same state root.
 3. **In-process engine.** When no daemon answers, AutoRAG's own consumers can load MinSync's embedding engine inside the AutoRAG process through the optional Node-API addon `@nomadamas/minsync-native`. It runs the same engine and weights as `minsync`, so vectors are bit-for-bit identical to the daemon's. It is not bundled. This is separate from the `minsync` CLI, which embeds in-process by itself for the MinSync datasource.
 
 Configure a remote endpoint through config or `autorag init` flags:
@@ -65,11 +65,11 @@ The default applies only to MinSync's local Qwen3 (no `id`, or `native:Qwen/Qwen
 
 ## Running the embedding daemon
 
-Semantic search over everything except the MinSync datasource needs an embedding backend that is alive: a remote endpoint, a running `minsync serve`, or the optional in-process addon. Without one, memory, the chat-sidecar semantic search, gist, discrawl, mailcrawl, lazykatok, and Hister fall back to keyword search or report `embedding-unavailable`; the MinSync datasource keeps working because `minsync` embeds in-process by itself.
+Semantic search over everything except the MinSync datasource needs an embedding backend that is alive: a remote endpoint, a running `inl serve`, or the optional in-process addon. Without one, memory, the chat-sidecar semantic search, gist, discrawl, mailcrawl, lazykatok, and Hister fall back to keyword search or report `embedding-unavailable`; the MinSync datasource keeps working because `minsync` embeds in-process by itself.
 
-Without a remote endpoint, keep the daemon running. `--idle-timeout 0` serves until stopped; the default of 300 s frees the ~2.8 GB model after five idle minutes, and the next semantic call then fails until the daemon is started again. Do not pass `--state-dir`: only the default state directory is discovered.
+Without a remote endpoint, keep the daemon running. From inl-server 0.3.4 `inl serve` serves until stopped by default, and a restarted instance comes back on the port it used before. Older versions (and `minsync serve` before the MinSync release that takes 0.3.4) exit after 300 s without a request, which frees the ~2.8 GB model but makes the next semantic call fail until the daemon is started again, and choose a new port on every start; pass `--idle-timeout 0` there. Do not pass `--state-dir`: only the default state directory is discovered.
 
-**macOS (launchd).** Save as `~/Library/LaunchAgents/dev.nomadamas.minsync-serve.plist` (replace `YOU` and the path from `which minsync`):
+**macOS (launchd).** Save as `~/Library/LaunchAgents/dev.im-not-llm.inl-serve.plist` (replace `YOU` and the path from `which inl`):
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -77,14 +77,13 @@ Without a remote endpoint, keep the daemon running. `--idle-timeout 0` serves un
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>dev.nomadamas.minsync-serve</string>
+  <string>dev.im-not-llm.inl-serve</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/Users/YOU/.cargo/bin/minsync</string>
+    <string>/Users/YOU/.cargo/bin/inl</string>
     <string>serve</string>
     <string>--idle-timeout</string>
     <string>0</string>
-    <string>--quiet</string>
   </array>
   <key>RunAtLoad</key>
   <true/>
@@ -95,14 +94,16 @@ Without a remote endpoint, keep the daemon running. `--idle-timeout 0` serves un
 ```
 
 ```bash
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/dev.nomadamas.minsync-serve.plist
-launchctl kickstart -k gui/$(id -u)/dev.nomadamas.minsync-serve   # restart
-launchctl bootout gui/$(id -u)/dev.nomadamas.minsync-serve        # stop and unload
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/dev.im-not-llm.inl-serve.plist
+launchctl kickstart -k gui/$(id -u)/dev.im-not-llm.inl-serve   # restart
+launchctl bootout gui/$(id -u)/dev.im-not-llm.inl-serve        # stop and unload
 ```
 
-**Linux (systemd user unit).** Create `~/.config/systemd/user/minsync-serve.service` with `ExecStart=%h/.cargo/bin/minsync serve --idle-timeout 0 --quiet` and `Restart=always`, then run `systemctl --user enable --now minsync-serve`.
+**Linux (systemd user unit).** Create `~/.config/systemd/user/inl-serve.service` with `ExecStart=%h/.cargo/bin/inl serve --idle-timeout 0` and `Restart=always`, then run `systemctl --user enable --now inl-serve`.
 
-**Without a service manager**, run `minsync serve --idle-timeout 0` in a terminal, or press **Ctrl+Shift+E** / type `/embedding on` in `autorag tui`.
+**Windows (Task Scheduler).** Register a user-level logon task that runs `inl serve --idle-timeout 0` (for example with `schtasks /Create /TN inl-serve /SC ONLOGON /TR "inl serve --idle-timeout 0"`), or start it in a terminal.
+
+**Without a service manager**, run `inl serve --idle-timeout 0` in a terminal, or press **Ctrl+Shift+E** / type `/embedding on` in `autorag tui`. If you do not have `inl`, `minsync serve --idle-timeout 0` serves the same state root.
 
 ## TUI footer and the /embedding command
 
@@ -110,12 +111,12 @@ launchctl bootout gui/$(id -u)/dev.nomadamas.minsync-serve        # stop and unl
 
 | Footer | Meaning |
 | --- | --- |
-| `embedding: daemon ● up` | A `minsync serve` daemon answers `GET /health`. |
+| `embedding: daemon ● up` | An `inl serve` daemon answers `GET /health`. |
 | `embedding: in-process ●` | No daemon, but the in-process addon is loadable. |
 | `embedding: remote ● up` / `remote ○ down (…)` | The configured remote's health. |
-| `embedding: off ○ (/embedding on, or ctrl+shift+e, starts minsync serve)` | Nothing can embed. |
+| `embedding: off ○ (/embedding on, or ctrl+shift+e, starts inl serve)` | Nothing can embed. |
 
-**Ctrl+Shift+E** and **`/embedding`** do the same thing. The key toggles; the command takes `on`, `off`, `toggle` (the default with no argument), or `status` (a one-line report without changing anything). `on` starts the daemon (`minsync serve --idle-timeout 0`, so it stays on until you stop it) and `off` stops it with `SIGTERM`. With a remote endpoint configured they only explain that there is no local daemon to manage. A daemon started by a launchd service is stopped too, and launchd then restarts it (`KeepAlive`); use `launchctl bootout` to stop it for good.
+**Ctrl+Shift+E** and **`/embedding`** do the same thing. The key toggles; the command takes `on`, `off`, `toggle` (the default with no argument), or `status` (a one-line report without changing anything). `on` starts the daemon (`inl serve --idle-timeout 0`, so it stays on until you stop it, preferring an `inl` binary on `PATH` and falling back to `minsync serve`) and `off` stops it with `SIGTERM`. With a remote endpoint configured they only explain that there is no local daemon to manage. A daemon started by a launchd service is stopped too, and launchd then restarts it (`KeepAlive`); use `launchctl bootout` to stop it for good.
 
 ## MinSync workspace state
 
@@ -135,7 +136,7 @@ Set `"minSync": { "embedder": { "id": "none" } }` to build a SPLADE-only index: 
 
 ## Model cache
 
-MinSync provisions `Qwen/Qwen3-Embedding-0.6B` at 1024 dimensions in `~/.cache/minsync/models`. The daemon and the in-process addon read that cache; AutoRAG makes no model download of its own. There is no `AUTORAG_HOME` model or runtime cache and no AutoRAG prefetch, import, or verify command for embedding weights. `autorag models list` lists chat models only.
+im-not-llm provisions `Qwen/Qwen3-Embedding-0.6B` at 1024 dimensions in `~/.cache/im-not-llm/models`. The daemon and the in-process addon read that cache; AutoRAG makes no model download of its own. There is no `AUTORAG_HOME` model or runtime cache and no AutoRAG prefetch, import, or verify command for embedding weights. `autorag models list` lists chat models only.
 
 A 768-dimensional workspace cannot be kept by choosing a profile: reindex for the default MinSync identity, or configure an explicit remote endpoint (`minSync.embedder.id` and `baseUrl`). AutoRAG writes only the supported MinSync embedder fields and never writes secrets.
 

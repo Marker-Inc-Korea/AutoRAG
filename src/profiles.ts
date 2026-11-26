@@ -6,6 +6,9 @@
  * credentials. The desktop app's smart indexing and file-triggered automations
  * are built on it. No profile session touches AutoRAG's retrieval memory.
  */
+
+export type { WebFetchToolOptions } from "./agent/web-fetch-tool.ts";
+export type { WebSearchToolOptions } from "./agent/web-search-tool.ts";
 export {
 	type AgentProfile,
 	createProfileSession,
@@ -37,3 +40,7 @@ export {
 	resolveSessionModel,
 	type SessionModelAuth,
 } from "./profiles/session-model.ts";
+export {
+	createWebTools,
+	type WebToolsOptions,
+} from "./profiles/web-tools.ts";

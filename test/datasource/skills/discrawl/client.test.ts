@@ -45,6 +45,20 @@ const SEARCH_ROWS = JSON.stringify([
 ]);
 
 describe("DiscrawlClient search", () => {
+	it("forwards the inl cache override to discrawl", async () => {
+		const binaryPath = stubBinary('echo "cache=$INL_CACHE_DIR" >&2; echo "[]"');
+		const previous = process.env.INL_CACHE_DIR;
+		process.env.INL_CACHE_DIR = "/tmp/inl-cache";
+		try {
+			const root = mkdtempSync(join(tmpdir(), "discrawl-root-"));
+			const result = await new DiscrawlClient({ binaryPath, root }).search("hybrid", "q");
+			expect(result.stderr).toContain("cache=/tmp/inl-cache");
+		} finally {
+			if (previous === undefined) delete process.env.INL_CACHE_DIR;
+			else process.env.INL_CACHE_DIR = previous;
+		}
+	});
+
 	it("does not create or inject an AutoRAG-managed workspace config", async () => {
 		const root = mkdtempSync(join(tmpdir(), "discrawl-root-"));
 		const binaryPath = stubBinary(`echo "$@" >&2; echo '[]'`);
