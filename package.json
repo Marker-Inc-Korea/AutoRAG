@@ -65,7 +65,7 @@
     "@earendil-works/pi-ai": "^1.5.2",
     "@earendil-works/pi-coding-agent": "1.5.2",
     "@earendil-works/pi-tui": "1.5.2",
-    "@llblab/pi-telegram": "0.59.1",
+    "@llblab/pi-telegram": "0.60.1",
     "@modelcontextprotocol/server": "^2.4.0",
     "@parcel/watcher": "2.6.0",
     "chardet": "^2.2.0",
