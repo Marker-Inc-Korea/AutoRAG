@@ -122,7 +122,7 @@ are not registered.
 | Tool | Arguments | Purpose |
 | --- | --- | --- |
 | `bash` | `command` | Filesystem discovery and document reading with real paths (`ls`, `find`, `cat`); in local sessions it also performs user-requested file organization. Recursive `grep`/`rg` over a whole search root belongs to the `grep` tool below, not `bash`. |
-| `grep` | `pattern`, `path?`, `glob?`, `ignoreCase?`, `literal?`, `context?`, `limit?` | Exact-string and regex search. Inside the configured search folders it searches the [parsed markdown mirrors](#parsed-mirror-grep-and-read) instead of the originals, so PDF, HWP/HWPX, DOCX, XLSX, PPTX and EML are searchable; elsewhere it is Pi's plain `grep`. |
+| `grep` | `pattern`, `path?`, `glob?`, `ignoreCase?`, `literal?`, `context?`, `limit?` | Exact-string and regex search. Inside configured search folders it searches the [parsed markdown mirrors](#parsed-mirror-grep-and-read) instead of the originals (PDF, HWP/HWPX, DOCX, XLSX, PPTX, EML); with a datasource virtual path (`/<datasourceId>` such as `/wombat`, `/mailcrawl`, `/telegram`, `/slack`, `/discord`, `/kakao`, `/obsidian`, `/notion`, or `/datasources`) it runs exact-match grep directly over parsed datasource mirrors or read-only SQLite archives; elsewhere it is Pi's plain `grep`. |
 | `read` | `path`, `offset?`, `limit?` | Read a file. For parsed document formats (and anything under a cloud folder) inside the search folders it reads the parsed markdown mirror; everything else is Pi's plain `read`. |
 | `write` | `path`, `content` | Create or save a file in a local session. |
 | `edit` | `path`, old/new text | Update or replace an existing file in a local session. |

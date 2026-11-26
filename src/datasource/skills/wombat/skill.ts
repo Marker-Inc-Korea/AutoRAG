@@ -1,10 +1,14 @@
+import { readFileSync } from "node:fs";
 import { FallbackRetrievalMethod } from "../../../retrieval/fallback.ts";
 import type { RetrievalMethod } from "../../../retrieval/types.ts";
-import { datasourceSourcePath } from "../../scope.ts";
+import { grepDirectoryWithRipgrep } from "../../grep.ts";
+import { datasourceSourcePath, matchesDatasourceScope } from "../../scope.ts";
 import { datasourceSearchToolName } from "../../tool-naming.ts";
 import type {
 	DatasourceDiagnostic,
 	DatasourceDiagnosticCode,
+	DatasourceGrepHit,
+	DatasourceGrepOptions,
 	DatasourceIndexOptions,
 	DatasourceIndexResult,
 	DatasourceSkill,
@@ -168,6 +172,64 @@ export class WombatSkill implements DatasourceSkill {
 		];
 	}
 
+	/** Exact substring/regex grep over wombat's parsed markdown session mirror via ripgrep (zero model/MinSync calls). */
+	async grep(pattern: string, options?: DatasourceGrepOptions): Promise<readonly DatasourceGrepHit[]> {
+		if (pattern.length === 0) return [];
+		const mirrorDir = wombatMirrorDir(this.connectorOptions);
+		const matches = await grepDirectoryWithRipgrep({
+			rootDir: mirrorDir,
+			pattern,
+			literal: options?.literal,
+			ignoreCase: options?.ignoreCase,
+			context: options?.context,
+			limit: options?.limit,
+			maxPerFile: options?.maxPerSource,
+			skipDirs: [".minsync"],
+			signal: options?.signal,
+		});
+		if (matches.length === 0) return [];
+
+		const headerCache = new Map<string, ParsedWombatMirrorHeader>();
+		const hits: DatasourceGrepHit[] = [];
+		for (const match of matches) {
+			let header = headerCache.get(match.absPath);
+			if (header === undefined) {
+				header = parseWombatMirrorHeader(match.absPath, match.relPath);
+				headerCache.set(match.absPath, header);
+			}
+			if (this.agents !== undefined && !this.agents.includes(header.agent)) continue;
+			const turn = locateTurnForLine(header.turnStartLines, match.lineNumber);
+			const chunkId = `grep:${header.catalogKey}:L${match.lineNumber}`;
+			const source = datasourceSourcePath("wombat", this.instanceId, chunkId);
+			if (!matchesDatasourceScope(source, options?.scope)) continue;
+			const labelParts = [
+				header.catalogKey,
+				turn !== undefined ? `turn ${turn}` : undefined,
+				header.startedAt?.slice(0, 10),
+				header.cwd,
+			].filter((part): part is string => part !== undefined && part.length > 0);
+			const label = labelParts.join(" | ");
+			hits.push({
+				source,
+				content: `[${label}]\n${match.snippet}`,
+				lineNumber: match.lineNumber,
+				lineEnd: match.lineEnd,
+				label,
+				metadata: {
+					datasourceId: "wombat",
+					instanceId: this.instanceId,
+					agent: header.agent,
+					sessionId: header.sessionId,
+					sessionKey: header.catalogKey,
+					...(header.cwd !== undefined ? { cwd: header.cwd } : {}),
+					...(header.sourcePath !== undefined ? { sessionPath: header.sourcePath } : {}),
+					...(turn !== undefined ? { startTurn: turn, endTurn: turn } : {}),
+				},
+			});
+		}
+		return hits;
+	}
+
 	describeSources(): readonly SourceDescription[] {
 		return this.instances.map((instanceId) => ({
 			source: datasourceSourcePath("wombat", instanceId),
@@ -204,8 +266,10 @@ export class WombatSkill implements DatasourceSkill {
 				"The external `wombat` CLI owns the mirror, the index and the session catalog. To read more than a snippet, call it through `bash` with the `sessionKey` from the result's label:",
 				"- `wombat show <sessionKey> [--turn N]`: the full cleaned conversation, or one turn.",
 				"- `wombat trace <sessionKey> --turn N --context K`: the original session log around that turn, including the tool calls and outputs that the index leaves out.",
+				"- `wombat grep [--literal] [--ignore-case] [--agent <agent>] <pattern> --json`: exact ripgrep match over parsed session mirrors without invoking MinSync.",
 				"- `wombat chunk context <chunk id> --json`: the turns before and after a result.",
 				"- `wombat sessions --agent <agent>`: list sessions.",
+				'Or call the `grep` tool with `path="/wombat"` for exact-match lookup registered directly as `[eN]` evidence.',
 			].join("\n"),
 		};
 	}
@@ -243,4 +307,67 @@ function failureCode(reason: WombatFailureReason): DatasourceDiagnosticCode {
 		return "datasource-unavailable";
 	if (reason === "remote-embedding-rejected") return "datasource-embedding-egress-rejected";
 	return "datasource-index-failed";
+}
+
+interface ParsedWombatMirrorHeader {
+	readonly agent: string;
+	readonly sessionId: string;
+	readonly catalogKey: string;
+	readonly sourcePath?: string;
+	readonly cwd?: string;
+	readonly startedAt?: string;
+	readonly turnStartLines: readonly { readonly line: number; readonly turn: number }[];
+}
+
+function parseWombatMirrorHeader(absPath: string, relPath: string): ParsedWombatMirrorHeader {
+	const fallbackAgent = relPath.split("/")[0] || "unknown";
+	let agent = fallbackAgent;
+	let sessionId = relPath;
+	let sourcePath: string | undefined;
+	let cwd: string | undefined;
+	let startedAt: string | undefined;
+	const turnStartLines: { line: number; turn: number }[] = [];
+	try {
+		const lines = readFileSync(absPath, "utf8").split(/\r?\n/u);
+		for (let i = 0; i < lines.length; i += 1) {
+			const line = lines[i] ?? "";
+			if (i < 12) {
+				if (line.startsWith("- agent: ")) agent = line.slice("- agent: ".length).trim() || agent;
+				else if (line.startsWith("- session_id: "))
+					sessionId = line.slice("- session_id: ".length).trim() || sessionId;
+				else if (line.startsWith("- source_path: "))
+					sourcePath = line.slice("- source_path: ".length).trim() || undefined;
+				else if (line.startsWith("- cwd: ")) cwd = line.slice("- cwd: ".length).trim() || undefined;
+				else if (line.startsWith("- started_at: "))
+					startedAt = line.slice("- started_at: ".length).trim() || undefined;
+			}
+			const match = /^## Turn (\d+)\b/u.exec(line);
+			if (match?.[1] !== undefined) {
+				turnStartLines.push({ line: i + 1, turn: Number(match[1]) });
+			}
+		}
+	} catch {
+		// Fall back to relative-path metadata if unreadable.
+	}
+	return {
+		agent,
+		sessionId,
+		catalogKey: `${agent}:${sessionId}`,
+		...(sourcePath !== undefined ? { sourcePath } : {}),
+		...(cwd !== undefined ? { cwd } : {}),
+		...(startedAt !== undefined ? { startedAt } : {}),
+		turnStartLines,
+	};
+}
+
+function locateTurnForLine(
+	turnStartLines: readonly { readonly line: number; readonly turn: number }[],
+	lineNumber: number,
+): number | undefined {
+	let best: number | undefined;
+	for (const entry of turnStartLines) {
+		if (entry.line <= lineNumber) best = entry.turn;
+		else break;
+	}
+	return best ?? turnStartLines[0]?.turn;
 }

@@ -1,6 +1,8 @@
 import type { RetrievalMethod, RetrievalOptions, RetrievalResult } from "../retrieval/types.ts";
 import { datasourceSearchToolName } from "./tool-naming.ts";
 import type {
+	DatasourceGrepHit,
+	DatasourceGrepOptions,
 	DatasourceIndexOptions,
 	DatasourceIndexResult,
 	DatasourceSkill,
@@ -88,6 +90,22 @@ export class AliasedDatasourceSkill implements DatasourceSkill {
 		return this.skill.searchFilters?.() ?? Promise.resolve([]);
 	}
 
+	async grep(pattern: string, options?: DatasourceGrepOptions): Promise<readonly DatasourceGrepHit[]> {
+		if (this.skill.grep === undefined) return [];
+		const innerOptions: DatasourceGrepOptions = {
+			...options,
+			scope: rewriteScope(options?.scope, this.alias, this.originalId),
+		};
+		const hits = await this.skill.grep(pattern, innerOptions);
+		return hits
+			.filter((hit) => this.matchesMetadataChannel(hit.metadata ?? {}))
+			.map((hit) => ({
+				...hit,
+				source: rewriteSource(hit.source, this.originalId, this.alias),
+				...(hit.metadata !== undefined ? { metadata: { ...hit.metadata, datasourceId: this.alias } } : {}),
+			}));
+	}
+
 	describeSources(): readonly SourceDescription[] {
 		return this.skill.describeSources().map((source) => ({
 			...source,
@@ -118,8 +136,11 @@ export class AliasedDatasourceSkill implements DatasourceSkill {
 	}
 
 	private matchesChannel(result: RetrievalResult): boolean {
+		return this.matchesMetadataChannel(result.metadata);
+	}
+
+	private matchesMetadataChannel(metadata: Readonly<Record<string, unknown>>): boolean {
 		if (this.channelIds.size === 0 && this.channelNames.size === 0) return true;
-		const metadata = result.metadata;
 		const id = [metadata.channelId, metadata.chatId, metadata.roomId].find(
 			(value): value is string => typeof value === "string",
 		);

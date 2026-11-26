@@ -2,13 +2,15 @@ import { FallbackRetrievalMethod } from "../../../retrieval/fallback.ts";
 import { describeRetrievalError } from "../../../retrieval/skip.ts";
 import type { RetrievalMethod } from "../../../retrieval/types.ts";
 import { connectorSyncTimeoutHint } from "../../connector-timeouts.ts";
-import { datasourceSourcePath } from "../../scope.ts";
+import { datasourceSourcePath, matchesDatasourceScope } from "../../scope.ts";
 import { CrawlerSidecar, type CrawlerSidecarOptions, type SidecarSyncResult } from "../../sidecar/index.ts";
 import { sidecarFirstMethod } from "../../sidecar/methods.ts";
 import { datasourceSearchToolName } from "../../tool-naming.ts";
 import type {
 	DatasourceDiagnostic,
 	DatasourceDiagnosticCode,
+	DatasourceGrepHit,
+	DatasourceGrepOptions,
 	DatasourceIndexOptions,
 	DatasourceIndexResult,
 	DatasourceSkill,
@@ -151,6 +153,47 @@ export class LazykatokSkill implements DatasourceSkill {
 	/** Release the sidecar's database handles. Safe to call repeatedly; later use reopens them. */
 	close(): void {
 		this.sidecar?.close();
+	}
+
+	/** Exact substring/regex grep over lazykatok's read-only SQLite archive via sidecar. */
+	async grep(pattern: string, options?: DatasourceGrepOptions): Promise<readonly DatasourceGrepHit[]> {
+		const { sidecar } = this;
+		if (sidecar === undefined || pattern.length === 0) return [];
+		options?.signal?.throwIfAborted();
+		const descriptor = sidecar.descriptor;
+		const raw = sidecar.grepExact(pattern, {
+			literal: options?.literal,
+			ignoreCase: options?.ignoreCase,
+			context: options?.context,
+			limit: options?.limit,
+			maxPerMessage: options?.maxPerSource,
+		});
+		const out: DatasourceGrepHit[] = [];
+		for (const hit of raw) {
+			const chunkId = descriptor.chunkId(hit.key, hit.metadata);
+			const source = datasourceSourcePath(KAKAO_DATASOURCE_ID, this.instanceId, chunkId);
+			if (!matchesDatasourceScope(source, options?.scope)) continue;
+			const hierarchy = descriptor.hierarchy(hit.metadata).join("/");
+			const sender = hit.metadata.senderNickname;
+			const label = [hierarchy, sender]
+				.filter((v): v is string => typeof v === "string" && v.length > 0)
+				.join(" | ");
+			out.push({
+				source,
+				content: hit.content,
+				lineNumber: hit.lineNumber,
+				lineEnd: hit.lineEnd,
+				...(label.length > 0 ? { label } : {}),
+				metadata: {
+					...hit.metadata,
+					datasourceId: KAKAO_DATASOURCE_ID,
+					instanceId: this.instanceId,
+					hierarchy,
+					...(hit.publishedAt !== undefined ? { publishedAt: hit.publishedAt } : {}),
+				},
+			});
+		}
+		return out;
 	}
 
 	/** One method: sidecar hybrid when a sidecar is configured, else the CLI's hybrid; BM25 is the fallback either way. */

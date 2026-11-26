@@ -17,6 +17,8 @@ import type { RetrievalMethod } from "../retrieval/types.ts";
 import { discordAttachmentsRoot } from "./skills/discrawl/attachments.ts";
 import type {
 	DatasourceAttachmentRoot,
+	DatasourceGrepHit,
+	DatasourceGrepOptions,
 	DatasourceIndexOptions,
 	DatasourceIndexResult,
 	DatasourceSkill,
@@ -202,6 +204,10 @@ export class AttachmentRootsSkill implements DatasourceSkill {
 
 	attachmentRoots(): readonly DatasourceAttachmentRoot[] {
 		return this.roots;
+	}
+
+	grep(pattern: string, options?: DatasourceGrepOptions): Promise<readonly DatasourceGrepHit[]> {
+		return this.inner.grep?.(pattern, options) ?? Promise.resolve([]);
 	}
 
 	skillManifest(): DatasourceSkillManifest {
