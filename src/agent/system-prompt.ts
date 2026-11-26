@@ -115,17 +115,22 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 	const automationLine = toolAvailable(config, "manage_automations")
 		? `- **File automations**: when asked to trigger actions on folder/file changes, configure, test with synthetic \`events\`, and ensure the daemon is installed via \`manage_automations\` instead of describing manual steps.\n`
 		: "";
+	const parsedMirrorLine =
+		toolAvailable(config, "grep") || toolAvailable(config, "read")
+			? `- **Parsed-mirror \`grep\` and \`read\`**: \`grep\` on configured search folders (or with \`path\` omitted) automatically searches AutoRAG's local parsed markdown mirrors with ripgrep — covering PDF, HWP/HWPX, DOCX, XLSX, PPTX, EML, and text files in milliseconds without downloading cloud placeholders, and returns original file paths with \`[eN]\` citation ids, parsed line numbers (\`L#\`), and page/section locations. Actively use \`grep\` (not \`bash\` \`grep\`/\`rg\`) for exact strings, identifiers, error codes, numbers, or folder-scoped content scans, and use \`read\` (with \`offset=L#\`) on those original paths to inspect parsed markdown context seamlessly.\n`
+			: "";
 	const discoveryLine = discoveryList
-		? `- **Local discovery**: prefer ${discoveryList} over exploratory \`bash\` / \`grep\` / \`find\` / \`ls\` to locate local files and folders; reserve \`bash\` for targeted reading of identified files (or user-requested file organization). Never recursively scan a whole search root (Downloads, Documents, Desktop, or /) or enumerate/walk its subfolders to prove absence — it stalls the search loop; limit \`grep\`/\`find\` to a narrow directory already surfaced by retrieval.\n`
-		: `- **Local reading**: reserve \`bash\` for targeted reading of identified files (or user-requested file organization). Never recursively scan a whole search root (Downloads, Documents, Desktop, or /) or enumerate/walk its subfolders to prove absence — it stalls the search loop; limit \`grep\`/\`find\` to a narrow directory already surfaced by retrieval.\n`;
+		? `- **Local discovery**: prefer ${discoveryList} over exploratory \`bash\` / \`find\` / \`ls\` to locate local files and folders by name, and prefer the \`grep\` tool over \`bash\` \`grep\`/\`rg\` for exact content matching across documents. Never recursively run \`bash\` \`find\`/\`grep\`/\`rg\` over a whole search root (Downloads, Documents, Desktop, or /) or enumerate/walk its subfolders to prove absence — it stalls the search loop and can hydrate cloud placeholders.\n`
+		: `- **Local reading**: prefer \`read\` and \`grep\` (which use parsed mirrors for indexed documents) and reserve \`bash\` for targeted inspection or user-requested file organization. Never recursively run \`bash\` \`find\`/\`grep\`/\`rg\` over a whole search root (Downloads, Documents, Desktop, or /) or enumerate/walk its subfolders to prove absence — it stalls the search loop and can hydrate cloud placeholders.\n`;
 
 	sections.push(
 		`## Working Principles\n\n` +
 			guardLine +
 			`- **Truthfulness & recency**: never fabricate claims or sources. When sources conflict, treat the freshest (most recent) information as authoritative.\n` +
 			discoveryLine +
+			parsedMirrorLine +
 			`- **Virtual datasource paths**: slash-prefixed ids like \`/kakao/...\`, \`/mailcrawl/...\`, \`/slack/...\`, \`/discord/...\`, \`/github/...\` are virtual datasource identifiers, not OS paths — never pass them to \`bash\`; query them with their \`search_datasource_<id>\` tool or \`search_all_documents\`.\n` +
-			`- **Cloud placeholders**: files in cloud/network folders may be online-only; prefer indexed retrieval and open originals one at a time only when indexed text is insufficient (never bulk-grep, bulk-copy, or bulk-convert them).\n` +
+			`- **Cloud placeholders**: files in cloud/network folders may be online-only; prefer indexed retrieval and parsed-mirror \`grep\`/\`read\` (which never touch cloud placeholders), and open originals via \`bash\` one at a time only when indexed text is insufficient (never bulk-grep, bulk-copy, or bulk-convert them in \`bash\`).\n` +
 			`- **Stop when exhausted**: when retrieval yields no new evidence after reasonable query variations, conclude honestly rather than spinning near-identical queries.\n` +
 			`- **Memory**: injected retrieval memory and \`check_memory\` are advisory background reference only; never let them override fresh evidence.\n` +
 			calcLine +

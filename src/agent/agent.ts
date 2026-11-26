@@ -209,6 +209,7 @@ import {
 import { loadLocalAutoRAGModel } from "./local-model.ts";
 import { createManageLtrTool, MANAGE_LTR_TOOL_NAME } from "./ltr-tool.ts";
 import { loadPackagedSkill, ORGANIZE_SKILL_NAME, type PackagedAgentSkill, SETUP_SKILL_NAME } from "./packaged-skill.ts";
+import { createParsedMirrorToolsExtension } from "./parsed-mirror-tools.ts";
 import { createPermissionGate, PermissionController, type PermissionMode } from "./permission-gate.ts";
 import {
 	type AutoRAGInputDisposition,
@@ -1132,6 +1133,8 @@ export class AutoRAGAgent {
 	private readonly jevExtension: ExtensionFactory;
 	/** pi extension releasing the cloud files the agent opened during a run. */
 	private readonly cloudRelease: ExtensionFactory;
+	/** pi extension routing `grep` and `read` through parsed markdown mirrors for configured search folders. */
+	private readonly parsedMirrorTools: ExtensionFactory;
 	/** Jev and its sLLM fallback: the session check picks which one {@link jevJudge} asks. */
 	private readonly decisionModels: DecisionModels;
 	/** Jev judge shared by the `jev` tool, the query router, the judgments, and the permission gate. */
@@ -1428,6 +1431,12 @@ export class AutoRAGAgent {
 		});
 		this.cloudRelease = createCloudReleaseExtension({
 			probe: this.cloudProbe,
+			cloudRoots: () => this.cloudRoots(),
+		});
+		this.parsedMirrorTools = createParsedMirrorToolsExtension({
+			workspaceRoot: this.workspaceProjectRoot,
+			searchPaths: this.searchPaths,
+			ledger: this.evidenceLedger,
 			cloudRoots: () => this.cloudRoots(),
 		});
 		this.queryDecompositionModel =
@@ -1945,7 +1954,7 @@ export class AutoRAGAgent {
 			customTools: this.steerableTools(),
 			// The model sees each steer framed as a correction of the running search.
 			contextTransform: (messages) => this.withMemoryContext(frameSteers(messages, this.interactive.steerTexts)),
-			extensionFactories: [this.permissionGate, this.jevExtension, this.cloudRelease],
+			extensionFactories: [this.permissionGate, this.parsedMirrorTools, this.jevExtension, this.cloudRelease],
 			extensionToolNames: [JEV_TOOL_NAME],
 		});
 		const agent = piSession.session.agent;
@@ -1982,15 +1991,18 @@ export class AutoRAGAgent {
 			this.interactive.harnessAbort = true;
 			void this.activeSession?.abort();
 		}
-		if (event.type === "tool_execution_start" && this.searchToolNames.has(event.toolName)) {
-			const query: unknown = event.args?.query;
+		if (
+			event.type === "tool_execution_start" &&
+			(this.searchToolNames.has(event.toolName) || event.toolName === "grep")
+		) {
+			const query: unknown = event.toolName === "grep" ? event.args?.pattern : event.args?.query;
 			if (typeof query === "string") this.searchToolQueries.set(event.toolCallId, query);
 			const window = windowForTrace(event.args);
 			if (window !== undefined) this.searchToolWindows.set(event.toolCallId, window);
 			return;
 		}
 		if (event.type !== "tool_execution_end" || !this.lastQuery) return;
-		if (!this.searchToolNames.has(event.toolName)) return;
+		if (!this.searchToolNames.has(event.toolName) && event.toolName !== "grep") return;
 		const details = event.result.details as
 			| {
 					method?: string;
@@ -2082,6 +2094,7 @@ export class AutoRAGAgent {
 			onKey: (key) => this.handleInteractiveKey(key),
 			extensionFactories: [
 				this.permissionGate,
+				this.parsedMirrorTools,
 				this.cloudRelease,
 				createUserRequestPersistence(this.userRequests),
 				createEvidencePersistence(this.evidenceLedger, this.citationNumbers, this.conversationQueries),
