@@ -55,8 +55,6 @@ async function createTuiAgent(ctx: CommandContext): Promise<AutoRAGAgent> {
 		cwd: ctx.cwd,
 	});
 	const options: AutoRAGAgentOptions = { ...buildAgentOptions(config) };
-	// A bridged session can serve other people, so it must not load the local user's identity.
-	if (bridged) options.loadIdentity = false;
 	// Pi reports its own version/changelog; this notice is AutoRAG's own npm
 	// release check, injected into the same interactive session.
 	options.updateNotice = async () =>
@@ -76,6 +74,8 @@ async function createTuiAgent(ctx: CommandContext): Promise<AutoRAGAgent> {
 	}
 	const whatsapp = await resolveWhatsAppExtension({ flags: ctx.flags, cwd: ctx.cwd });
 	if (whatsapp !== undefined) {
+		// WhatsApp is loaded as a Pi extension, so the Agent cannot detect this bridge itself.
+		options.loadIdentity = false;
 		options.piExtensionPaths = whatsapp.paths;
 		options.piExtensionFlags = whatsapp.flags;
 	}
