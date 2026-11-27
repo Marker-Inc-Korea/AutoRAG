@@ -1,6 +1,6 @@
 import { basename } from "node:path";
 import type { ClassifierApi, ClassifierModel, JsonObject } from "@earendil-works/pi-ai";
-import { findEnvKeys } from "@earendil-works/pi-ai/compat";
+import { getEnvApiKey } from "@earendil-works/pi-ai/compat";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import {
 	BIVIA_DEFAULT_MODEL,
@@ -166,12 +166,8 @@ function verdictFromChoice(
 
 function hasProviderKey(provider: string, env: Record<string, string>): boolean {
 	if (provider === BIVIA_PROVIDER_ID) return getBiviaEnvApiKey(env) !== undefined;
-	const keys = findEnvKeys(provider);
-	if (keys === undefined || keys.length === 0) return false;
-	return keys.some((key) => {
-		const value = env[key];
-		return typeof value === "string" && value.length > 0;
-	});
+	const resolved = getEnvApiKey(provider, env);
+	return typeof resolved === "string" && resolved.length > 0;
 }
 
 /**

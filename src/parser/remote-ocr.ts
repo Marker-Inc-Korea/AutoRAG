@@ -146,7 +146,9 @@ function cleanMarkdown(raw: string): string {
 }
 
 function trimTrailingSlash(url: string): string {
-	return url.replace(/\/+$/u, "");
+	let end = url.length;
+	while (end > 0 && url.charCodeAt(end - 1) === 47) end -= 1;
+	return end === url.length ? url : url.slice(0, end);
 }
 
 function resolveMistralEndpoint(baseUrl?: string): string {

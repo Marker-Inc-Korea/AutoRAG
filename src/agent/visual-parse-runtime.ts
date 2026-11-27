@@ -313,9 +313,7 @@ export async function resolveVisualParseSyncOptions(input: {
 				env: input.env,
 			});
 			if (apiKey === undefined || apiKey.trim().length === 0) {
-				throw new Error(
-					`Missing API key for remote OCR provider "${providerId}" (expected ${ocrConfig?.apiKeyEnv ?? spec?.defaultApiKeyEnv ?? envKeyNameForProvider(providerId)}).`,
-				);
+				throw new Error(`Missing credentials for remote OCR provider "${providerId}".`);
 			}
 			return createRemoteApiOcrExtractor({
 				provider: providerId as RemoteOcrProviderId,

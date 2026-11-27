@@ -218,6 +218,6 @@ describe("official remote OCR API extractors", () => {
 				languages: ["ko", "en"],
 				env: { AUTORAG_AUTH_MODE: "environment" },
 			}),
-		).rejects.toThrow(/NVIDIA_API_KEY/u);
+		).rejects.toThrow(/Missing credentials for remote OCR provider "nvidia"/u);
 	});
 });
