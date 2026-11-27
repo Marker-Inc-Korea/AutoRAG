@@ -39,6 +39,7 @@ import { acquireFileLock, type FileLockHandle } from "../filesystem/file-lock.ts
 import { isGlobExclusion } from "../filesystem/path-exclusions.ts";
 import { LanguageError, type LanguageTag, normalizeLanguages } from "../language.ts";
 import type { LtrSettings } from "../ltr/manager.ts";
+import { resolveMinSyncBinary } from "../minsync/binary.ts";
 import type { EnsureMinSyncBinaryOptions, MinSyncEmbedderConfig } from "../minsync/index.ts";
 import { renameWithRetry } from "../mirror/atomic-write.ts";
 import { MAX_FUSION_DEPTH, MAX_PER_RECORD, type RecordCutOptions } from "../retrieval/record-cut.ts";
@@ -1640,7 +1641,16 @@ export function buildAgentOptions(config: CliConfig, agentDir?: string): Omit<Au
 	if (config.refresh !== undefined) opts.refresh = config.refresh;
 	// One embedder serves memory and every datasource, so a single `minSync.embedder` block (local MinSync or a
 	// remote endpoint) decides where all of AutoRAG's text is embedded.
-	const embedder = createEmbedderFromConfig({ embedder: config.minSync?.embedder });
+	const embedder = createEmbedderFromConfig({
+		embedder: config.minSync?.embedder,
+		autoStart: config.minSync?.autoInstall !== false,
+		resolveMinSyncBinary: () =>
+			resolveMinSyncBinary({
+				root: config.workspacePath,
+				...(config.minSync?.autoInstall === undefined ? {} : { autoInstall: config.minSync.autoInstall }),
+				...(config.minSync?.installer === undefined ? {} : { installer: config.minSync.installer }),
+			}),
+	});
 	opts.embedder = embedder;
 	if (config.datasources !== undefined) {
 		const { skills, unknown, retired } = buildDatasourceSkills(config.datasources, config.workspacePath, {

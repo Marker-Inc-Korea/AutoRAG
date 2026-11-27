@@ -4,8 +4,10 @@ import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { runSetup } from "../../src/cli/setup.ts";
+import { stopInlDaemon } from "../../src/embedding/daemon.ts";
 import type { ManagedEmbedder } from "../../src/embedding/embedder.ts";
 import type { CloudFileProbe, CloudRoot } from "../../src/filesystem/cloud-placeholder.ts";
+import { writeFakeInlServe } from "../helpers/fake-inl-serve.ts";
 
 function fakeCloudProbe(roots: readonly CloudRoot[]): CloudFileProbe {
 	return {
@@ -663,5 +665,66 @@ describe("discord native store probe", () => {
 			expect(called).toBe(false);
 			expect(report.filee?.state).toBe("skipped");
 		}
+	});
+});
+
+describe("setup auto-starts inl daemon when none is running (#2216)", () => {
+	it("starts inl serve from PATH and reports mode: semantic with backend: daemon", async () => {
+		const root = mkdtempSync(join(tmpdir(), "autorag-setup-inl-"));
+		const bin = mkdtempSync(join(tmpdir(), "autorag-setup-bin-"));
+		roots.push(root, bin);
+		writeFakeInlServe(bin, { name: "inl", dimension: 1024 });
+		const configPath = join(root, "config.json");
+		writeFileSync(configPath, JSON.stringify({ searchPaths: [join(root, "docs")], workspacePath: root }));
+		try {
+			const report = await runSetup({
+				configPath,
+				workspacePath: root,
+				deps: {
+					env: { ...process.env, HOME: root, PATH: `${bin}:${process.env.PATH ?? ""}` },
+					executable: () => undefined,
+					pathExists: () => true,
+					acquireLock: fakeLock,
+					filee: async () => ({ path: "x", source: "path" }),
+				},
+			});
+			expect(report.mode).toBe("semantic");
+			expect(report.embedding).toMatchObject({
+				backend: "daemon",
+				provider: "minsync",
+				dimension: 1024,
+			});
+		} finally {
+			await stopInlDaemon({ home: root });
+		}
+	}, 40_000);
+
+	it("reports a missing-launcher error without mentioning @nomadamas/minsync-native", async () => {
+		const root = mkdtempSync(join(tmpdir(), "autorag-setup-no-inl-"));
+		const bin = mkdtempSync(join(tmpdir(), "autorag-setup-empty-bin-"));
+		roots.push(root, bin);
+		const configPath = join(root, "config.json");
+		writeFileSync(
+			configPath,
+			JSON.stringify({
+				searchPaths: [join(root, "docs")],
+				workspacePath: root,
+				minSync: { enabled: true, autoInstall: false },
+			}),
+		);
+		const report = await runSetup({
+			configPath,
+			workspacePath: root,
+			deps: {
+				env: { HOME: root, PATH: bin },
+				executable: () => undefined,
+				pathExists: () => true,
+				acquireLock: fakeLock,
+				filee: async () => ({ path: "x", source: "path" }),
+			},
+		});
+		expect(report.mode).toBe("sparse");
+		expect(report.embedding.reason ?? "").not.toContain("@nomadamas/minsync-native");
+		expect(report.embedding.reason ?? "").toContain("inl serve");
 	});
 });
