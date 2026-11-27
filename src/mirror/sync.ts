@@ -367,23 +367,45 @@ async function withTransientRetry<T>(operation: () => T | Promise<T>, retries: n
 
 const STANDALONE_OCR_IMAGE_EXTENSIONS: ReadonlySet<string> = new Set(KORDOC_IMAGE_EXTENSIONS);
 
+function effectiveParserOptions(options: ParsedMirrorSyncOptions): DefaultParserRegistryOptions {
+	const base = options.parserOptions ?? {};
+	// When opt-in Stage-2 visual parsing is active with the default registry, claim standalone images with
+	// ImageMetadataParser (unless eager Stage-1 OCR is already enabled or images were explicitly turned off)
+	// so standalone images enter the mirror index and get routed through the vision gate.
+	// Keep parseFingerprint unchanged when the caller supplied a custom registry (or didn't set parserOptions)
+	// by only enabling `images` on the default registry construction rather than mutating unrelated base fingerprints.
+	if (
+		options.registry === undefined &&
+		options.visualParse !== undefined &&
+		base.images === undefined &&
+		base.ocr?.enabled !== true
+	) {
+		return { ...base, images: true };
+	}
+	return base;
+}
+
 export async function syncParsedMirrors(options: ParsedMirrorSyncOptions): Promise<ParsedMirrorSyncResult> {
 	if (options.parserOptions !== undefined) validateIsolationOptions(options.parserOptions);
 	if (options.signal?.aborted) throw abortReason(options.signal);
-	const registry = options.registry ?? createDefaultParserRegistry(options.parserOptions);
+	const resolvedParserOptions = effectiveParserOptions(options);
+	const effectiveOptions: ParsedMirrorSyncOptions =
+		resolvedParserOptions === options.parserOptions ? options : { ...options, parserOptions: resolvedParserOptions };
+	const registry = effectiveOptions.registry ?? createDefaultParserRegistry(effectiveOptions.parserOptions);
 	// Worker isolation applies to the default registry only: an injected registry or a function-valued
 	// parser option cannot cross the thread boundary, so those parse in-process.
-	const workerOptions = options.registry === undefined ? workerParserOptions(options.parserOptions ?? {}) : undefined;
+	const workerOptions =
+		effectiveOptions.registry === undefined ? workerParserOptions(effectiveOptions.parserOptions ?? {}) : undefined;
 	const isolated =
 		workerOptions === undefined
 			? undefined
 			: new IsolatedParseRunner({
 					parserOptions: workerOptions,
-					fileTimeoutMs: options.parserOptions?.fileTimeoutMs,
-					maxHeapMb: options.parserOptions?.maxHeapMb,
+					fileTimeoutMs: effectiveOptions.parserOptions?.fileTimeoutMs,
+					maxHeapMb: effectiveOptions.parserOptions?.maxHeapMb,
 				});
 	try {
-		return await syncWithRegistry(options, registry, isolated);
+		return await syncWithRegistry(effectiveOptions, registry, isolated);
 	} finally {
 		await isolated?.close();
 	}
@@ -408,7 +430,7 @@ function parseFingerprint(options: ParsedMirrorSyncOptions): string {
 }
 
 function outputParserOptions(options: DefaultParserRegistryOptions = {}): unknown {
-	const { fileTimeoutMs: _timeout, maxHeapMb: _heap, ocr, ...parser } = options;
+	const { fileTimeoutMs: _timeout, maxHeapMb: _heap, images: _images, ocr, ...parser } = options;
 	return { ...parser, ...(ocr === undefined ? {} : { ocr: { enabled: ocr.enabled } }) };
 }
 
@@ -783,7 +805,8 @@ async function syncWithRegistry(
 						);
 						continue;
 					}
-					const tooSmallImage = standaloneImageTooSmallMessage(entry.virtualPath, bytes);
+					const tooSmallImage =
+						parser.name === "kordoc" ? standaloneImageTooSmallMessage(entry.virtualPath, bytes) : undefined;
 					if (tooSmallImage !== undefined) {
 						await skipFile(
 							entry,
@@ -1099,41 +1122,49 @@ function recordedDuplicateSources(previous: ParsedMirrorIndex, current: readonly
 
 /** Ask MinSync's read-only plan which current source revisions still need work. */
 export async function detectMirrorStaleness(options: ParsedMirrorSyncOptions): Promise<ParsedMirrorDiagnostic[]> {
-	const registry = options.registry ?? createDefaultParserRegistry(options.parserOptions);
-	const current = (await listCurrentFiles(options.searchPaths, supportedExtensionSet(registry), walkLimits(options)))
-		.entries;
+	const resolvedParserOptions = effectiveParserOptions(options);
+	const effectiveOptions: ParsedMirrorSyncOptions =
+		resolvedParserOptions === options.parserOptions ? options : { ...options, parserOptions: resolvedParserOptions };
+	const registry = effectiveOptions.registry ?? createDefaultParserRegistry(effectiveOptions.parserOptions);
+	const current = (
+		await listCurrentFiles(
+			effectiveOptions.searchPaths,
+			supportedExtensionSet(registry),
+			walkLimits(effectiveOptions),
+		)
+	).entries;
 	if (current.length === 0) return [];
 	const binaryPath = await resolveMinSyncBinary({
-		root: options.root,
-		binaryPath: options.minSyncBinaryPath,
+		root: effectiveOptions.root,
+		binaryPath: effectiveOptions.minSyncBinaryPath,
 		install: false,
 	});
 	const session = new MinSyncStageSession(
 		binaryPath,
-		join(parsedMirrorRoot(options.root), "stage"),
-		options.root,
-		options.signal,
+		join(parsedMirrorRoot(effectiveOptions.root), "stage"),
+		effectiveOptions.root,
+		effectiveOptions.signal,
 	);
 	try {
 		const previous = mirrorIndexFromStage(
-			options.root,
+			effectiveOptions.root,
 			await session.inspect({
 				stage: "parse",
 				source_id: "autorag-parsed-mirror",
-				output_root: join(parsedMirrorRoot(options.root), "files"),
+				output_root: join(parsedMirrorRoot(effectiveOptions.root), "files"),
 			}),
 		);
-		const recordedDuplicates = options.reuseRecordedDuplicateExclusions
+		const recordedDuplicates = effectiveOptions.reuseRecordedDuplicateExclusions
 			? recordedDuplicateSources(previous, current)
 			: undefined;
-		const { versions, omitted } = sourcePlan(current, registry, options, recordedDuplicates);
-		const fingerprint = parseFingerprint(options);
+		const { versions, omitted } = sourcePlan(current, registry, effectiveOptions, recordedDuplicates);
+		const fingerprint = parseFingerprint(effectiveOptions);
 		const plan = await session.plan({
 			stage: "parse",
 			source_id: "autorag-parsed-mirror",
 			fingerprint,
-			retry_fingerprint: retryFingerprint(options, fingerprint),
-			output_root: join(parsedMirrorRoot(options.root), "files"),
+			retry_fingerprint: retryFingerprint(effectiveOptions, fingerprint),
+			output_root: join(parsedMirrorRoot(effectiveOptions.root), "files"),
 			items: [...versions].map(([path, version]) => ({ key: mirrorStageKey(path), version })),
 		});
 		const work = new Set(

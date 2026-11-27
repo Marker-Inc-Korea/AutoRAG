@@ -1,4 +1,9 @@
-import { isSparseOnlyEmbedder } from "../minsync/embedder-config.ts";
+import {
+	isMultimodalEmbedder,
+	isNativeEmbedderId,
+	isSparseOnlyEmbedder,
+	stripNativeEmbedderPrefix,
+} from "../minsync/embedder-config.ts";
 import type { MinSyncEmbedderConfig } from "../minsync/types.ts";
 import { DEFAULT_DAEMON_MODEL } from "./daemon.ts";
 import type { ManagedEmbedder } from "./embedder.ts";
@@ -45,10 +50,10 @@ export interface EmbedderFromConfigOptions {
 	readonly resolveMinSyncBinary?: () => Promise<string>;
 }
 
-/** The local model a `native:` id names; MinSync's default Qwen3 when none is configured. */
+/** The local model a `native:` / `native-multimodal:` id names; MinSync's default Qwen3 when none is configured. */
 function localModel(embedder: MinSyncEmbedderConfig | undefined): string {
 	const id = embedder?.id;
-	return id?.startsWith("native:") ? id.slice("native:".length) : DEFAULT_DAEMON_MODEL;
+	return isNativeEmbedderId(id) ? stripNativeEmbedderPrefix(id!) : DEFAULT_DAEMON_MODEL;
 }
 
 /**
@@ -72,6 +77,7 @@ export function createEmbedderFromConfig(options: EmbedderFromConfigOptions): Ma
 	const remote = remoteEmbedderFromMinSync(options.embedder);
 	const embedder = createManagedEmbedder({
 		...(remote === undefined ? {} : { remote }),
+		kind: isMultimodalEmbedder(options.embedder) ? "multimodal" : "dense",
 		model: localModel(options.embedder),
 		prefixes: resolveEmbeddingPrefixes(options.embedder),
 		...(options.home === undefined ? {} : { home: options.home }),

@@ -33,6 +33,8 @@ export interface ManagedEmbedderOptions {
 	/** User home that holds im-not-llm's server state. */
 	readonly home?: string;
 	readonly env?: NodeJS.ProcessEnv;
+	/** Engine kind of the daemon to use (`"dense"` or `"multimodal"`). Defaults to `"dense"`. */
+	readonly kind?: "dense" | "multimodal";
 	/** Model of the daemon to use. Defaults to im-not-llm's default Qwen3 embedder. */
 	readonly model?: string;
 	/**
@@ -86,6 +88,7 @@ async function probeRemote(remote: RemoteEmbedderSettings, fetchImpl: typeof fet
  */
 export function createManagedEmbedder(options: ManagedEmbedderOptions): ManagedEmbedder {
 	const fetchImpl = options.fetchImpl ?? fetch;
+	const wantedKind = options.kind ?? "dense";
 	const wantedModel = options.model ?? DEFAULT_DAEMON_MODEL;
 	const prefixes = options.prefixes;
 	const prefixed = (texts: readonly string[], embedOptions: EmbedOptions | undefined): readonly string[] => {
@@ -138,6 +141,7 @@ export function createManagedEmbedder(options: ManagedEmbedderOptions): ManagedE
 
 	const probe = async (): Promise<InlDaemon | undefined> =>
 		probeInlDaemon({
+			kind: wantedKind,
 			model: wantedModel,
 			...(options.home === undefined ? {} : { home: options.home }),
 			fetchImpl,
@@ -145,6 +149,7 @@ export function createManagedEmbedder(options: ManagedEmbedderOptions): ManagedE
 
 	const startDaemon = (): Promise<InlDaemon> => {
 		startingDaemon ??= ensureInlDaemon({
+			kind: wantedKind,
 			model: wantedModel,
 			...(options.home === undefined ? {} : { home: options.home }),
 			...(options.env === undefined ? {} : { env: options.env }),

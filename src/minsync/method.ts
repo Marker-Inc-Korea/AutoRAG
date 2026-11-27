@@ -17,7 +17,7 @@ import type {
 import { isMinSyncBinaryMissing, resolveMinSyncBinary } from "./binary.ts";
 import type { MinSyncQueryMode } from "./client.ts";
 import { MinSyncClient } from "./client.ts";
-import { isSparseOnlyEmbedder } from "./embedder-config.ts";
+import { isMultimodalEmbedder, isSparseOnlyEmbedder } from "./embedder-config.ts";
 import type { EnsureMinSyncBinaryOptions } from "./installer.ts";
 import { minSyncWorkspaceRoot } from "./paths.ts";
 import type { MinSyncEmbedderConfig, MinSyncQueryHit, MinSyncSyncProgress, MinSyncSyncResult } from "./types.ts";
@@ -130,6 +130,7 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 		const staging = syncMinSyncWorkspace(this.root, {
 			workspacePath: this.workspacePath,
 			minSyncBinaryPath: binaryPath,
+			stageRawImages: isMultimodalEmbedder(this.embedder),
 		});
 		const withStaging = (result: MinSyncSyncResult): MinSyncSyncResult => ({
 			...result,
@@ -174,7 +175,7 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 		const byPath = buildMinSyncPathMap(this.root, this.workspacePath, binaryPath);
 		let hasVisualMirrors = false;
 		for (const entry of byPath.values()) {
-			if (entry.mirrorKind === "visual") {
+			if (entry.mirrorKind === "visual" || entry.mirrorKind === "image") {
 				hasVisualMirrors = true;
 				break;
 			}
@@ -226,14 +227,16 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 			}
 			const chunkDiscriminator = hit.docId ?? basename(hit.path);
 			const chunkId = `minsync:${entry.virtualPath}:${chunkDiscriminator}`;
-			const location = locateChunkInMirror(
-				mirrorTexts,
-				entry,
-				withoutHeading(hit.text, hit.headingPath ?? hit.path),
-			);
+			const isImageHit = entry.mirrorKind === "image";
+			const location = isImageHit
+				? undefined
+				: locateChunkInMirror(mirrorTexts, entry, withoutHeading(hit.text, hit.headingPath ?? hit.path));
+			const content = isImageHit
+				? `Image file: ${basename(entry.sourcePath)} (direct multimodal visual embedding match)`
+				: hit.text;
 			results.push({
 				id: chunkId,
-				content: hit.text,
+				content,
 				source: resolvedSource,
 				score: hit.score,
 				metadata: {
@@ -241,7 +244,9 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 					virtualPath: entry.virtualPath,
 					minsyncChunkId: chunkId,
 					minsyncPath: hit.path,
-					...(entry.mirrorKind === "visual" ? { mirrorKind: "visual" } : {}),
+					...(entry.mirrorKind === "visual" || entry.mirrorKind === "image"
+						? { mirrorKind: entry.mirrorKind }
+						: {}),
 					// The window's fallback time for a local file: when the source was last modified.
 					sourceMtimeMs: entry.sourceMtimeMs,
 					...(location !== undefined
@@ -326,11 +331,40 @@ const MAX_COALESCED_CONTENT_CHARS = 8_000;
 export function coalesceCrossMirrorPageHits(results: readonly RetrievalResult[]): RetrievalResult[] {
 	const out: RetrievalResult[] = [];
 	const bySinglePage = new Map<string, number>();
+	const byStandaloneImage = new Map<string, number>();
 
 	for (const result of results) {
+		const mirrorKind = result.metadata?.mirrorKind;
 		const pageStart = typeof result.metadata?.pageStart === "number" ? result.metadata.pageStart : undefined;
 		const pageEnd = typeof result.metadata?.pageEnd === "number" ? result.metadata.pageEnd : undefined;
-		const isVisual = result.metadata?.mirrorKind === "visual";
+		const isVisual = mirrorKind === "visual";
+		const isImage = mirrorKind === "image";
+
+		// Coalesce standalone image hits across direct pixel embedding (`image`), VLM/OCR mirror (`visual`),
+		// and lightweight metadata mirror (`text`) so one image file occupies a single slot with its richest description.
+		const isStandaloneImage = /\.(?:png|jpe?g|webp)$/iu.test(result.source);
+		if (isImage || (isStandaloneImage && (isVisual || mirrorKind === undefined))) {
+			const existingImgIdx = byStandaloneImage.get(result.source);
+			if (existingImgIdx !== undefined) {
+				const existing = out[existingImgIdx]!;
+				const existingIsRichest = existing.metadata?.mirrorKind === "visual";
+				const nextContent =
+					!existingIsRichest && isVisual && result.content.trim().length > 0 ? result.content : existing.content;
+				out[existingImgIdx] = {
+					...existing,
+					content: nextContent,
+					metadata: {
+						...existing.metadata,
+						...(isVisual || existingIsRichest ? { hasVisualComplement: true } : {}),
+					},
+				};
+				continue;
+			}
+			byStandaloneImage.set(result.source, out.length);
+			out.push(result);
+			continue;
+		}
+
 		if (pageStart === undefined || pageEnd === undefined || pageStart !== pageEnd) {
 			out.push(result);
 			continue;

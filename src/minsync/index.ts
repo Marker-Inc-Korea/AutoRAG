@@ -9,14 +9,20 @@ export {
 	DEFAULT_MINSYNC_EMBEDDER_CONFIG,
 	DEFAULT_MINSYNC_EMBEDDER_DIMENSION,
 	DEFAULT_MINSYNC_EMBEDDER_ID,
+	defaultNativeEmbedderDimension,
+	isMultimodalEmbedder,
+	isNativeEmbedderId,
 	isSparseOnlyEmbedder,
 	MINSYNC_CONFIG_DIR,
 	MINSYNC_CONFIG_FILE,
 	type MinSyncEmbeddingIdentity,
+	MULTIMODAL_EMBEDDINGGEMMA2_DIMENSION,
+	MULTIMODAL_EMBEDDINGGEMMA2_ID,
 	minSyncConfigPath,
 	minSyncEmbeddingIdentityPath,
 	rewriteEmbedderConfig,
 	SPARSE_ONLY_EMBEDDER_ID,
+	stripNativeEmbedderPrefix,
 } from "./embedder-config.ts";
 export { MinSyncRequiredError } from "./errors.ts";
 export {

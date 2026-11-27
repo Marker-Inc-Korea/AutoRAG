@@ -3,6 +3,7 @@ import type { Api, AssistantMessage, Context, Model } from "@earendil-works/pi-a
 import { completeSimple } from "@earendil-works/pi-ai/compat";
 import { parse as kordocParse } from "kordoc";
 import { DEFAULT_LANGUAGES, type LanguageTag } from "../language.ts";
+import { isStandaloneImagePath } from "./image-metadata.ts";
 import { BUILTIN_OCR_LANGUAGES, createTesseractOcrProvider, type OcrProvider } from "./ocr-engines.ts";
 import type { VisualImageMimeType } from "./page-render.ts";
 import { normalizeMarkdown } from "./text.ts";
@@ -36,7 +37,7 @@ export interface VisualPageExtractor {
 	extract(input: VisualExtractInput): Promise<VisualExtractResult>;
 }
 
-const VLM_PROMPT_VERSION = "v3-focused";
+const VLM_PROMPT_VERSION = "v4-focused-images";
 const REMOTE_OCR_PROMPT_VERSION = "v1-ocr";
 const OCR_PROMPT_VERSION = "v1";
 const DEFAULT_VLM_TIMEOUT_MS = 60_000;
@@ -67,6 +68,18 @@ const VLM_SYSTEM_PROMPT = [
 	"- Do NOT copy long body paragraphs that are already faithfully present in the reference text; include only the concise heading/caption needed to contextualize the visual element.",
 	"- Preserve the document's original language (e.g., Korean, English, Japanese) and exact numbers, dates, currencies, percentages, and identifiers.",
 	"- Never invent numbers, labels, or facts not visible in the page image.",
+	"- Output clean Markdown only, without meta-commentary or wrapping code fences.",
+].join("\n");
+
+const IMAGE_VLM_SYSTEM_PROMPT = [
+	"You are a precision visual archivist building a searchable Markdown description for a standalone image file in a personal document retrieval system.",
+	"Describe everything a user might later search for to find this exact image:",
+	"- Scene, subject, setting, objects, people/animals (without guessing private identities), colors, materials, mood, and composition.",
+	"- If the image is a chart, graph, diagram, map, UI mockup, whiteboard, or infographic: include the title, axis labels, units, nodes/connections, and EVERY visible number or label as a clean Markdown table or list.",
+	"- Transcribe any visible text, signs, logos, timestamps, or labels verbatim in their original language (e.g., Korean, English, Japanese).",
+	"- End with a concise comma-separated list of concrete search keywords (subjects, objects, place/type, visual attributes).",
+	"Strict rules:",
+	"- Never invent facts, names, dates, or numbers not visible in the image.",
 	"- Output clean Markdown only, without meta-commentary or wrapping code fences.",
 ].join("\n");
 
@@ -131,6 +144,12 @@ function extractAssistantText(message: AssistantMessage): string {
 }
 
 function buildVlmUserText(input: VisualExtractInput): string {
+	if (isStandaloneImagePath(input.virtualPath)) {
+		return [
+			`Image file: ${basename(input.virtualPath)}`,
+			"Generate a detailed, factual, searchable Markdown description of this image (subjects, objects, scene, colors, visible text/data, and concrete search keywords).",
+		].join("\n\n");
+	}
 	const baseText = input.extractedText?.trim() ?? "";
 	const snippet =
 		baseText.length > MAX_CONTEXT_TEXT_CHARS
@@ -173,7 +192,6 @@ export function createVlmVisualPageExtractor(options: VlmVisualPageExtractorOpti
 	}
 	const modelId = `${model.provider}/${model.id}`;
 	const mode: VisualExtractorKind = options.mode ?? "vlm";
-	const systemPrompt = mode === "ocr" ? REMOTE_OCR_SYSTEM_PROMPT : VLM_SYSTEM_PROMPT;
 	const promptVersion = mode === "ocr" ? REMOTE_OCR_PROMPT_VERSION : VLM_PROMPT_VERSION;
 	const timeoutMs = options.timeoutMs ?? DEFAULT_VLM_TIMEOUT_MS;
 	const maxTokens = options.maxTokens ?? DEFAULT_VLM_MAX_TOKENS;
@@ -200,9 +218,14 @@ export function createVlmVisualPageExtractor(options: VlmVisualPageExtractorOpti
 				input.image.data.byteOffset,
 				input.image.data.byteLength,
 			).toString("base64");
+			const standaloneImage = isStandaloneImagePath(input.virtualPath);
+			const activeSystemPrompt =
+				mode === "ocr" ? REMOTE_OCR_SYSTEM_PROMPT : standaloneImage ? IMAGE_VLM_SYSTEM_PROMPT : VLM_SYSTEM_PROMPT;
 			const userText =
 				mode === "ocr"
-					? `Document: ${basename(input.virtualPath)} (Page ${input.page})\nTranscribe all visible text, handwriting, form fields, and tables on this page into accurate Markdown.`
+					? standaloneImage
+						? `Image file: ${basename(input.virtualPath)}\nTranscribe all visible text, UI elements, labels, handwriting, and tables in this image into accurate Markdown.`
+						: `Document: ${basename(input.virtualPath)} (Page ${input.page})\nTranscribe all visible text, handwriting, form fields, and tables on this page into accurate Markdown.`
 					: buildVlmUserText(input);
 			for (let attempt = 0; ; attempt += 1) {
 				if (input.signal?.aborted) throw input.signal.reason ?? new Error("Aborted");
@@ -217,7 +240,7 @@ export function createVlmVisualPageExtractor(options: VlmVisualPageExtractorOpti
 					const response = await complete(
 						model,
 						{
-							systemPrompt,
+							systemPrompt: activeSystemPrompt,
 							messages: [
 								{
 									role: "user",

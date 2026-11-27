@@ -91,6 +91,7 @@ import { resolveMinSyncBinary } from "../minsync/binary.ts";
 import { unionChannelResults } from "../minsync/channel-union.ts";
 import { MinSyncRequiredError, minSyncBinaryMissingError } from "../minsync/errors.ts";
 import {
+	isMultimodalEmbedder,
 	isSparseOnlyEmbedder,
 	type MinSyncDiagnostic,
 	type MinSyncEmbedderConfig,
@@ -1329,7 +1330,20 @@ export class AutoRAGAgent {
 			options.minSync?.binaryPath,
 		);
 		// The global language setting selects the OCR engine; the workspace pins Tesseract's model cache.
-		this.parserOptions = resolveParserOptions(options.parserOptions, this.languages, this.workspaceProjectRoot);
+		// When a multimodal embedder (e.g. `native-multimodal:google/embeddinggemma-2`) or opt-in visual parsing
+		// is configured, automatically include standalone images via ImageMetadataParser unless explicitly disabled
+		// (`parserOptions.images: false`).
+		const visualParseConfigured =
+			options.visualParse !== undefined && options.visualParse !== false && options.visualParse.enabled !== false;
+		const autoIncludeImages =
+			options.parserOptions?.images === undefined &&
+			options.parserOptions?.ocr?.enabled !== true &&
+			(isMultimodalEmbedder(options.minSync?.embedder) || visualParseConfigured);
+		this.parserOptions = resolveParserOptions(
+			autoIncludeImages ? { ...options.parserOptions, images: true } : options.parserOptions,
+			this.languages,
+			this.workspaceProjectRoot,
+		);
 		this.visualParseOptions = options.visualParse;
 		this.jevOptions = options.jev;
 		this.dupeyOptions = options.dupey ?? {};

@@ -237,6 +237,14 @@ function launcherArgs(kind: DaemonLauncher, options: EnsureDaemonOptions): reado
 		return args;
 	}
 	const args = ["serve", "--format", "json", "--quiet"];
+	const engine = options.kind ?? "dense";
+	if (engine === "sparse") args.push("--sparse");
+	else if (engine === "multimodal") args.push("--multimodal");
+	if (options.model !== undefined) {
+		const prefix = engine === "multimodal" ? "native-multimodal:" : "native:";
+		const id = options.model.includes(":") ? options.model : `${prefix}${options.model}`;
+		args.push("--embedder", id);
+	}
 	if (options.idleTimeoutSeconds !== undefined) args.push("--idle-timeout", String(options.idleTimeoutSeconds));
 	return args;
 }

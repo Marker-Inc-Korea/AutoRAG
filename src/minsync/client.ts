@@ -5,14 +5,16 @@ import {
 	configuredEmbedderId,
 	configuredMaxChunkSize,
 	configuredVectorDimension,
-	DEFAULT_MINSYNC_EMBEDDER_DIMENSION,
 	DEFAULT_MINSYNC_EMBEDDER_ID,
+	defaultNativeEmbedderDimension,
+	isNativeEmbedderId,
 	isSparseOnlyEmbedder,
 	type MinSyncEmbeddingIdentity,
 	minSyncConfigPath,
 	minSyncEmbeddingIdentityPath,
 	rewriteEmbedderConfig,
 	SPARSE_ONLY_EMBEDDER_ID,
+	stripNativeEmbedderPrefix,
 } from "./embedder-config.ts";
 import { minSyncBinaryMissingError } from "./errors.ts";
 import { ensureLocalEmbedder } from "./local-embedder.ts";
@@ -91,27 +93,31 @@ export class MinSyncClient {
 		const configured = this.embedder;
 		if (isSparseOnlyEmbedder(configured)) return { config: { id: SPARSE_ONLY_EMBEDDER_ID } };
 		const isNative =
-			configured?.baseUrl === undefined && (configured?.id === undefined || configured.id.startsWith("native:"));
+			configured?.baseUrl === undefined && (configured?.id === undefined || isNativeEmbedderId(configured.id));
 		if (!isNative) return { config: configured ?? {} };
 		const id = configured?.id ?? DEFAULT_MINSYNC_EMBEDDER_ID;
-		const dimension = configured?.dimension ?? DEFAULT_MINSYNC_EMBEDDER_DIMENSION;
-		// An operator value, including "", wins; otherwise the model's own default applies (Qwen3's instruction).
+		const dimension = configured?.dimension ?? defaultNativeEmbedderDimension(id);
+		// An operator value, including "", wins; otherwise the model's own default applies (Qwen3 / EmbeddingGemma 2).
 		const prefixes = resolveEmbeddingPrefixes(configured);
+		const isMultimodal = id.startsWith("native-multimodal:");
 		return {
 			config: {
 				...configured,
 				id,
 				dimension,
 				...(configured?.queryPrefix === undefined && prefixes.query !== "" ? { queryPrefix: prefixes.query } : {}),
+				...(configured?.passagePrefix === undefined && prefixes.passage !== ""
+					? { passagePrefix: prefixes.passage }
+					: {}),
 			},
 			identity: {
-				provider: "native",
-				model: id.slice("native:".length),
+				provider: isMultimodal ? "native-multimodal" : "native",
+				model: stripNativeEmbedderPrefix(id),
 				artifactRevision: "default",
 				dimension,
 				queryPrefix: prefixes.query,
 				passagePrefix: prefixes.passage,
-				runtimeBuild: "minsync-native",
+				runtimeBuild: isMultimodal ? "minsync-native-multimodal" : "minsync-native",
 			},
 		};
 	}

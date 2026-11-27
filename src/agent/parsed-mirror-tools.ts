@@ -58,6 +58,10 @@ const PARSED_DOCUMENT_READ_EXTENSIONS = new Set([
 	".ods",
 	".pptx",
 	".eml",
+	".png",
+	".jpg",
+	".jpeg",
+	".webp",
 ]);
 
 /** Korean statute headings (`제5조(…)`, `제2장 …`) and markdown headings (matches `chunk-location.ts`). */
