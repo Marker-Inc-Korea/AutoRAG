@@ -266,6 +266,33 @@ export async function routeQuery(
 	};
 }
 
+/**
+ * Ask Jev only whether a question whose route is already known to be `local`
+ * needs query decomposition. Used when the caller explicitly fixed the route
+ * to `local`, skipping the branch-classification question.
+ */
+export async function shouldDecomposeQuery(
+	judge: JevJudge,
+	query: string,
+): Promise<{ readonly decompose: boolean; readonly decomposeProbability?: number; readonly fallbackReason?: string }> {
+	let verdicts: readonly Verdict[];
+	try {
+		verdicts = (await judge(`User question: ${query}`, [{ ...DECOMPOSE_QUESTION, id: DECOMPOSE_QUESTION_ID }]))
+			.verdicts;
+	} catch (error) {
+		return {
+			decompose: false,
+			fallbackReason: error instanceof Error ? error.message : String(error),
+		};
+	}
+	const decomposeVerdict = verdicts.find((verdict) => verdict.id === DECOMPOSE_QUESTION_ID);
+	const decomposeProbability = typeof decomposeVerdict?.answer === "number" ? decomposeVerdict.answer : undefined;
+	return {
+		decompose: decomposeProbability !== undefined && decomposeProbability >= DECOMPOSE_PROBABILITY_THRESHOLD,
+		...(decomposeProbability !== undefined ? { decomposeProbability } : {}),
+	};
+}
+
 /** One configured datasource Jev may send the question to. */
 export interface DatasourceCandidate {
 	readonly datasourceId: string;
