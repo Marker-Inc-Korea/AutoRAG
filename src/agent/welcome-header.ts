@@ -29,6 +29,7 @@ export const WELCOME_TIPS: readonly string[] = [
 	"Ask in plain language; answers cite the files they came from.",
 	"Press Enter during a search to steer it, Alt+Enter to queue a follow-up.",
 	"Esc interrupts a running search.",
+	"Ctrl+P or /mode switches route mode (auto, local, organize, extra).",
 	"/embedding on starts the local embedding daemon (Ctrl+Shift+E toggles).",
 	"/model switches the model, /login signs in to a provider.",
 	"/new starts a fresh session, /resume returns to an earlier one.",

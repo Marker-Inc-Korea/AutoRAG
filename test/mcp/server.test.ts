@@ -2,9 +2,9 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AutoRAGLite } from "../../src/core.ts";
-import { createAutoRAGMcpServer } from "../../src/mcp/server.ts";
+import { type AutoRAGMcpServerOptions, createAutoRAGMcpServer } from "../../src/mcp/server.ts";
 
 const roots: string[] = [];
 
@@ -221,7 +221,7 @@ function pagingFsearch(universe: readonly FSearchEntry[]) {
 	};
 }
 
-async function connectedServer(lite: AutoRAGLite, serverOptions = {}) {
+async function connectedServer(lite: AutoRAGLite, serverOptions: AutoRAGMcpServerOptions = {}) {
 	const server = createAutoRAGMcpServer(lite, serverOptions);
 	const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
 	await server.connect(serverTransport);
@@ -1076,5 +1076,116 @@ describe("AutoRAG Lite MCP server", () => {
 		expect(searchCalls).toHaveLength(0);
 		await client.close();
 		await server.close();
+	});
+
+	describe("autorag.ask (explicit route mode bypass)", () => {
+		it("defaults to auto (no routeOverride) and forwards explicit route modes and aliases", async () => {
+			const { lite } = fakeLite({ workspacePath: workspace(true) });
+			const calls: unknown[] = [];
+			const { client, server } = await connectedServer(lite, {
+				ask: async (request) => {
+					calls.push({
+						query: request.query,
+						mode: request.mode,
+						routeOverride: request.routeOverride,
+						topK: request.topK,
+						scope: request.scope,
+					});
+					return {
+						sessionId: "s-1",
+						query: request.query,
+						answer: `answered (${request.mode})`,
+						results: [],
+						searched: 0,
+						warnings: [],
+						diagnostics: [],
+					};
+				},
+			});
+
+			const { tools } = await client.listTools();
+			expect(tools.map((t) => t.name)).toContain("autorag.ask");
+
+			const autoRes = await client.callTool({ name: "autorag.ask", arguments: { query: "what is Q3 revenue?" } });
+			expect(autoRes.isError).not.toBe(true);
+			expect(autoRes.structuredContent).toMatchObject({ ok: true, mode: "auto", answer: "answered (auto)" });
+			expect(field(autoRes.structuredContent, "routeOverride")).toBeUndefined();
+
+			const orgRes = await client.callTool({
+				name: "autorag.ask",
+				arguments: { query: "tidy downloads", mode: "organize" },
+			});
+			expect(orgRes.isError).not.toBe(true);
+			expect(orgRes.structuredContent).toMatchObject({ ok: true, mode: "organize", routeOverride: "organize" });
+
+			const findRes = await client.callTool({
+				name: "autorag.ask",
+				arguments: { query: "find policy", mode: "find", topK: 5, scope: "/docs" },
+			});
+			expect(findRes.isError).not.toBe(true);
+			expect(findRes.structuredContent).toMatchObject({ ok: true, mode: "local", routeOverride: "local" });
+
+			const autoMateRes = await client.callTool({
+				name: "autorag.ask",
+				arguments: { query: "watch downloads", mode: "automate" },
+			});
+			expect(autoMateRes.isError).not.toBe(true);
+			expect(autoMateRes.structuredContent).toMatchObject({ ok: true, mode: "config", routeOverride: "config" });
+
+			expect(calls).toEqual([
+				{ query: "what is Q3 revenue?", mode: "auto", routeOverride: undefined, topK: undefined, scope: undefined },
+				{ query: "tidy downloads", mode: "organize", routeOverride: "organize", topK: undefined, scope: undefined },
+				{ query: "find policy", mode: "local", routeOverride: "local", topK: 5, scope: "/docs" },
+				{ query: "watch downloads", mode: "config", routeOverride: "config", topK: undefined, scope: undefined },
+			]);
+
+			await client.close();
+			await server.close();
+		});
+
+		it("rejects unknown route mode with invalid-route-mode and blocks mutating modes in read-only servers", async () => {
+			const { lite } = fakeLite({ workspacePath: workspace(true) });
+			const ask = vi.fn(async () => ({
+				sessionId: "s-ro",
+				query: "q",
+				answer: "ok",
+				results: [],
+				searched: 0,
+				warnings: [],
+				diagnostics: [],
+			}));
+			const { client, server } = await connectedServer(lite, { readOnly: true, ask });
+
+			const invalid = await client.callTool({
+				name: "autorag.ask",
+				arguments: { query: "q", mode: "bogus" },
+			});
+			expect(invalid.isError).toBe(true);
+			expect(invalid.structuredContent).toMatchObject({ errorCode: "invalid-route-mode" });
+
+			const blockedOrganize = await client.callTool({
+				name: "autorag.ask",
+				arguments: { query: "tidy", mode: "organize" },
+			});
+			expect(blockedOrganize.isError).toBe(true);
+			expect(blockedOrganize.structuredContent).toMatchObject({ errorCode: "read-only-mode" });
+
+			const blockedConfig = await client.callTool({
+				name: "autorag.ask",
+				arguments: { query: "edit config", mode: "config" },
+			});
+			expect(blockedConfig.isError).toBe(true);
+			expect(blockedConfig.structuredContent).toMatchObject({ errorCode: "read-only-mode" });
+
+			const allowedLocal = await client.callTool({
+				name: "autorag.ask",
+				arguments: { query: "search", mode: "local" },
+			});
+			expect(allowedLocal.isError).not.toBe(true);
+			expect(ask).toHaveBeenCalledTimes(1);
+
+			await client.close();
+			await server.close();
+		});
 	});
 });

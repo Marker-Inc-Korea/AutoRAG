@@ -2,6 +2,7 @@ import { InteractiveMode } from "@earendil-works/pi-coding-agent";
 import { TuiAltScreen } from "@earendil-works/pi-tui";
 import { AutoRAGAgent, type AutoRAGAgentOptions, type AutoRAGThinkingLevel } from "../../agent/agent.ts";
 import { resolveInteractiveTuiMode } from "../../agent/pi-session.ts";
+import { parseRouteMode, ROUTE_MODES, type RouteMode } from "../../agent/route-mode.ts";
 import { warmFileeBinary } from "../../convert/index.ts";
 import {
 	buildAgentOptions,
@@ -41,6 +42,15 @@ function parseThinkingFlags(flags: CommandContext["flags"]): AutoRAGAgentOptions
 	return { ...(fast !== undefined ? { fast } : {}), ...(final !== undefined ? { final } : {}) };
 }
 
+function parseRouteModeFlag(flags: CommandContext["flags"]): RouteMode | undefined {
+	if (flags.mode === undefined) return undefined;
+	const mode = parseRouteMode(flags.mode);
+	if (mode === undefined) {
+		throw new Error(`Invalid route mode "${String(flags.mode)}". Use one of: ${ROUTE_MODES.join(", ")}.`);
+	}
+	return mode;
+}
+
 /**
  * Build the librarian agent that hosts the interactive session.
  *
@@ -49,7 +59,7 @@ function parseThinkingFlags(flags: CommandContext["flags"]): AutoRAGAgentOptions
  * `/login` and `/model` flows own first-launch credential and model selection —
  * the local model runtime is never forced before the user can log in.
  */
-async function createTuiAgent(ctx: CommandContext): Promise<AutoRAGAgent> {
+export async function createTuiAgent(ctx: CommandContext): Promise<AutoRAGAgent> {
 	const config = resolveConfig({
 		flags: ctx.flags,
 		cwd: ctx.cwd,
@@ -66,6 +76,8 @@ async function createTuiAgent(ctx: CommandContext): Promise<AutoRAGAgent> {
 	if (ctx.flags.discord === true) options.discordRemote = true;
 	const thinking = parseThinkingFlags(ctx.flags);
 	if (thinking !== undefined) options.thinking = thinking;
+	const routeMode = parseRouteModeFlag(ctx.flags);
+	if (routeMode !== undefined) options.routeMode = routeMode;
 	const resolved = await resolveTuiAgentModel(config);
 	if (resolved !== undefined) {
 		options.model = resolved.model;

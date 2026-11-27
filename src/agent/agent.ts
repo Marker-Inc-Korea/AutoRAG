@@ -253,6 +253,7 @@ import {
 } from "./refresh-progress.ts";
 import type { AutoRAGResultsDetails } from "./results.ts";
 import { createReviseAnswerTool, REVISE_ANSWER_PROMPT_RULE, REVISE_ANSWER_TOOL_NAME } from "./revise-answer-tool.ts";
+import { createRouteModeControls, DEFAULT_ROUTE_MODE, type RouteMode, RouteModeController } from "./route-mode.ts";
 import { createSearchAllDocumentsTool, SEARCH_ALL_DOCUMENTS_TOOL_NAME } from "./search-all-tool.ts";
 import {
 	createEmptySearchDocumentsResponse,
@@ -962,6 +963,14 @@ export interface AutoRAGAgentOptions {
 	/** Share one controller (mode) with a host that switches modes itself. Wins over `permissionMode`. */
 	permissionController?: PermissionController;
 	/**
+	 * Initial route mode for the agent: `auto` (default, Jev chooses the route) or an explicit
+	 * branch (`local`, `organize`, `extra`, `config`) that skips Jev's Turn-1 branch classification.
+	 * In interactive TUI sessions, `Ctrl+P` and `/mode` switch this live.
+	 */
+	routeMode?: RouteMode;
+	/** Share one route-mode controller with a host that switches modes itself. Wins over `routeMode`. */
+	routeModeController?: RouteModeController;
+	/**
 	 * Parallel grep-first fast phase: run parsed-mirror `grep`/`read` concurrently with the
 	 * reranked MinSync + datasource prefetch, inject the reranked baseline as soon as it arrives
 	 * (or once `toolCap` exploration calls are reached), stop further fast-phase tool calls to
@@ -1193,6 +1202,9 @@ export class AutoRAGAgent {
 	/** Mode and grants of the file-change approval gate; shared by every pi session this agent creates. */
 	private readonly permissions: PermissionController;
 	private readonly permissionGate: ExtensionFactory;
+	/** Route mode (`auto` or explicit branch); shared by interactive TUI controls and queries. */
+	private readonly routeModes: RouteModeController;
+	private readonly routeModeControls: ExtensionFactory;
 	/** Self-configuration, enabled only on a local session. */
 	private readonly selfConfig: SelfConfigOptions | undefined;
 	/** Override for the packaged organize skill the `organize` branch loads; undefined keeps the packaged one. */
@@ -1488,6 +1500,12 @@ export class AutoRAGAgent {
 			// The self-configuration turn edits AutoRAG's own config at the user's request.
 			...(this.selfConfig === undefined ? {} : { trustedPaths: [resolve(this.selfConfig.configPath)] }),
 		});
+		this.routeModes =
+			options.routeModeController ??
+			new RouteModeController(options.routeMode ?? DEFAULT_ROUTE_MODE, {
+				selfConfigEnabled: this.selfConfig !== undefined,
+			});
+		this.routeModeControls = createRouteModeControls({ controller: this.routeModes });
 		this.cloudRelease = createCloudReleaseExtension({
 			probe: this.cloudProbe,
 			cloudRoots: () => this.cloudRoots(),
@@ -2119,6 +2137,11 @@ export class AutoRAGAgent {
 		return this.permissions;
 	}
 
+	/** The route mode controller: read or switch between `auto` (Jev routing) and explicit routes. */
+	get routeModeControl(): RouteModeController {
+		return this.routeModes;
+	}
+
 	subscribe(listener: Parameters<Agent["subscribe"]>[0]): () => void {
 		this.listeners.add(listener);
 		return () => {
@@ -2169,6 +2192,7 @@ export class AutoRAGAgent {
 			onKey: (key) => this.handleInteractiveKey(key),
 			extensionFactories: [
 				this.permissionGate,
+				this.routeModeControls,
 				this.parsedMirrorTools,
 				this.fastPhaseParallelExtension,
 				this.cloudRelease,
@@ -2626,11 +2650,14 @@ export class AutoRAGAgent {
 		options = this.normalizeRetrievalOptions(options);
 		this.activeRetrievalOptions = options;
 
+		const routeOverride = options.routeOverride ?? this.routeModes.routeOverride;
 		// A later turn of an interactive conversation is a plain agent turn: the
 		// user's message reaches the model as typed, and the model answers from
 		// the conversation or searches by tool call. Only the first turn runs the
-		// Jev gate and the baseline pipeline.
-		const conversational = this.isConversationTurn();
+		// Jev gate and the baseline pipeline — unless the user explicitly selected
+		// a non-auto route mode (e.g. via Ctrl+P / `/mode organize`) to force that
+		// branch directly on this turn.
+		const conversational = this.isConversationTurn() && routeOverride === undefined;
 		this.activeRun = true;
 		// Progress is up the moment the question is submitted, before any network call.
 		this.searchProgress.begin(trimmedQuery);
@@ -2816,7 +2843,7 @@ export class AutoRAGAgent {
 					if (turnText !== undefined) captured = await this.deriveAnswer(turnText);
 					return;
 				}
-				const plan = await this.planQuery(trimmedQuery, resolved, planAbort.signal, options.routeOverride);
+				const plan = await this.planQuery(trimmedQuery, resolved, planAbort.signal, routeOverride);
 				if (plan.route === "config" && plan.selfConfigSkill !== undefined && this.selfConfig !== undefined) {
 					// Self-configuration: no retrieval and no fast answer. The model
 					// gets the full setup skill and edits the config itself, then

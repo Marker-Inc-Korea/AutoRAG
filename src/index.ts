@@ -13,12 +13,27 @@ export {
 } from "./agent/agent.ts";
 export {
 	type AutoRAGResultsDetails,
+	availableRouteModes,
+	BASE_ROUTE_MODES,
+	createRouteModeControls,
+	cycleRouteMode,
 	DECISION_MODEL_UNAVAILABLE_CODE,
+	DEFAULT_ROUTE_MODE,
 	type DecisionModelFailureReason,
 	DecisionModelUnavailableError,
+	describeRouteMode,
+	parseRouteMode,
 	type Revision,
 	type RevisionOp,
+	ROUTE_MODE_CYCLE_KEY,
+	ROUTE_MODE_STATUS_KEY,
+	ROUTE_MODES,
+	type RouteMode,
+	RouteModeController,
+	type RouteModeControlsOptions,
 	reportSchema,
+	routeModeStatusLabel,
+	routeOverrideForMode,
 	type SearchDocumentDiagnostic,
 	type SearchDocumentDiagnosticCode,
 	type SearchDocumentDiagnosticSeverity,
@@ -53,7 +68,12 @@ export * from "./dupey/index.ts";
 export * from "./everything/index.ts";
 export * from "./fsearch/index.ts";
 export * from "./jikji/index.ts";
-export { type AutoRAGMcpServerOptions, createAutoRAGMcpServer } from "./mcp/server.ts";
+export {
+	type AutoRAGMcpAskHandler,
+	type AutoRAGMcpAskRequest,
+	type AutoRAGMcpServerOptions,
+	createAutoRAGMcpServer,
+} from "./mcp/server.ts";
 export * from "./memory/index.ts";
 export * from "./minsync/index.ts";
 export * from "./mirror/index.ts";

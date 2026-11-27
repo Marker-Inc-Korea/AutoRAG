@@ -112,6 +112,16 @@ describe("parseArgs", () => {
 		expect("error" in parsed).toBe(true);
 	});
 
+	it("accepts --mode as a value flag for search and tui", () => {
+		const search = parseArgs(["search", "tidy folder", "--mode", "organize"]);
+		if ("error" in search) throw new Error(search.error);
+		expect(search.flags.mode).toBe("organize");
+
+		const tui = parseArgs(["tui", "--mode=local"]);
+		if ("error" in tui) throw new Error(tui.error);
+		expect(tui.flags.mode).toBe("local");
+	});
+
 	it("accepts --method as a value flag", () => {
 		const parsed = parseArgs(["refresh", "--method", "bm25,minsync"]);
 		if ("error" in parsed) throw new Error(parsed.error);

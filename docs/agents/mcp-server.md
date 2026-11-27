@@ -30,6 +30,7 @@ Verified against `node src/mcp/index.ts --help`.
 | Flag | Effect |
 | --- | --- |
 | `--http` | Serve streamable HTTP instead of stdio. |
+| `--agent` | Also expose `autorag.ask` (model-backed librarian agent with `mode`: `auto` default, or `local`/`organize`/`extra`/`config`). Also `AUTORAG_MCP_AGENT=1`. |
 | `--host HOST` | Bind interface for HTTP (default `127.0.0.1`). Only with `--http`. |
 | `--port PORT` | HTTP port (default `8765`; `0` picks a free one). Only with `--http`. |
 | `--public-url URL` | HTTPS origin the agent reaches this server at; enables the OAuth endpoints and widens the Host/Origin allowlist. Also `AUTORAG_MCP_PUBLIC_URL`. Only with `--http`. |
@@ -49,7 +50,8 @@ available it also runs a real `tools/list`.
 | --- | --- |
 | `AUTORAG_CONFIG` | Path to a specific `config.json`. |
 | `AUTORAG_HOME` | Directory holding `config.json` and `memory.json` (default `~/.autorag`). |
-| `AUTORAG_MCP_READ_ONLY` | stdio read-only mode: `1` or `true` omits `autorag.refresh`, `autorag.report`, and `autorag.convert`. |
+| `AUTORAG_MCP_READ_ONLY` | stdio read-only mode: `1` or `true` omits `autorag.refresh`, `autorag.report`, and `autorag.convert`, and blocks mutating modes (`organize`, `config`) on `autorag.ask`. |
+| `AUTORAG_MCP_AGENT` | `1` or `true` exposes `autorag.ask` alongside the Lite tools (same effect as `--agent`). |
 | `AUTORAG_MCP_TOOLS` | Comma-separated exact tool allowlist; omitted tools cannot be called (applies to both transports). |
 | `AUTORAG_MCP_PUBLIC_URL` | HTTP public origin; same effect as `--public-url`. |
 | `AUTORAG_MCP_TOKEN` | HTTP owner token, at least 32 characters. |
@@ -99,6 +101,7 @@ Discover the live set with `tools/list`; do not assume a fixed count.
 | `autorag.report` | Persist an externally curated Lite search report with opaque source mappings. | `query`, `report` | mutating |
 | `autorag.evidence` | Return persisted opaque sources and evidence chunks for a curated report session. | `sessionId`, `resultNumber` | read-only |
 | `autorag.refresh` | Refresh configured indexes; never modifies source documents. | `force`, `methods` | mutating |
+| `autorag.ask` | Run the model-backed librarian agent (opt-in via `--agent` / `AUTORAG_MCP_AGENT=1` or `ask` option). `mode` defaults to `auto` (Jev routing); pass `local`, `organize`, `extra`, or `config` (or aliases `find`/`summarize`/`automate`) to skip Jev routing. | `query`, `mode`, `topK`, `scope`, `since`, `until` | depends on `mode` (`organize`/`config` blocked when read-only) |
 
 `autorag.convert` is also on unless `"filee": { "enabled": false }` in the
 config; `autorag.convert.formats` is offered whenever Filee is on. `autorag.report`

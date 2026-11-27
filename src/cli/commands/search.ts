@@ -1,6 +1,8 @@
 import { AutoRAGAgent, type AutoRAGAgentOptions, type AutoRAGThinkingLevel } from "../../agent/agent.ts";
 import { DecisionModelUnavailableError } from "../../agent/decision-model-check.ts";
 import type { DecompositionModel } from "../../agent/query-decomposition.ts";
+import type { QueryRoute } from "../../agent/query-routing.ts";
+import { parseRouteMode, ROUTE_MODES, routeOverrideForMode } from "../../agent/route-mode.ts";
 import type { SllmDecisionModel } from "../../agent/sllm-decision.ts";
 import { releaseEmbedders } from "../../embedding/index.ts";
 import {
@@ -129,6 +131,7 @@ export interface SearchDeps {
 interface SearchOptions {
 	topK?: number;
 	scope?: string;
+	routeOverride?: QueryRoute;
 }
 
 const THINKING_LEVELS: readonly AutoRAGThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
@@ -169,6 +172,14 @@ function buildSearchOptions(flags: CommandContext["flags"]): SearchOptions {
 	const topK = parseIntOptional(flags["top-k"]);
 	if (topK !== undefined) options.topK = topK;
 	if (typeof flags.scope === "string" && flags.scope.trim() !== "") options.scope = flags.scope;
+	if (flags.mode !== undefined) {
+		const mode = parseRouteMode(flags.mode);
+		if (mode === undefined) {
+			throw new Error(`Invalid route mode "${String(flags.mode)}". Use one of: ${ROUTE_MODES.join(", ")}.`);
+		}
+		const routeOverride = routeOverrideForMode(mode);
+		if (routeOverride !== undefined) options.routeOverride = routeOverride;
+	}
 	return options;
 }
 
@@ -180,10 +191,15 @@ export async function runSearch(ctx: CommandContext, deps: SearchDeps = {}): Pro
 	const query = ctx.positionals.join(" ").trim();
 	if (query.length === 0) {
 		ctx.stderr(
-			renderError(new Error("Usage: autorag search <query> [--top-k N] [--scope SCOPE]"), {
-				json: ctx.json,
-				debug: ctx.debug,
-			}),
+			renderError(
+				new Error(
+					"Usage: autorag search <query> [--top-k N] [--scope SCOPE] [--mode auto|local|organize|extra|config]",
+				),
+				{
+					json: ctx.json,
+					debug: ctx.debug,
+				},
+			),
 		);
 		return 2;
 	}
@@ -199,8 +215,10 @@ export async function runSearch(ctx: CommandContext, deps: SearchDeps = {}): Pro
 
 	let agent: Pick<AutoRAGAgent, "searchDocumentsStream">;
 	let thinking: AutoRAGAgentOptions["thinking"] | undefined;
+	let options: SearchOptions;
 	try {
 		thinking = buildThinkingFlags(ctx.flags);
+		options = buildSearchOptions(ctx.flags);
 	} catch (error) {
 		ctx.stderr(renderError(error, { json: ctx.json, debug: ctx.debug }));
 		return 2;
@@ -236,7 +254,6 @@ export async function runSearch(ctx: CommandContext, deps: SearchDeps = {}): Pro
 		agent = deps.agentFactory ? deps.agentFactory(agentOptions) : new AutoRAGAgent(agentOptions);
 	}
 
-	const options = buildSearchOptions(ctx.flags);
 	const release = deps.releaseEmbedders ?? releaseEmbedders;
 	try {
 		for await (const event of agent.searchDocumentsStream(query, options)) {
