@@ -1,7 +1,13 @@
-import { DEFAULT_DAEMON_MODEL, type InlDaemon, probeInlDaemon } from "./daemon.ts";
+import {
+	type DaemonLauncher,
+	DEFAULT_DAEMON_MODEL,
+	ensureInlDaemon,
+	type InlDaemon,
+	probeInlDaemon,
+} from "./daemon.ts";
 import type { Embedder, EmbedderHealth, EmbeddingIdentity, EmbedOptions, ManagedEmbedder } from "./embedder.ts";
 import { createHttpEmbedder, type EmbeddingProtocol } from "./http-embedder.ts";
-import { type InProcessEmbedder, loadNativeEmbedder } from "./in-process.ts";
+import type { InProcessEmbedder } from "./in-process.ts";
 import type { EmbeddingPrefixes } from "./prefixes.ts";
 
 /** An operator-configured remote endpoint. When present, AutoRAG never looks for the local daemon. */
@@ -29,7 +35,17 @@ export interface ManagedEmbedderOptions {
 	readonly env?: NodeJS.ProcessEnv;
 	/** Model of the daemon to use. Defaults to im-not-llm's default Qwen3 embedder. */
 	readonly model?: string;
-	/** Loads MinSync's in-process engine; only called when no daemon answers. */
+	/**
+	 * When true, start `inl serve` (falling back to `minsync serve`) on demand when no daemon is running.
+	 * Defaults to false for direct `createManagedEmbedder` callers so read-only probes never spawn a daemon
+	 * unexpectedly; `createEmbedderFromConfig` enables it by default unless opted out.
+	 */
+	readonly autoStart?: boolean;
+	/** Explicit launcher override for `autoStart` (used by embedded callers and tests). */
+	readonly launcher?: { readonly path: string; readonly kind?: DaemonLauncher };
+	/** Resolves the `minsync` fallback launcher for `autoStart` when `inl` is not on PATH. */
+	readonly resolveMinSyncBinary?: () => Promise<string>;
+	/** Optional in-process embedder seam (used by tests or custom hosts; no default Node-API addon is loaded). */
 	readonly inProcess?: () => Promise<InProcessEmbedder>;
 	readonly fetchImpl?: typeof fetch;
 }
@@ -105,6 +121,7 @@ export function createManagedEmbedder(options: ManagedEmbedderOptions): ManagedE
 
 	let daemon: { readonly info: InlDaemon; readonly embedder: Embedder } | undefined;
 	let inProcess: Promise<InProcessEmbedder> | undefined;
+	let startingDaemon: Promise<InlDaemon> | undefined;
 
 	const adopt = (info: InlDaemon): Embedder => {
 		const embedder = createHttpEmbedder({
@@ -126,9 +143,31 @@ export function createManagedEmbedder(options: ManagedEmbedderOptions): ManagedE
 			fetchImpl,
 		});
 
+	const startDaemon = (): Promise<InlDaemon> => {
+		startingDaemon ??= ensureInlDaemon({
+			model: wantedModel,
+			...(options.home === undefined ? {} : { home: options.home }),
+			...(options.env === undefined ? {} : { env: options.env }),
+			...(options.launcher === undefined ? {} : { launcher: options.launcher }),
+			...(options.resolveMinSyncBinary === undefined ? {} : { resolveMinSyncBinary: options.resolveMinSyncBinary }),
+			fetchImpl,
+		}).finally(() => {
+			startingDaemon = undefined;
+		});
+		return startingDaemon;
+	};
+
 	const loadInProcess = (): Promise<InProcessEmbedder> => {
-		inProcess ??= (options.inProcess ?? (() => loadNativeEmbedder()))();
-		// A failed load is not cached: the addon may be installed while a long-lived host runs.
+		const loader = options.inProcess;
+		if (loader === undefined) {
+			return Promise.reject(
+				new Error(
+					"no embedding daemon is running (`inl serve`). Start `inl serve` (install via `cargo install inl-server --locked`) or `minsync serve`, or configure a remote minSync.embedder endpoint.",
+				),
+			);
+		}
+		inProcess ??= loader();
+		// A failed load is not cached: a host may recover while running.
 		inProcess.catch(() => {
 			inProcess = undefined;
 		});
@@ -145,13 +184,20 @@ export function createManagedEmbedder(options: ManagedEmbedderOptions): ManagedE
 		if (found !== undefined)
 			return { source: daemon?.info.baseUrl === found.baseUrl ? daemon.embedder : adopt(found), viaDaemon: true };
 		daemon = undefined;
+		if (options.autoStart === true && options.inProcess === undefined) {
+			const started = await startDaemon();
+			return { source: adopt(started), viaDaemon: true };
+		}
 		try {
 			return { source: await loadInProcess(), viaDaemon: false };
 		} catch (error) {
-			throw new Error(
-				`no embedding daemon is running and no in-process embedder is installed: ${message(error)}. Start \`inl serve\` (see docs/indexing/embedding-backends.md) or set minSync.embedder to a remote endpoint.`,
-				{ cause: error },
-			);
+			if (options.inProcess !== undefined) {
+				throw new Error(
+					`no embedding daemon is running and no in-process embedder is installed: ${message(error)}. Start \`inl serve\` (see docs/indexing/embedding-backends.md) or set minSync.embedder to a remote endpoint.`,
+					{ cause: error },
+				);
+			}
+			throw error;
 		}
 	}
 
@@ -167,23 +213,30 @@ export function createManagedEmbedder(options: ManagedEmbedderOptions): ManagedE
 				return await source.embed(inputs);
 			} catch (error) {
 				if (!viaDaemon) throw error;
-				// The daemon exited (idle timeout, crash) since it was found: forget it and use what is left.
+				// The daemon exited (idle timeout, crash) since it was found: forget it and retry once.
 				daemon = undefined;
 				const next = await active();
-				if (next.viaDaemon) throw error;
+				if (next.viaDaemon && options.autoStart !== true) throw error;
 				return next.source.embed(inputs);
 			}
 		},
 		async health() {
 			const found = await probe();
 			if (found !== undefined) return { backend: "daemon", alive: true, detail: found.baseUrl };
-			// No daemon answers. In-process is only a real backend when the addon is loaded or loadable.
-			try {
-				await loadInProcess();
-				return { backend: "in-process", alive: true };
-			} catch (error) {
-				return { backend: "none", alive: false, detail: message(error) };
+			if (options.inProcess !== undefined) {
+				try {
+					await loadInProcess();
+					return { backend: "in-process", alive: true };
+				} catch (error) {
+					return { backend: "none", alive: false, detail: message(error) };
+				}
 			}
+			return {
+				backend: "none",
+				alive: false,
+				detail:
+					"no embedding daemon is running (`inl serve` or `minsync serve`). Install `inl` (`cargo install inl-server --locked`) or `minsync`, or set minSync.embedder to a remote endpoint.",
+			};
 		},
 		async describeEndpoint() {
 			// Probes only, so a daemon that has exited is not reported.

@@ -17,6 +17,7 @@ import {
 	type EmbeddingBackend,
 	type EmbeddingIdentity,
 	type ManagedEmbedder,
+	remoteEmbedderFromMinSync,
 } from "../embedding/index.ts";
 import {
 	type CloudFileProbe,
@@ -27,6 +28,7 @@ import {
 	WindowsCloudProbe,
 } from "../filesystem/cloud-placeholder.ts";
 import { acquireFileLock, type FileLockHandle } from "../filesystem/file-lock.ts";
+import { resolveMinSyncBinary } from "../minsync/binary.ts";
 import {
 	DEFAULT_MINSYNC_EMBEDDER_DIMENSION,
 	DEFAULT_MINSYNC_EMBEDDER_ID,
@@ -309,15 +311,53 @@ export async function runSetup(options: {
 		} catch {
 			configuredEmbedder = undefined;
 		}
-		embedder = options.deps?.embedder ?? createEmbedderFromConfig({ embedder: configuredEmbedder, env });
+		const sparseOnly = isSparseOnlyEmbedder(configuredEmbedder);
+		const isLocalEmbedder = !sparseOnly && remoteEmbedderFromMinSync(configuredEmbedder) === undefined;
+		embedder =
+			options.deps?.embedder ??
+			createEmbedderFromConfig({
+				embedder: configuredEmbedder,
+				env,
+				home: resolveUserHome(env),
+				autoStart: rawMinSync.autoInstall !== false,
+				resolveMinSyncBinary: () =>
+					resolveMinSyncBinary({
+						root: options.workspacePath,
+						...(typeof rawMinSync.binaryPath === "string" ? { binaryPath: rawMinSync.binaryPath } : {}),
+						autoInstall: rawMinSync.autoInstall !== false,
+					}),
+			});
 		let embedding: SetupEmbeddingReport;
 		// A sparse-only index asked for no dense embedder, so none is probed and its absence is not a fault.
-		const sparseOnly = isSparseOnlyEmbedder(configuredEmbedder);
 		try {
-			const health: EmbedderHealth = sparseOnly
+			let health: EmbedderHealth = sparseOnly
 				? { backend: "none", alive: false, detail: "sparse-only index: no dense embedder is configured" }
 				: await embedder.health();
-			if (health.alive && health.backend !== "none") {
+			if (
+				!health.alive &&
+				isLocalEmbedder &&
+				options.deps?.embedder === undefined &&
+				rawMinSync.autoInstall !== false
+			) {
+				// Auto-start `inl serve` (or `minsync serve`) on setup when no daemon is running (#2216).
+				const identity: EmbeddingIdentity = await embedder.identity();
+				health = await embedder.health();
+				if (health.alive && health.backend !== "none") {
+					embedding = {
+						backend: health.backend,
+						provider: identity.provider,
+						model: identity.model,
+						dimension: identity.dimension,
+					};
+				} else {
+					embedding = {
+						backend: "daemon",
+						provider: identity.provider,
+						model: identity.model,
+						dimension: identity.dimension,
+					};
+				}
+			} else if (health.alive && health.backend !== "none") {
 				const identity: EmbeddingIdentity = await embedder.identity();
 				embedding = {
 					backend: health.backend,

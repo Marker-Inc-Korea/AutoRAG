@@ -101,6 +101,7 @@ import {
 	MinSyncVectorMethod,
 	type MinSyncVectorMethodOptions,
 } from "../minsync/index.ts";
+import { minSyncWorkspaceRoot } from "../minsync/paths.ts";
 import { MinSyncStageError } from "../minsync/stage.ts";
 import type { FirstBuildSession } from "../minsync/workspace-lock.ts";
 import { cloudFingerprintExclusions, loadCloudFingerprints } from "../mirror/cloud-fingerprints.ts";
@@ -188,6 +189,12 @@ import { type EvidenceJudgmentUnit, judgeEvidence } from "./evidence-judgment.ts
 import { EvidenceLedger, isRegularFile } from "./evidence-ledger.ts";
 import { EvidenceOriginIndex } from "./evidence-origins.ts";
 import { createEvidencePersistence } from "./evidence-persistence.ts";
+import {
+	createFastPhaseParallelExtension,
+	DEFAULT_FAST_GREP_TOOL_CAP,
+	type FastPhaseParallelPrefetchOptions,
+	type FastPhaseParallelState,
+} from "./fast-phase-parallel.ts";
 import { createFSearchSearchTool, FSEARCH_SEARCH_TOOL_NAME } from "./fsearch-search-tool.ts";
 import {
 	detectPowerSource,
@@ -935,6 +942,17 @@ export interface AutoRAGAgentOptions {
 	permissionMode?: PermissionMode;
 	/** Share one controller (mode) with a host that switches modes itself. Wins over `permissionMode`. */
 	permissionController?: PermissionController;
+	/**
+	 * Parallel grep-first fast phase: run parsed-mirror `grep`/`read` concurrently with the
+	 * reranked MinSync + datasource prefetch, inject the reranked baseline as soon as it arrives
+	 * (or once `toolCap` exploration calls are reached), stop further fast-phase tool calls to
+	 * emit the fast answer, and hand off to the Jev follow-up gate + verification phase.
+	 * Default (omitted): automatically enabled whenever parsed mirrors exist in the workspace
+	 * (`<workspace>/.autorag/minsync/files`), falling back to sequential when mirrors have not
+	 * been staged yet. Pass `true` / `{ toolCap }` to force parallel, or `false` to force legacy
+	 * sequential prefetch.
+	 */
+	parallelFastPhase?: FastPhaseParallelPrefetchOptions | boolean;
 }
 
 /** Post-merge reranking options. Mirrors the CLI `RerankConfig` (secrets via env). */
@@ -1135,6 +1153,12 @@ export class AutoRAGAgent {
 	private readonly cloudRelease: ExtensionFactory;
 	/** pi extension routing `grep` and `read` through parsed markdown mirrors for configured search folders. */
 	private readonly parsedMirrorTools: ExtensionFactory;
+	/** pi extension coordinating parallel grep-first exploration with reranked MinSync baseline injection. */
+	private readonly fastPhaseParallelExtension: ExtensionFactory;
+	/** Explicit caller override: `true` forces parallel even without staged mirrors, `false` forces sequential, `undefined` auto-enables whenever parsed mirrors exist. */
+	private readonly parallelFastPhaseMode: "auto" | "always" | "never";
+	private readonly fastPhaseToolCap: number;
+	private activeFastPhaseState: FastPhaseParallelState | undefined;
 	/** Jev and its sLLM fallback: the session check picks which one {@link jevJudge} asks. */
 	private readonly decisionModels: DecisionModels;
 	/** Jev judge shared by the `jev` tool, the query router, the judgments, and the permission gate. */
@@ -1366,7 +1390,19 @@ export class AutoRAGAgent {
 		);
 		this.minSyncEmbedderConfig = options.minSync?.embedder;
 		this.minSyncBinaryPath = options.minSync?.binaryPath;
-		this.embedder = options.embedder ?? createEmbedderFromConfig({ embedder: options.minSync?.embedder });
+		this.embedder =
+			options.embedder ??
+			createEmbedderFromConfig({
+				embedder: options.minSync?.embedder,
+				autoStart: options.minSync?.autoInstall !== false,
+				resolveMinSyncBinary: () =>
+					resolveMinSyncBinary({
+						root: this.workspaceProjectRoot,
+						...(options.minSync?.binaryPath === undefined ? {} : { binaryPath: options.minSync.binaryPath }),
+						...(options.minSync?.autoInstall === undefined ? {} : { autoInstall: options.minSync.autoInstall }),
+						...(options.minSync?.installer === undefined ? {} : { installer: options.minSync.installer }),
+					}),
+			});
 		this.memoryEmbedder = options.memoryEmbedder === false ? undefined : (options.memoryEmbedder ?? this.embedder);
 		this.runLogger = new AutoRAGRunLogger(join(dirname(memPath), "logs", "runs.jsonl"));
 
@@ -1440,6 +1476,15 @@ export class AutoRAGAgent {
 			cloudRoots: () => this.cloudRoots(),
 			datasourceSkills: this.datasourceSkills,
 		});
+		this.parallelFastPhaseMode =
+			options.parallelFastPhase === false ? "never" : options.parallelFastPhase === undefined ? "auto" : "always";
+		const configuredCap =
+			typeof options.parallelFastPhase === "object" ? options.parallelFastPhase.toolCap : undefined;
+		this.fastPhaseToolCap =
+			typeof configuredCap === "number" && Number.isFinite(configuredCap) && configuredCap >= 1
+				? Math.floor(configuredCap)
+				: DEFAULT_FAST_GREP_TOOL_CAP;
+		this.fastPhaseParallelExtension = createFastPhaseParallelExtension(() => this.activeFastPhaseState);
 		this.queryDecompositionModel =
 			options.queryDecomposition?.model === undefined
 				? undefined
@@ -1955,7 +2000,13 @@ export class AutoRAGAgent {
 			customTools: this.steerableTools(),
 			// The model sees each steer framed as a correction of the running search.
 			contextTransform: (messages) => this.withMemoryContext(frameSteers(messages, this.interactive.steerTexts)),
-			extensionFactories: [this.permissionGate, this.parsedMirrorTools, this.jevExtension, this.cloudRelease],
+			extensionFactories: [
+				this.permissionGate,
+				this.parsedMirrorTools,
+				this.fastPhaseParallelExtension,
+				this.jevExtension,
+				this.cloudRelease,
+			],
 			extensionToolNames: [JEV_TOOL_NAME],
 		});
 		const agent = piSession.session.agent;
@@ -2096,6 +2147,7 @@ export class AutoRAGAgent {
 			extensionFactories: [
 				this.permissionGate,
 				this.parsedMirrorTools,
+				this.fastPhaseParallelExtension,
 				this.cloudRelease,
 				createUserRequestPersistence(this.userRequests),
 				createEvidencePersistence(this.evidenceLedger, this.citationNumbers, this.conversationQueries),
@@ -2830,21 +2882,77 @@ export class AutoRAGAgent {
 				this.rankingRun?.plan({ searchQueries: plan.queries, datasources: plan.datasources, web: plan.web });
 				// Only `local` reaches here: `config`, `organize`, and `extra` ended
 				// the run in their own single turn above.
-				const baseline = await this.prefetchInitialRetrievalContext(
-					trimmedQuery,
-					plan.queries,
-					options,
-					plan.datasources,
-					plan.web,
-				);
-				if (stopped()) return;
 				let fastText: string | undefined;
+				let uninjectedBaseline: string | undefined;
 				setThinking(this.fastThinkingLevel);
-				await this.searchProgress.step("fast", "Drafting a first answer", () =>
-					activeSession.prompt(this.buildFastAnswerPrompt(trimmedQuery, options, baseline)),
-				);
-				if (stopped()) return;
-				fastText = finalAnswerText(transcript());
+				const useParallelFastPhase =
+					this.parallelFastPhaseMode === "always" ||
+					(this.parallelFastPhaseMode === "auto" &&
+						existsSync(join(minSyncWorkspaceRoot(this.workspaceProjectRoot), "files")));
+				if (useParallelFastPhase) {
+					// Start reranked MinSync + datasource + web prefetch concurrently with
+					// parsed-mirror grep/read exploration. Once the reranked baseline arrives
+					// (or once `fastPhaseToolCap` exploration calls finish), the extension
+					// injects the reranked baseline into the active tool boundary and halts
+					// further fast-phase tool calls so the model emits its immediate fast answer.
+					const baselinePromise = this.prefetchInitialRetrievalContext(
+						trimmedQuery,
+						plan.queries,
+						options,
+						plan.datasources,
+						plan.web,
+					);
+					const fastState: FastPhaseParallelState = {
+						baselinePromise,
+						baselineReady: undefined,
+						baselineSettled: false,
+						baselineInjected: false,
+						explorationCalls: 0,
+						toolCap: this.fastPhaseToolCap,
+						abortSignal: planAbort.signal,
+					};
+					void baselinePromise.then(
+						(text) => {
+							fastState.baselineReady = text;
+							fastState.baselineSettled = true;
+						},
+						() => {
+							fastState.baselineReady = "";
+							fastState.baselineSettled = true;
+						},
+					);
+					this.activeFastPhaseState = fastState;
+					try {
+						await this.searchProgress.step("fast", "Drafting a first answer", () =>
+							activeSession.prompt(this.buildParallelFastAnswerPrompt(trimmedQuery, options)),
+						);
+					} finally {
+						this.activeFastPhaseState = undefined;
+					}
+					if (stopped()) return;
+					fastText = finalAnswerText(transcript());
+					if (!fastState.baselineInjected) {
+						// Grep finished before the reranked baseline was injected into the fast pass.
+						// Keep the settled baseline so the verification phase receives it without re-fetching.
+						const settledBaseline = fastState.baselineReady ?? (await baselinePromise.catch(() => ""));
+						if (stopped()) return;
+						if (settledBaseline.trim() !== "") uninjectedBaseline = settledBaseline;
+					}
+				} else {
+					const baseline = await this.prefetchInitialRetrievalContext(
+						trimmedQuery,
+						plan.queries,
+						options,
+						plan.datasources,
+						plan.web,
+					);
+					if (stopped()) return;
+					await this.searchProgress.step("fast", "Drafting a first answer", () =>
+						activeSession.prompt(this.buildFastAnswerPrompt(trimmedQuery, options, baseline)),
+					);
+					if (stopped()) return;
+					fastText = finalAnswerText(transcript());
+				}
 				const preliminary = fastText === undefined ? undefined : await this.deriveAnswer(fastText);
 				if (preliminary !== undefined) {
 					emitPreliminary(preliminary);
@@ -2895,6 +3003,7 @@ export class AutoRAGAgent {
 							fastAnswerDelivered,
 							this.interactive.steers,
 							this.jikjiStartingPoints,
+							uninjectedBaseline,
 						),
 					),
 				);
@@ -3993,6 +4102,28 @@ export class AutoRAGAgent {
 	}
 
 	/**
+	 * Fast-phase prompt for the parallel grep-first flow: the reranked MinSync + datasource baseline is still being
+	 * prepared, so the model may explore parsed mirrors with `grep`/`read`/`find`/`ls`. The harness delivers the
+	 * reranked baseline inside a tool result as soon as it is ready (or once the exploration cap is reached); when
+	 * it does, the model must stop calling tools and write its immediate answer.
+	 */
+	buildParallelFastAnswerPrompt(query: string, options: RetrievalOptions): string {
+		const limit = typeof options.topK === "number" ? ` Cite at most ${options.topK} sources.` : "";
+		const scope = options.scope ? ` Restrict scope to ${options.scope}.` : "";
+		return (
+			`Query: ${query}${limit}${scope}\n\n` +
+			`Goal: provide the best complete, immediate first answer you can.\n` +
+			`Constraints for this fast pass:\n` +
+			`- A reranked MinSync + datasource baseline is being prepared in parallel. Start right away with a precise \`grep\` over the parsed document mirrors (then \`read\`, \`find\`, or \`ls\` only if needed; keep it to a few calls).\n` +
+			`- The moment a tool result carries "[Baseline retrieval evidence arrived]", STOP calling tools and write your answer from everything gathered so far (your own findings plus that baseline). Never keep exploring after the baseline arrives.\n` +
+			`- If your own grep/read already settles the question with cited evidence, answer right away without waiting; a verification pass follows when needed.${this.fastPhaseWebHint()} ${CALCULATOR_FAST_PHASE_RULE}${this.askUserException()}\n` +
+			`- ${ANSWER_UNCONFIRMED_FAST_RULE}\n` +
+			`- Never mention internal search mechanics (grep, baseline arrival, stopped tools, or verification passes) in your answer.\n` +
+			`- End with your reply as plain text.`
+		);
+	}
+
+	/**
 	 * True when the bound interactive session already holds an assistant turn:
 	 * the query continues a conversation instead of opening one. Read from the
 	 * transcript, so a fresh session (`/new`) starts over with the full pipeline.
@@ -4072,6 +4203,7 @@ export class AutoRAGAgent {
 		fastAnswerDelivered: boolean,
 		steers: readonly string[] = [],
 		jikjiStartingPoints: readonly string[] = [],
+		deferredBaseline?: string,
 	): string {
 		const limit = typeof options.topK === "number" ? ` Cite at most ${options.topK} sources.` : "";
 		const scope = options.scope ? ` Restrict scope to ${options.scope}.` : "";
@@ -4080,6 +4212,10 @@ export class AutoRAGAgent {
 			jikjiStartingPoints.length === 0
 				? ""
 				: `Jikji candidate files (unverified starting points):\n${jikjiStartingPoints.map((path) => `- ${path}`).join("\n")}\n\n`;
+		const baselineBlock =
+			deferredBaseline === undefined || deferredBaseline.trim() === ""
+				? ""
+				: `Reranked MinSync + datasource baseline (finished after the first answer, not yet seen by it; \`[eN]\` ids are valid):\n${deferredBaseline}\n\n`;
 		const modeInstructions = fastAnswerDelivered
 			? `Delivery mode (first answer already shown to the user):\n` +
 				`- ${REVISE_ANSWER_PROMPT_RULE}\n` +
@@ -4093,6 +4229,7 @@ export class AutoRAGAgent {
 			`${firstAnswer}\n\n` +
 			formatSteerContext(steers) +
 			jikjiBlock +
+			baselineBlock +
 			`Goal: rigorously verify the answer against primary sources, fill any evidence gaps with your tools, resolve conflicts in favor of the freshest facts, and verify any numbers or dates with \`${CALCULATOR_TOOL_NAME}\`.\n\n` +
 			`${modeInstructions}`
 		);
