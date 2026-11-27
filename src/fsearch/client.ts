@@ -582,8 +582,8 @@ function runProcess(command: string, args: readonly string[], timeoutMs: number)
 		}
 		target.push(chunk);
 	};
-	child.stdout.on("data", collect(stdout));
-	child.stderr.on("data", collect(stderr));
+	child.stdout?.on("data", collect(stdout));
+	child.stderr?.on("data", collect(stderr));
 	const timer = setTimeout(() => child.kill(), timeoutMs);
 	child.on("error", (error) => {
 		clearTimeout(timer);
