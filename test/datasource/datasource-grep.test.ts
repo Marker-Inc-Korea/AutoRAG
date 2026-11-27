@@ -446,6 +446,7 @@ describe("grep tool integration with virtual datasource paths", () => {
 		} as unknown as ExtensionAPI);
 
 		const grepTool = tools.get("grep")!;
+		expect(grepTool.description).toContain("'/telegram'");
 		const res = await grepTool.execute(
 			"call-1",
 			{ pattern: "TG_TOKEN_8821", path: "/telegram", literal: true },
@@ -459,6 +460,54 @@ describe("grep tool integration with virtual datasource paths", () => {
 		expect(text).toContain("TG_TOKEN_8821");
 		expect(ledger.lookup("e1", { allowLocalFiles: false })[0]?.source).toBe("/telegram/default/chunks/tg-3");
 		expect(ledger.lookup("e2", { allowLocalFiles: false })[0]?.source).toBe("/telegram/default/chunks/tg-1");
+
+		// Calling `read` on a virtual datasource path returns clear guidance instead of ENOENT.
+		const readTool = tools.get("read")!;
+		const readRes = await readTool.execute(
+			"call-read-virtual",
+			{ path: "/telegram/default/chunks/tg-1" },
+			undefined,
+			undefined,
+			{ cwd: workspace } as never,
+		);
+		const readText = readRes.content.find((c) => c.type === "text")?.text ?? "";
+		expect(readText).toContain("virtual datasource identifier");
+		expect(readText).toContain("grep(");
+	});
+
+	it("preserves absence of grep() through datasource wrappers for non-greppable skills", () => {
+		const nonGreppable: DatasourceSkill = {
+			describe: () => ({
+				name: "browser",
+				id: "browser",
+				type: "hister-web-history",
+				description: "Browser history",
+				capabilities: ["web"],
+				tags: ["browser"],
+				status: "active",
+				requiresExternalCli: false,
+				datasourceId: "browser",
+			}),
+			polling: () => ({ mode: "none" }),
+			index: async () => ({
+				ok: true,
+				instanceId: "default",
+				skill: "browser",
+				chunkCount: 0,
+				indexedAt: 0,
+				diagnostics: [],
+			}),
+			retrievalMethods: () => [],
+			describeSources: () => [],
+			skillManifest: () => ({ name: "datasource-browser", description: "Browser", content: "Browser" }),
+		};
+		const wrapped = new AttachmentRootsSkill(
+			new DescribedDatasourceSkill(new AliasedDatasourceSkill(nonGreppable, { alias: "web-hist" }), "Desc"),
+			[],
+		);
+		expect(wrapped.grep).toBeUndefined();
+		expect(resolveDatasourceGrepTarget("/web-hist", [wrapped])).toBeUndefined();
+		expect(resolveDatasourceGrepTarget("/datasources", [wrapped])).toBeUndefined();
 	});
 
 	it("greps across all greppable datasources when path is '/datasources'", async () => {

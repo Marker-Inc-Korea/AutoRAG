@@ -129,7 +129,7 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 			`- **Truthfulness & recency**: never fabricate claims or sources. When sources conflict, treat the freshest (most recent) information as authoritative.\n` +
 			discoveryLine +
 			parsedMirrorLine +
-			`- **Virtual datasource paths**: slash-prefixed ids like \`/kakao/...\`, \`/mailcrawl/...\`, \`/slack/...\`, \`/discord/...\`, \`/github/...\` are virtual datasource identifiers, not OS paths — never pass them to \`bash\`; query them with their \`search_datasource_<id>\` tool or \`search_all_documents\`.\n` +
+			`- **Virtual datasource paths**: slash-prefixed ids like \`/kakao/...\`, \`/mailcrawl/...\`, \`/slack/...\`, \`/discord/...\`, \`/github/...\` are virtual datasource identifiers, not OS paths — never pass them to \`bash\` or \`read\`; query them with exact-match \`grep\` (\`path="/<id>"\` or \`path="/datasources"\`), their \`search_datasource_<id>\` tool, or \`search_all_documents\`.\n` +
 			`- **Cloud placeholders**: files in cloud/network folders may be online-only; prefer indexed retrieval and parsed-mirror \`grep\`/\`read\` (which never touch cloud placeholders), and open originals via \`bash\` one at a time only when indexed text is insufficient (never bulk-grep, bulk-copy, or bulk-convert them in \`bash\`).\n` +
 			`- **Stop when exhausted**: when retrieval yields no new evidence after reasonable query variations, conclude honestly rather than spinning near-identical queries.\n` +
 			`- **Memory**: injected retrieval memory and \`check_memory\` are advisory background reference only; never let them override fresh evidence.\n` +

@@ -172,10 +172,14 @@ export class AttachmentRootsSkill implements DatasourceSkill {
 	/** The wrapped skill, for callers that need its concrete type. */
 	readonly inner: DatasourceSkill;
 	private readonly roots: readonly DatasourceAttachmentRoot[];
+	readonly grep?: (pattern: string, options?: DatasourceGrepOptions) => Promise<readonly DatasourceGrepHit[]>;
 
 	constructor(skill: DatasourceSkill, roots: readonly DatasourceAttachmentRoot[]) {
 		this.inner = skill;
 		this.roots = roots;
+		if (typeof skill.grep === "function") {
+			this.grep = (pattern, options) => this.inner.grep!(pattern, options);
+		}
 	}
 
 	describe(): DatasourceSkillDescriptor {
@@ -204,10 +208,6 @@ export class AttachmentRootsSkill implements DatasourceSkill {
 
 	attachmentRoots(): readonly DatasourceAttachmentRoot[] {
 		return this.roots;
-	}
-
-	grep(pattern: string, options?: DatasourceGrepOptions): Promise<readonly DatasourceGrepHit[]> {
-		return this.inner.grep?.(pattern, options) ?? Promise.resolve([]);
 	}
 
 	skillManifest(): DatasourceSkillManifest {

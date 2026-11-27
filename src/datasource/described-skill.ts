@@ -19,10 +19,14 @@ import type {
 export class DescribedDatasourceSkill implements DatasourceSkill {
 	private readonly skill: DatasourceSkill;
 	private readonly description: string;
+	readonly grep?: (pattern: string, options?: DatasourceGrepOptions) => Promise<readonly DatasourceGrepHit[]>;
 
 	constructor(skill: DatasourceSkill, description: string) {
 		this.skill = skill;
 		this.description = description;
+		if (typeof skill.grep === "function") {
+			this.grep = (pattern, options) => this.skill.grep!(pattern, options);
+		}
 	}
 
 	describe(): DatasourceSkillDescriptor {
@@ -43,10 +47,6 @@ export class DescribedDatasourceSkill implements DatasourceSkill {
 
 	searchFilters(): Promise<readonly SearchFilterSpec[]> {
 		return this.skill.searchFilters?.() ?? Promise.resolve([]);
-	}
-
-	grep(pattern: string, options?: DatasourceGrepOptions): Promise<readonly DatasourceGrepHit[]> {
-		return this.skill.grep?.(pattern, options) ?? Promise.resolve([]);
 	}
 
 	describeSources(): readonly SourceDescription[] {

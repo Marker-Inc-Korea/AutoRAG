@@ -29,6 +29,7 @@ export class AliasedDatasourceSkill implements DatasourceSkill {
 	private readonly originalId: string;
 	private readonly channelIds: ReadonlySet<string>;
 	private readonly channelNames: ReadonlySet<string>;
+	readonly grep?: (pattern: string, options?: DatasourceGrepOptions) => Promise<readonly DatasourceGrepHit[]>;
 
 	constructor(skill: DatasourceSkill, options: AliasDatasourceSkillOptions) {
 		this.skill = skill;
@@ -36,6 +37,22 @@ export class AliasedDatasourceSkill implements DatasourceSkill {
 		this.originalId = skill.describe().name;
 		this.channelIds = new Set(options.channelIds ?? []);
 		this.channelNames = new Set(options.channelNames ?? []);
+		if (typeof skill.grep === "function") {
+			this.grep = async (pattern, grepOptions) => {
+				const innerOptions: DatasourceGrepOptions = {
+					...grepOptions,
+					scope: rewriteScope(grepOptions?.scope, this.alias, this.originalId),
+				};
+				const hits = await this.skill.grep!(pattern, innerOptions);
+				return hits
+					.filter((hit) => this.matchesMetadataChannel(hit.metadata ?? {}))
+					.map((hit) => ({
+						...hit,
+						source: rewriteSource(hit.source, this.originalId, this.alias),
+						...(hit.metadata !== undefined ? { metadata: { ...hit.metadata, datasourceId: this.alias } } : {}),
+					}));
+			};
+		}
 	}
 
 	describe(): DatasourceSkillDescriptor {
@@ -88,22 +105,6 @@ export class AliasedDatasourceSkill implements DatasourceSkill {
 
 	searchFilters(): Promise<readonly SearchFilterSpec[]> {
 		return this.skill.searchFilters?.() ?? Promise.resolve([]);
-	}
-
-	async grep(pattern: string, options?: DatasourceGrepOptions): Promise<readonly DatasourceGrepHit[]> {
-		if (this.skill.grep === undefined) return [];
-		const innerOptions: DatasourceGrepOptions = {
-			...options,
-			scope: rewriteScope(options?.scope, this.alias, this.originalId),
-		};
-		const hits = await this.skill.grep(pattern, innerOptions);
-		return hits
-			.filter((hit) => this.matchesMetadataChannel(hit.metadata ?? {}))
-			.map((hit) => ({
-				...hit,
-				source: rewriteSource(hit.source, this.originalId, this.alias),
-				...(hit.metadata !== undefined ? { metadata: { ...hit.metadata, datasourceId: this.alias } } : {}),
-			}));
 	}
 
 	describeSources(): readonly SourceDescription[] {
