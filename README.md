@@ -23,7 +23,7 @@
 **Dazzi is the app version of AutoRAG Agent.** Download it for Mac and Windows at [**dazziapp.com**](https://dazziapp.com), or build from [NomaDamas/AutoRAG-app](https://github.com/NomaDamas/AutoRAG-app). It is a real file manager with the AutoRAG engine in this repository behind it.
 
 <p align="center">
-  <img src="assets/app/hero.webp" alt="Dazzi: a folder on the left, an AI Search conversation with cited answers on the right" width="100%" />
+  <img src="assets/app/hero.webp" alt="Dazzi: a folder on the left, an AI Agent conversation with cited answers on the right" width="100%" />
 </p>
 
 - **Fast file search.** Hybrid keyword + meaning search with a reranker finds files by what is inside them, and every answer links the passage it came from.
@@ -57,14 +57,14 @@ a question to ask about just those.
 </td>
 <td width="50%" valign="top">
 
-<img src="assets/app/ask.webp" alt="An answer about the Seoul office lease with numbered citations" />
+<img src="assets/app/ask.webp" alt="Dazzi AI Agent answering about the Seoul office lease with numbered citations and the Evidence inspector" />
 
 </td>
 </tr>
 <tr>
 <td width="50%" valign="top">
 
-<img src="assets/app/versions.webp" alt="A folder in list view with document versions stacked under one row" />
+<img src="assets/app/versions.webp" alt="A folder in list view with document versions stacked under one row beside the Version History timeline and diff summary" />
 
 </td>
 <td width="50%" valign="top">
@@ -72,7 +72,8 @@ a question to ask about just those.
 ### 🗂️ Spot the twins
 
 `proposal-final`, `proposal-v3`, `proposal (1)`: stacked into one row, newest
-on top, tagged **Latest**, **Similar**, or **Identical**. Powered by
+on top, tagged **Latest**, **Similar**, or **Exact**, with a Version History
+timeline and predecessor diff summaries in the inspector. Powered by
 [dupey](https://github.com/NomaDamas/dupey), the same scan as
 `autorag duplicates`.
 
