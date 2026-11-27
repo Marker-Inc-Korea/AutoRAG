@@ -72,6 +72,7 @@ const VALUE_FLAGS = new Set([
 	"fast-thinking",
 	"final-thinking",
 	"permission-mode",
+	"mode",
 	"whatsapp-group",
 	"event",
 	"connection",

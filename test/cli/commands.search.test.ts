@@ -252,6 +252,38 @@ describe("runSearch", () => {
 		expect(options).toMatchObject({ topK: 3, scope: "/docs" });
 	});
 
+	it("forwards --mode to routeOverride (and leaves routeOverride unset for auto)", async () => {
+		const seen: unknown[] = [];
+		const factory = () =>
+			completeStream(response, (received) => {
+				seen.push(received);
+			});
+
+		expect(await runSearch(context(["q"]).ctx, { agentFactory: factory })).toBe(0);
+		expect(await runSearch(context(["q"], { mode: "auto" }).ctx, { agentFactory: factory })).toBe(0);
+		expect(await runSearch(context(["q"], { mode: "organize" }).ctx, { agentFactory: factory })).toBe(0);
+		expect(await runSearch(context(["q"], { mode: "find" }).ctx, { agentFactory: factory })).toBe(0);
+		expect(await runSearch(context(["q"], { mode: "automate" }).ctx, { agentFactory: factory })).toBe(0);
+		expect(await runSearch(context(["q"], { mode: "extra" }).ctx, { agentFactory: factory })).toBe(0);
+
+		expect(seen).toEqual([
+			{},
+			{},
+			{ routeOverride: "organize" },
+			{ routeOverride: "local" },
+			{ routeOverride: "config" },
+			{ routeOverride: "extra" },
+		]);
+	});
+
+	it("exits 2 for an invalid --mode value before constructing the agent", async () => {
+		const factory = vi.fn(() => completeStream());
+		const { ctx, stderr } = context(["q"], { mode: "bogus" });
+		expect(await runSearch(ctx, { agentFactory: factory })).toBe(2);
+		expect(factory).not.toHaveBeenCalled();
+		expect(stderr.join("\n")).toContain("Invalid route mode");
+	});
+
 	it("renders progress events before the final response", async () => {
 		const { ctx, stdout } = context(["query"]);
 		await runSearch(ctx, {

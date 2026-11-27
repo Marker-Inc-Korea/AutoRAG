@@ -96,6 +96,14 @@ describe("autorag-mcp --http", () => {
 		expect(await toolNames(running.url, TOKEN)).toContain("autorag.refresh");
 	});
 
+	it("--agent exposes autorag.ask over HTTP (and omits it without --agent)", async () => {
+		const withoutAgent = await launch(["--http", "--port", "0"], { AUTORAG_MCP_TOKEN: TOKEN });
+		expect(await toolNames(withoutAgent.url, TOKEN)).not.toContain("autorag.ask");
+
+		const withAgent = await launch(["--http", "--port", "0", "--agent"], { AUTORAG_MCP_TOKEN: TOKEN });
+		expect(await toolNames(withAgent.url, TOKEN)).toContain("autorag.ask");
+	});
+
 	it("honors AUTORAG_MCP_TOOLS", async () => {
 		const running = await launch(["--http", "--port", "0"], {
 			AUTORAG_MCP_TOKEN: TOKEN,

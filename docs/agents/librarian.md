@@ -26,6 +26,7 @@ autorag search "What are our primary Q3 deliverables?"
 | --- | --- |
 | `--top-k <n>` | Maximum curated results. |
 | `--scope <scope>` | Narrow retrieval to an opaque virtual-path scope. |
+| `--mode <mode>` | Route mode: `auto` (default; Jev decides), `local`, `organize`, `extra`, or `config` (aliases: `find`, `search`, `summarize`, `explore`, `direct`, `automate`). |
 | `--fast-thinking <lvl>` | Thinking level for the fast first answer. |
 | `--final-thinking <lvl>` | Thinking level for the verified final answer. |
 | `--permission-mode <m>` | Disk permission mode: `readonly` (default; OS-level read-only) or `full`. See [Permission modes](permissions.md). |
@@ -90,6 +91,15 @@ Input typed during a search behaves like Pi's own turns:
 | `Enter` | Steer the running search: a correction applied before its next model request, then verified. |
 | `Alt+Enter` | Queue a new question for after the current search answers. |
 | `Esc` | Stop the search. |
+
+### Route mode (`auto`, `local`, `organize`, `extra`, `config`)
+
+The TUI starts in `auto` (Jev routes Turn 1 automatically) and shows the current mode in the
+footer (`mode: auto`). Press `Ctrl+P` to cycle through `auto → local → organize → extra → config`,
+or run `/mode [auto|local|organize|extra|config]` (aliases such as `find`, `summarize`, `automate`
+are accepted; `/mode` with no argument opens a picker). You can also set the initial mode at launch
+with `autorag tui --mode <mode>`. Selecting an explicit mode bypasses Jev's initial branch
+classification and runs that branch directly.
 
 ### Embedding controls
 

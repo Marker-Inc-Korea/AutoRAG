@@ -73,6 +73,23 @@ export type {
 } from "./results.ts";
 export { reportSchema } from "./results.ts";
 export {
+	availableRouteModes,
+	BASE_ROUTE_MODES,
+	createRouteModeControls,
+	cycleRouteMode,
+	DEFAULT_ROUTE_MODE,
+	describeRouteMode,
+	parseRouteMode,
+	ROUTE_MODE_CYCLE_KEY,
+	ROUTE_MODE_STATUS_KEY,
+	ROUTE_MODES,
+	type RouteMode,
+	RouteModeController,
+	type RouteModeControlsOptions,
+	routeModeStatusLabel,
+	routeOverrideForMode,
+} from "./route-mode.ts";
+export {
 	createSearchAllDocumentsTool,
 	SEARCH_ALL_DOCUMENTS_TOOL_NAME,
 	type SearchAllDocumentsDetails,

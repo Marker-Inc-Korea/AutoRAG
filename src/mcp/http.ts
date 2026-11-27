@@ -4,7 +4,7 @@ import type { AddressInfo } from "node:net";
 import { createMcpHandler, validateHostHeader } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import type { AutoRAGLite } from "../core.ts";
-import { createAutoRAGMcpServer } from "./server.ts";
+import { type AutoRAGMcpAskHandler, createAutoRAGMcpServer } from "./server.ts";
 
 export interface McpHttpOptions {
 	readonly lite: AutoRAGLite;
@@ -26,6 +26,8 @@ export interface McpHttpOptions {
 	/** Default `true`: a remote agent gets search and evidence, never refresh, report or convert. */
 	readonly readOnly?: boolean;
 	readonly tools?: readonly string[];
+	/** Optional model-backed librarian handler exposing `autorag.ask` over HTTP MCP. */
+	readonly ask?: AutoRAGMcpAskHandler;
 	readonly maxBodyBytes?: number;
 	readonly now?: () => number;
 	readonly onError?: (error: Error) => void;
@@ -254,10 +256,13 @@ export async function startMcpHttpServer(options: McpHttpOptions): Promise<McpHt
 		return access !== undefined && access.exp > nowSeconds() && access.res === resourceUrl;
 	};
 
-	const handler = createMcpHandler(() => createAutoRAGMcpServer(options.lite, { readOnly, tools: options.tools }), {
-		legacy: "stateless",
-		onerror: onError,
-	});
+	const handler = createMcpHandler(
+		() => createAutoRAGMcpServer(options.lite, { readOnly, tools: options.tools, ask: options.ask }),
+		{
+			legacy: "stateless",
+			onerror: onError,
+		},
+	);
 
 	const challenge = (): Response => {
 		const metadata = resourceMetadataUrl === undefined ? "" : `, resource_metadata="${resourceMetadataUrl}"`;

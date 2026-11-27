@@ -4,6 +4,16 @@ import { fileURLToPath } from "node:url";
 import { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import type { RefreshMethod } from "../agent/agent.ts";
+import { DecisionModelUnavailableError } from "../agent/decision-model-check.ts";
+import type { QueryRoute } from "../agent/query-routing.ts";
+import {
+	DEFAULT_ROUTE_MODE,
+	parseRouteMode,
+	ROUTE_MODES,
+	type RouteMode,
+	routeOverrideForMode,
+} from "../agent/route-mode.ts";
+import type { SearchDocumentsResponse } from "../agent/search-documents.ts";
 import { evidenceFor } from "../cli/commands/evidence.ts";
 import { validateReport } from "../cli/commands/report.ts";
 import type { ConvertAndRelateResult } from "../convert/index.ts";
@@ -55,6 +65,23 @@ const searchInput = z
 		datasourceIds: z.array(z.string().trim().min(1)).optional(),
 		methods: z.array(z.string().trim().min(1)).optional(),
 		local: z.boolean().optional(),
+	})
+	.strict();
+
+const askInput = z
+	.strictObject({
+		query: z.string().trim().min(1),
+		mode: z
+			.string()
+			.trim()
+			.min(1)
+			.optional()
+			.describe(
+				"Route mode: 'auto' (default, Jev decides), 'local' (search & summarize), 'organize' (file operations), 'extra' (direct answer/tool task), or 'config' (AutoRAG settings/automations). Aliases: find, search, summarize, explore, direct, automate.",
+			),
+		topK: z.number().int().positive().max(100).optional(),
+		scope: z.string().trim().min(1).optional(),
+		...windowFields,
 	})
 	.strict();
 
@@ -125,11 +152,32 @@ function exactGroupsFromScan(scan: DupeyScanResult): ExactDuplicateGroup[] {
 		.map(([hash, files]) => ({ hash, files: [...files].sort() }));
 }
 
+/** Request handed to {@link AutoRAGMcpAskHandler} when a caller invokes `autorag.ask`. */
+export interface AutoRAGMcpAskRequest {
+	readonly query: string;
+	/** Effective normalized route mode (`auto` when omitted). */
+	readonly mode: RouteMode;
+	/** Explicit Turn-1 route override (`undefined` when `mode === "auto"`). */
+	readonly routeOverride?: QueryRoute;
+	readonly topK?: number;
+	readonly scope?: string;
+	readonly since?: number;
+	readonly until?: number;
+	readonly signal?: AbortSignal;
+}
+
+export type AutoRAGMcpAskHandler = (request: AutoRAGMcpAskRequest) => Promise<SearchDocumentsResponse>;
+
 export interface AutoRAGMcpServerOptions {
 	readonly readOnly?: boolean;
 	readonly tools?: readonly string[];
 	/** Test/embedded override; defaults to the current Node platform. */
 	readonly platform?: NodeJS.Platform;
+	/**
+	 * Optional model-backed librarian runner that enables the `autorag.ask` MCP tool.
+	 * When omitted, the server exposes only the model-free Lite tool set.
+	 */
+	readonly ask?: AutoRAGMcpAskHandler;
 }
 
 function jsonResult<T extends object>(value: T, isError = false) {
@@ -786,6 +834,84 @@ export function createAutoRAGMcpServer(lite: AutoRAGLite, options: AutoRAGMcpSer
 					return jsonResult({ ok: true, ...result });
 				} catch (error) {
 					return toolError("refresh-failed", error instanceof Error ? error.message : String(error), {
+						retryable: true,
+					});
+				}
+			},
+		);
+	}
+
+	if (options.ask !== undefined && isToolEnabled("autorag.ask", options)) {
+		const askHandler = options.ask;
+		server.registerTool(
+			"autorag.ask",
+			{
+				title: "Ask AutoRAG Librarian Agent",
+				description:
+					"Run the full AutoRAG librarian agent (retrieval, verification, organization, or configuration). " +
+					"Defaults to mode='auto' (Jev routes automatically); pass mode='local'|'organize'|'extra'|'config' " +
+					"(or aliases find/search/summarize/automate) to skip Jev routing and run that branch directly.",
+				inputSchema: askInput,
+				outputSchema: objectOutput,
+				annotations: {
+					readOnlyHint: readOnly,
+					destructiveHint: false,
+					openWorldHint: true,
+				},
+			},
+			async ({ query, mode: rawMode, topK, scope, since, until }, ctx) => {
+				const window = windowOrError({ since, until }, { query });
+				if (!window.ok) return window.error;
+				const mode = rawMode === undefined ? DEFAULT_ROUTE_MODE : parseRouteMode(rawMode);
+				if (mode === undefined) {
+					return toolError(
+						"invalid-route-mode",
+						`Unknown route mode "${rawMode}". Use one of: ${ROUTE_MODES.join(", ")}.`,
+						{ query, mode: rawMode, allowedModes: [...ROUTE_MODES] },
+					);
+				}
+				if (readOnly && (mode === "organize" || mode === "config")) {
+					return toolError(
+						"read-only-mode",
+						`Route mode "${mode}" is disabled because the MCP server is running in read-only mode.`,
+						{ query, mode },
+					);
+				}
+				const routeOverride = routeOverrideForMode(mode);
+				try {
+					const response = await askHandler({
+						query,
+						mode,
+						...(routeOverride === undefined ? {} : { routeOverride }),
+						...(topK === undefined ? {} : { topK }),
+						...(scope === undefined ? {} : { scope }),
+						...window.window,
+						signal: ctx.mcpReq.signal,
+					});
+					return jsonResult({
+						ok: true,
+						mode,
+						...(routeOverride === undefined ? {} : { routeOverride }),
+						sessionId: response.sessionId,
+						query: response.query,
+						answer: response.answer,
+						results: response.results,
+						searched: response.searched,
+						warnings: response.warnings,
+						diagnostics: capDiagnostics(response.diagnostics ?? []),
+					});
+				} catch (error) {
+					if (error instanceof DecisionModelUnavailableError) {
+						return toolError("decision-model-unavailable", error.message, {
+							query,
+							mode,
+							reason: error.reason,
+							retryable: false,
+						});
+					}
+					return toolError("ask-failed", error instanceof Error ? error.message : String(error), {
+						query,
+						mode,
 						retryable: true,
 					});
 				}

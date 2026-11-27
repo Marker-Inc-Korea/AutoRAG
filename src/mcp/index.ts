@@ -5,12 +5,20 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
+import { AutoRAGAgent, type AutoRAGAgentOptions } from "../agent/agent.ts";
+import {
+	buildAgentOptions,
+	resolveAgentModel,
+	resolveConfig,
+	resolveQueryDecompositionModel,
+	resolveSllmDecisionModel,
+} from "../cli/config.ts";
 import { resolveAutoRAGHome } from "../config/home.ts";
 import { createAutoRAGLite } from "../core.ts";
 import { startMcpHttpServer } from "./http.ts";
 import { type PreflightResult, runPreflight } from "./preflight.ts";
 import { configSignature, createReloadingLite } from "./reloading-lite.ts";
-import { createAutoRAGMcpServer } from "./server.ts";
+import { type AutoRAGMcpAskHandler, createAutoRAGMcpServer } from "./server.ts";
 
 function parseBoolean(value: string | undefined, fallback = false): boolean {
 	if (value === undefined) return fallback;
@@ -37,11 +45,15 @@ function isInvokedDirectly(): boolean {
 
 const TOKEN_FILE = "mcp-http-token";
 
-const USAGE = `autorag-mcp - AutoRAG Lite MCP server
+const USAGE = `autorag-mcp - AutoRAG MCP server
 
   autorag-mcp                       stdio (default; what Hermes, Claude Code and Codex spawn)
   autorag-mcp --http [options]      streamable HTTP, for agents that run in a cloud and reach you through a URL
   autorag-mcp --check URL [--json]  replay a cloud agent's connect sequence against URL (e.g. your tunnel's /mcp)
+
+Options:
+  --agent            also expose autorag.ask (model-backed librarian agent with mode=auto|local|organize|extra|config;
+                     also AUTORAG_MCP_AGENT=1)
 
 HTTP options:
   --host HOST        interface to bind (default 127.0.0.1)
@@ -53,7 +65,43 @@ HTTP options:
 Auth: every request needs "Authorization: Bearer <owner token>". The token is AUTORAG_MCP_TOKEN (at least 32
 characters) or, when unset, a random one kept at $AUTORAG_HOME/${TOKEN_FILE} (owner-only).
 --check exits 1 if any step fails. It reads the owner token from AUTORAG_MCP_TOKEN (or the token file) and never prints it.
-Env: AUTORAG_MCP_TOOLS, AUTORAG_MCP_READ_ONLY (stdio), AUTORAG_CONFIG, AUTORAG_HOME.`;
+Env: AUTORAG_MCP_TOOLS, AUTORAG_MCP_READ_ONLY (stdio), AUTORAG_MCP_AGENT, AUTORAG_CONFIG, AUTORAG_HOME.`;
+
+/**
+ * Create the `autorag.ask` handler backed by the configured `AutoRAGAgent`.
+ * Resolves the active config and model fresh per call so config edits take effect
+ * without restarting the MCP server, mirroring {@link createReloadingLite}.
+ */
+export function createMcpAskHandler(
+	options: { readonly env?: NodeJS.ProcessEnv; readonly readOnly?: boolean } = {},
+): AutoRAGMcpAskHandler {
+	return async (request) => {
+		const env = options.env ?? process.env;
+		const config = resolveConfig({ flags: {}, env });
+		const resolvedModel = await resolveAgentModel(config);
+		const decompositionModel = await resolveQueryDecompositionModel(config);
+		const decisionSllm = await resolveSllmDecisionModel(config);
+		const baseOptions = buildAgentOptions(config);
+		const agentOptions: AutoRAGAgentOptions = {
+			...baseOptions,
+			model: resolvedModel.model,
+			...(resolvedModel.apiKey !== undefined ? { apiKey: resolvedModel.apiKey } : {}),
+			...(resolvedModel.providerApiKeys !== undefined ? { providerApiKeys: resolvedModel.providerApiKeys } : {}),
+			...(decompositionModel !== undefined ? { queryDecomposition: decompositionModel } : {}),
+			...(decisionSllm !== undefined ? { jev: { ...baseOptions.jev, sllm: decisionSllm } } : {}),
+			...(options.readOnly === true ? { permissionMode: "readonly" } : {}),
+		};
+		const agent = new AutoRAGAgent(agentOptions);
+		return agent.searchDocuments(request.query, {
+			...(request.routeOverride === undefined ? {} : { routeOverride: request.routeOverride }),
+			...(request.topK === undefined ? {} : { topK: request.topK }),
+			...(request.scope === undefined ? {} : { scope: request.scope }),
+			...(request.since === undefined ? {} : { since: request.since }),
+			...(request.until === undefined ? {} : { until: request.until }),
+			...(request.signal === undefined ? {} : { signal: request.signal }),
+		});
+	};
+}
 
 /** The owner token from the environment, or a random one persisted owner-only so restarts keep issued tokens valid. */
 function resolveOwnerToken(env: NodeJS.ProcessEnv): { token: string; file?: string } {
@@ -102,6 +150,7 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
 			port: { type: "string" },
 			"public-url": { type: "string" },
 			"allow-write": { type: "boolean" },
+			agent: { type: "boolean" },
 			check: { type: "string" },
 			json: { type: "boolean" },
 			help: { type: "boolean", short: "h" },
@@ -127,6 +176,8 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
 	}
 	const readOnly =
 		values.http === true ? values["allow-write"] !== true : parseBoolean(process.env.AUTORAG_MCP_READ_ONLY);
+	const enableAgent = values.agent === true || parseBoolean(process.env.AUTORAG_MCP_AGENT);
+	const ask = enableAgent ? createMcpAskHandler({ env: process.env, readOnly }) : undefined;
 	const lite = createReloadingLite({
 		create: () => createAutoRAGLite({ env: process.env, readOnly }),
 		signature: () => configSignature(process.env),
@@ -135,7 +186,7 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
 			process.stderr.write(`autorag-mcp: keeping the previous config, the new one failed: ${error.message}\n`),
 	});
 	if (values.http !== true) {
-		const server = createAutoRAGMcpServer(lite, { readOnly, tools });
+		const server = createAutoRAGMcpServer(lite, { readOnly, tools, ask });
 		await server.connect(new StdioServerTransport());
 		return;
 	}
@@ -155,6 +206,7 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
 		ownerToken: owner.token,
 		readOnly,
 		tools,
+		ask,
 		onError: (error) => process.stderr.write(`autorag-mcp: ${error.message}\n`),
 	});
 	if (http.publicMcpUrl !== undefined) process.stderr.write(`autorag-mcp: public endpoint ${http.publicMcpUrl}\n`);
