@@ -1,11 +1,13 @@
 import type { RetrievalMethod } from "../../../retrieval/types.ts";
-import { datasourceSourcePath } from "../../scope.ts";
+import { datasourceSourcePath, matchesDatasourceScope } from "../../scope.ts";
 import { CRAWLER_DESCRIPTORS } from "../../sidecar/descriptors.ts";
 import { SidecarRetrievalMethod } from "../../sidecar/methods.ts";
 import { datasourceSearchToolName } from "../../tool-naming.ts";
 import type {
 	DatasourceDiagnostic,
 	DatasourceDiagnosticCode,
+	DatasourceGrepHit,
+	DatasourceGrepOptions,
 	DatasourceIndexOptions,
 	DatasourceIndexResult,
 	DatasourceSkill,
@@ -270,6 +272,49 @@ export class DiscrawlSkill implements DatasourceSkill {
 	/** Release the optional sidecar without changing the native archive. */
 	close(): void {
 		this.sidecar?.close();
+	}
+
+	/** Exact substring/regex grep directly over the read-only discrawl SQLite archive via sidecar. */
+	async grep(pattern: string, options?: DatasourceGrepOptions): Promise<readonly DatasourceGrepHit[]> {
+		if (this.sidecar === undefined || pattern.length === 0) return [];
+		options?.signal?.throwIfAborted();
+		const resolvedSidecar = await this.sidecar.get(options?.signal).catch(() => undefined);
+		if (resolvedSidecar === undefined) return [];
+		options?.signal?.throwIfAborted();
+		const descriptor = CRAWLER_DESCRIPTORS.discord;
+		const raw = resolvedSidecar.grepExact(pattern, {
+			literal: options?.literal,
+			ignoreCase: options?.ignoreCase,
+			context: options?.context,
+			limit: options?.limit,
+			maxPerMessage: options?.maxPerSource,
+		});
+		const out: DatasourceGrepHit[] = [];
+		for (const hit of raw) {
+			const chunkId = descriptor.chunkId(hit.key, hit.metadata);
+			const source = datasourceSourcePath(DISCORD_DATASOURCE_ID, this.instanceId, chunkId);
+			if (!matchesDatasourceScope(source, options?.scope)) continue;
+			const hierarchy = descriptor.hierarchy(hit.metadata).join("/");
+			const author = hit.metadata.authorName;
+			const label = [hierarchy, author]
+				.filter((v): v is string => typeof v === "string" && v.length > 0)
+				.join(" | ");
+			out.push({
+				source,
+				content: hit.content,
+				lineNumber: hit.lineNumber,
+				lineEnd: hit.lineEnd,
+				...(label.length > 0 ? { label } : {}),
+				metadata: {
+					...hit.metadata,
+					datasourceId: DISCORD_DATASOURCE_ID,
+					instanceId: this.instanceId,
+					hierarchy,
+					...(hit.publishedAt !== undefined ? { publishedAt: hit.publishedAt } : {}),
+				},
+			});
+		}
+		return out;
 	}
 
 	describeSources(): readonly SourceDescription[] {

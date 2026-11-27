@@ -29,11 +29,14 @@ import type {
 import { DatasourceChunkStore } from "./chunk-store.ts";
 import type { ConnectorDocument, DatasourceConnector } from "./connector.ts";
 import { boundDiagnosticText, connectorFailureToDiagnosticCode } from "./connector.ts";
+import { compileGrepPattern, matchLinesInText } from "./grep.ts";
 import { datasourceSourcePath, matchesDatasourceScope } from "./scope.ts";
 import { datasourceSearchToolName } from "./tool-naming.ts";
 import type {
 	DatasourceDiagnostic,
 	DatasourceDiagnosticCode,
+	DatasourceGrepHit,
+	DatasourceGrepOptions,
 	DatasourceIndexOptions,
 	DatasourceIndexResult,
 	DatasourceSkill,
@@ -219,6 +222,55 @@ export class ConnectorDatasourceSkill implements DatasourceSkill {
 				store: this.store,
 			}),
 		];
+	}
+
+	/** Exact substring/regex grep over persisted parsed chunks in the connector chunk store. */
+	async grep(pattern: string, options?: DatasourceGrepOptions): Promise<readonly DatasourceGrepHit[]> {
+		if (pattern.length === 0) return [];
+		options?.signal?.throwIfAborted();
+		const matcher = compileGrepPattern(pattern, {
+			literal: options?.literal,
+			ignoreCase: options?.ignoreCase,
+		});
+		const limit = Math.max(1, Math.floor(options?.limit ?? 100));
+		const maxPerSource = Math.max(1, Math.floor(options?.maxPerSource ?? 10));
+		const context = Math.min(20, Math.max(0, Math.floor(options?.context ?? 0)));
+		const hits: DatasourceGrepHit[] = [];
+		const perDoc = new Map<string, number>();
+
+		for (const chunk of this.store.chunks()) {
+			const used = perDoc.get(chunk.docId) ?? 0;
+			if (used >= maxPerSource) continue;
+			const hierarchy = chunk.hierarchy.length > 0 ? chunk.hierarchy : [chunk.docId];
+			const source = `${datasourceSourcePath(this.definition.skillName, this.instanceId)}/${hierarchy.join("/")}`;
+			if (!matchesDatasourceScope(source, options?.scope)) continue;
+			const matched = matchLinesInText(
+				chunk.content,
+				matcher,
+				context,
+				Math.min(maxPerSource - used, limit - hits.length),
+			);
+			for (const item of matched) {
+				perDoc.set(chunk.docId, (perDoc.get(chunk.docId) ?? 0) + 1);
+				hits.push({
+					source,
+					content: item.snippet,
+					lineNumber: item.lineNumber,
+					lineEnd: item.lineEnd,
+					...(chunk.title !== undefined ? { label: chunk.title } : {}),
+					metadata: {
+						...chunk.metadata,
+						datasourceId: this.definition.skillName,
+						instanceId: this.instanceId,
+						chunkId: chunk.chunkId,
+						docId: chunk.docId,
+						...(chunk.publishedAt !== undefined ? { publishedAt: chunk.publishedAt } : {}),
+					},
+				});
+				if (hits.length >= limit) return hits;
+			}
+		}
+		return hits;
 	}
 
 	describeSources(): readonly SourceDescription[] {

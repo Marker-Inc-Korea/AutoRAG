@@ -1438,6 +1438,7 @@ export class AutoRAGAgent {
 			searchPaths: this.searchPaths,
 			ledger: this.evidenceLedger,
 			cloudRoots: () => this.cloudRoots(),
+			datasourceSkills: this.datasourceSkills,
 		});
 		this.queryDecompositionModel =
 			options.queryDecomposition?.model === undefined

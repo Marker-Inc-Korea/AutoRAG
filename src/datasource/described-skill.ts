@@ -1,5 +1,7 @@
 import type { RetrievalMethod } from "../retrieval/types.ts";
 import type {
+	DatasourceGrepHit,
+	DatasourceGrepOptions,
 	DatasourceIndexOptions,
 	DatasourceIndexResult,
 	DatasourceSkill,
@@ -17,10 +19,14 @@ import type {
 export class DescribedDatasourceSkill implements DatasourceSkill {
 	private readonly skill: DatasourceSkill;
 	private readonly description: string;
+	readonly grep?: (pattern: string, options?: DatasourceGrepOptions) => Promise<readonly DatasourceGrepHit[]>;
 
 	constructor(skill: DatasourceSkill, description: string) {
 		this.skill = skill;
 		this.description = description;
+		if (typeof skill.grep === "function") {
+			this.grep = (pattern, options) => this.skill.grep!(pattern, options);
+		}
 	}
 
 	describe(): DatasourceSkillDescriptor {

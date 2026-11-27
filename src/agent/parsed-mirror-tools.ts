@@ -20,6 +20,8 @@ import {
 	truncateLine,
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { formatDatasourceGrepOutput, grepDatasourceSkills, resolveDatasourceGrepTarget } from "../datasource/grep.ts";
+import type { DatasourceSkill } from "../datasource/types.ts";
 import { type CloudRoot, canonicalPath, isPathInside } from "../filesystem/cloud-placeholder.ts";
 import { planSourceRoots, type SourceRoot, sourceIdentifier } from "../filesystem/source-paths.ts";
 import { minSyncDocumentPath, minSyncWorkspaceRoot } from "../minsync/paths.ts";
@@ -945,7 +947,7 @@ const grepSchema = Type.Object({
 	path: Type.Optional(
 		Type.String({
 			description:
-				"Directory or file to search. Omit to search across all indexed document mirrors under configured search folders; pass a folder or file inside search folders to narrow.",
+				"Directory, file, or virtual datasource path to search. Omit to search across all indexed local document mirrors; pass a folder or file inside search folders to narrow; or pass '/<datasourceId>' (e.g. '/wombat', '/mailcrawl', '/telegram', '/slack', '/discord', '/kakao', '/obsidian', '/notion') or '/datasources' to run exact-match grep directly on parsed datasource mirrors/archives.",
 		}),
 	),
 	glob: Type.Optional(
@@ -976,6 +978,8 @@ export interface ParsedMirrorToolsExtensionOptions {
 	readonly ledger?: EvidenceLedger;
 	readonly cloudRoots?: () => Promise<readonly CloudRoot[]>;
 	readonly rgPath?: string;
+	/** Configured datasource skills whose parsed mirrors/archives can be grepped via `/<datasourceId>` or `/datasources`. */
+	readonly datasourceSkills?: readonly DatasourceSkill[];
 }
 
 /**
@@ -1003,14 +1007,66 @@ export function createParsedMirrorToolsExtension(options: ParsedMirrorToolsExten
 
 		const baseGrep = createGrepToolDefinition(options.workspaceRoot);
 		const baseRead = createReadToolDefinition(options.workspaceRoot);
+		const configuredGrepPaths = [
+			...new Set(
+				(options.datasourceSkills ?? [])
+					.filter((skill) => typeof skill.grep === "function")
+					.map((skill) => `/${skill.describe().datasourceId ?? skill.describe().name}`),
+			),
+		];
+		const configuredGrepHint =
+			configuredGrepPaths.length > 0
+				? ` Configured datasource virtual paths: ${configuredGrepPaths.map((p) => `'${p}'`).join(", ")}, or '/datasources' for all.`
+				: " For configured datasource virtual paths ('/<datasourceId>' or '/datasources' for all), runs exact-match grep directly over each datasource's parsed mirror or read-only SQLite archive.";
+		const dynamicGrepSchema =
+			configuredGrepPaths.length > 0
+				? Type.Object({
+						...grepSchema.properties,
+						path: Type.Optional(
+							Type.String({
+								description: `Directory, file, or virtual datasource path to search. Omit to search across all indexed local document mirrors; pass a folder or file inside search folders to narrow; or pass one of the configured datasource virtual paths (${configuredGrepPaths.map((p) => `'${p}'`).join(", ")}, or '/datasources' for all) to run exact-match grep directly on parsed datasource mirrors/archives.`,
+							}),
+						),
+					})
+				: grepSchema;
 
 		const mirrorGrepTool: ToolDefinition<typeof grepSchema, GrepToolDetails | undefined> = {
 			...baseGrep,
 			name: "grep",
 			label: "grep",
-			description: `Search file contents for an exact string or regex pattern. For configured search folders (or when path is omitted), searches AutoRAG's local parsed markdown mirrors with ripgrep — covering PDF, HWP/HWPX, DOCX, XLSX, PPTX, EML, and text files rapidly without downloading cloud placeholders, and returns original file paths with [eN] citation ids, parsed line numbers (L#), and page/section locations. Falls back to raw filesystem grep for paths outside search folders or unmirrored files. Output is truncated to ${DEFAULT_GREP_LIMIT} matches or ${DEFAULT_MAX_BYTES / 1024}KB.`,
-			parameters: grepSchema,
+			description: `Search file or datasource contents for an exact string or regex pattern. For configured search folders (or when path is omitted), searches AutoRAG's local parsed markdown mirrors with ripgrep — covering PDF, HWP/HWPX, DOCX, XLSX, PPTX, EML, and text files rapidly without downloading cloud placeholders, and returns original file paths with [eN] citation ids, parsed line numbers (L#), and page/section locations. For configured datasource virtual paths, runs exact-match grep directly over each datasource's parsed mirror or read-only SQLite archive without invoking embedding/ranking models.${configuredGrepHint} Falls back to raw filesystem grep for paths outside search folders or unmirrored files. Output is truncated to ${DEFAULT_GREP_LIMIT} matches or ${DEFAULT_MAX_BYTES / 1024}KB.`,
+			parameters: dynamicGrepSchema,
 			async execute(toolCallId, params, signal, onUpdate, ctx) {
+				const dsTarget = resolveDatasourceGrepTarget(params.path, options.datasourceSkills ?? []);
+				if (dsTarget !== undefined) {
+					const effectiveLimit = Math.max(1, Math.floor(params.limit ?? DEFAULT_GREP_LIMIT));
+					const skills = dsTarget.kind === "all" ? dsTarget.skills : [dsTarget.skill];
+					const { hits, limitReached, searchedDatasources } = await grepDatasourceSkills(skills, params.pattern, {
+						literal: params.literal,
+						ignoreCase: params.ignoreCase,
+						context: params.context,
+						limit: effectiveLimit,
+						...(dsTarget.kind === "single" ? { scope: dsTarget.scope } : {}),
+						signal,
+					});
+					const formatted = formatDatasourceGrepOutput(hits, options.ledger, {
+						limit: effectiveLimit,
+						limitReached,
+						searchedDatasources,
+					});
+					return {
+						content: [{ type: "text", text: formatted.output }],
+						details: {
+							method: "grep",
+							source: "datasource-parsed-mirror",
+							resultCount: formatted.results.length,
+							matchCount: formatted.matchCount,
+							sources: formatted.sources,
+							results: formatted.results,
+							...(limitReached ? { matchLimitReached: effectiveLimit } : {}),
+						} as unknown as GrepToolDetails,
+					};
+				}
 				const cwd = ctx?.cwd || options.workspaceRoot;
 				const target = mapper.toMirrorTarget(params.path, cwd);
 				if (target !== undefined) {
@@ -1054,6 +1110,19 @@ export function createParsedMirrorToolsExtension(options: ParsedMirrorToolsExten
 				"Read the contents of a file. For parsed documents (PDF, HWP/HWPX, DOCX, XLSX, PPTX, EML) and cloud-hosted indexed files, reads AutoRAG's parsed markdown mirror directly with page/section context and an [eN] citation id — matching line numbers returned by `grep`. Supports plain text, code, and images (jpg, png, gif, webp, bmp) directly from disk. Use offset/limit for large files.",
 			parameters: readSchema,
 			async execute(toolCallId, params, signal, onUpdate, ctx) {
+				const dsReadTarget = resolveDatasourceGrepTarget(params.path, options.datasourceSkills ?? []);
+				if (dsReadTarget !== undefined) {
+					const targetPath = dsReadTarget.kind === "single" ? dsReadTarget.scope : "/datasources";
+					return {
+						content: [
+							{
+								type: "text",
+								text: `${targetPath} is a virtual datasource identifier, not a local OS file path. Use \`grep(pattern, path="${targetPath}", context=3)\` for surrounding lines or the datasource's \`search_datasource_*\` tool.`,
+							},
+						],
+						details: undefined,
+					};
+				}
 				const cwd = ctx?.cwd || options.workspaceRoot;
 				const abs = resolveUserPath(params.path, cwd);
 				const mapping = mapper.toMirrorFile(abs);

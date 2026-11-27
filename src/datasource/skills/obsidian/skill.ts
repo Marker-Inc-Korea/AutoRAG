@@ -1,7 +1,12 @@
+import { join } from "node:path";
 import { isSparseOnlyEmbedder } from "../../../minsync/embedder-config.ts";
 import type { RetrievalMethod } from "../../../retrieval/types.ts";
+import { grepDirectoryWithRipgrep } from "../../grep.ts";
+import { matchesDatasourceScope } from "../../scope.ts";
 import { datasourceSearchToolName } from "../../tool-naming.ts";
 import type {
+	DatasourceGrepHit,
+	DatasourceGrepOptions,
 	DatasourceIndexOptions,
 	DatasourceIndexResult,
 	DatasourceSkill,
@@ -11,7 +16,15 @@ import type {
 	SourceDescription,
 } from "../../types.ts";
 import { ObsidianSemanticMethod, ObsidianSparseMethod } from "./methods.ts";
-import { OBSIDIAN_DATASOURCE_ID, OBSIDIAN_SKILL_TYPE, obsidianInstanceSource } from "./paths.ts";
+import {
+	OBSIDIAN_DATASOURCE_ID,
+	OBSIDIAN_SKILL_TYPE,
+	obsidianInstanceSource,
+	obsidianMinSyncWorkspace,
+	obsidianNoteSource,
+	obsidianStagingStatePath,
+} from "./paths.ts";
+import { loadStagingState } from "./staging.ts";
 import { type ObsidianMinSyncOptions, ObsidianVaultIndex } from "./vault-index.ts";
 
 export interface ObsidianSkillOptions {
@@ -45,6 +58,7 @@ export class ObsidianSkill implements DatasourceSkill {
 	private readonly pollingIntervalMs: number;
 	private readonly tags: readonly string[];
 	private readonly sparseOnly: boolean;
+	private readonly workspaceRoot: string | undefined;
 	private lastIndexedAt: number | undefined;
 	private lastError: string | undefined;
 
@@ -55,6 +69,7 @@ export class ObsidianSkill implements DatasourceSkill {
 		this.pollingIntervalMs = options.pollingIntervalMs ?? DEFAULT_POLLING_INTERVAL_MS;
 		this.tags = options.tags ?? DEFAULT_OBSIDIAN_TAGS;
 		this.sparseOnly = isSparseOnlyEmbedder(options.minSync?.embedder);
+		this.workspaceRoot = options.workspaceRoot;
 		this.lastIndexedAt = options.lastIndexedAt;
 		this.vaultIndex = new ObsidianVaultIndex({
 			instanceId: this.instanceId,
@@ -137,6 +152,46 @@ export class ObsidianSkill implements DatasourceSkill {
 		return this.sparseOnly
 			? [new ObsidianSparseMethod(methodOptions)]
 			: [new ObsidianSparseMethod(methodOptions), new ObsidianSemanticMethod(methodOptions)];
+	}
+
+	/** Exact substring/regex grep over staged Obsidian vault markdown notes via ripgrep. */
+	async grep(pattern: string, options?: DatasourceGrepOptions): Promise<readonly DatasourceGrepHit[]> {
+		if (pattern.length === 0 || this.workspaceRoot === undefined) return [];
+		const filesDir = join(obsidianMinSyncWorkspace(this.workspaceRoot, this.instanceId), "files");
+		const matches = await grepDirectoryWithRipgrep({
+			rootDir: filesDir,
+			pattern,
+			literal: options?.literal,
+			ignoreCase: options?.ignoreCase,
+			context: options?.context,
+			limit: options?.limit,
+			maxPerFile: options?.maxPerSource,
+			skipDirs: [".minsync"],
+			signal: options?.signal,
+		});
+		if (matches.length === 0) return [];
+		const staged = loadStagingState(obsidianStagingStatePath(this.workspaceRoot, this.instanceId));
+		const hits: DatasourceGrepHit[] = [];
+		for (const match of matches) {
+			const relNfc = match.relPath.normalize("NFC");
+			const source = obsidianNoteSource(this.instanceId, relNfc);
+			if (!matchesDatasourceScope(source, options?.scope)) continue;
+			const entry = staged.entries[relNfc];
+			hits.push({
+				source,
+				content: match.snippet,
+				lineNumber: match.lineNumber,
+				lineEnd: match.lineEnd,
+				label: relNfc,
+				metadata: {
+					datasourceId: OBSIDIAN_DATASOURCE_ID,
+					instanceId: this.instanceId,
+					file: relNfc,
+					...(entry?.sourcePath !== undefined ? { path: entry.sourcePath } : {}),
+				},
+			});
+		}
+		return hits;
 	}
 
 	describeSources(): readonly SourceDescription[] {
