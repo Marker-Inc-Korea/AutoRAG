@@ -43,6 +43,7 @@ export {
 export {
 	createOcrVisualPageExtractor,
 	createVlmVisualPageExtractor,
+	type LocalOcrEngine,
 	type OcrVisualPageExtractorOptions,
 	type VisualExtractInput,
 	type VisualExtractorKind,

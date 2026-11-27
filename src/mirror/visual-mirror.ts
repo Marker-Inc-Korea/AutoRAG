@@ -464,7 +464,8 @@ export async function syncVisualMirrorForFile(input: {
 		readonly probability: number;
 		readonly targetExtractor: VisualPageExtractor;
 	}): void => {
-		const limiter = args.targetExtractor.kind === "ocr" ? ocrLimiter : vlmLimiter;
+		const isLocalOcr = args.targetExtractor.kind === "ocr" && args.targetExtractor.remote !== true;
+		const limiter = isLocalOcr ? ocrLimiter : vlmLimiter;
 		const job = limiter.run(async () => {
 			if (input.signal?.aborted) throw abortReason(input.signal);
 			try {

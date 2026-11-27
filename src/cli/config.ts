@@ -185,9 +185,22 @@ export interface VisualParseExtractorCliConfig {
 	kind: "vlm" | "ocr";
 	/** Vision chat model reference (required when `kind` is `"vlm"`). */
 	model?: AgentModelConfig;
+	/** Local OCR engine when `kind` is `"ocr"` (`"auto"` | `"kordoc"` | `"tesseract"`). */
+	engine?: "auto" | "kordoc" | "tesseract";
 	/** Document languages for `"ocr"` extraction; inherits global `languages` when omitted. */
 	languages?: LanguageTag[];
 	/** Per-page extraction timeout in milliseconds. */
+	timeoutMs?: number;
+}
+
+export interface VisualParseOcrCliConfig {
+	/** `"auto"` (PP-OCRv5 for ko/en else Tesseract), `"kordoc"` (PP-OCRv5), `"tesseract"`, or `"vlm"` (remote OCR model). */
+	engine?: "auto" | "kordoc" | "tesseract" | "vlm";
+	/** Remote vision/OCR model reference when `engine` is `"vlm"`. */
+	model?: AgentModelConfig;
+	/** Document languages for local OCR; inherits global `languages` when omitted. */
+	languages?: LanguageTag[];
+	/** Per-page OCR timeout in milliseconds. */
 	timeoutMs?: number;
 }
 
@@ -199,6 +212,8 @@ export interface VisualParseCliConfig {
 	/** Optional gate override (defaults to the single configured `jev` decision model). */
 	gate?: VisualParseGateCliConfig;
 	extractor?: VisualParseExtractorCliConfig;
+	/** Independent OCR configuration for `ocr`-routed pages (local engine, remote OCR model, or `false` to disable). */
+	ocr?: VisualParseOcrCliConfig | false;
 	/** Cap on pages inspected per document (default 50). */
 	maxPagesPerFile?: number;
 	/** Maximum width in pixels for rendered pages (default 1024). */
@@ -1600,6 +1615,7 @@ const VISUAL_PARSE_FIELDS: Readonly<Record<string, true>> = {
 	threshold: true,
 	gate: true,
 	extractor: true,
+	ocr: true,
 	maxPagesPerFile: true,
 	maxWidthPx: true,
 	concurrency: true,
@@ -1617,8 +1633,27 @@ const VISUAL_PARSE_GATE_FIELDS: Readonly<Record<string, true>> = {
 const VISUAL_PARSE_EXTRACTOR_FIELDS: Readonly<Record<string, true>> = {
 	kind: true,
 	model: true,
+	engine: true,
 	languages: true,
 	timeoutMs: true,
+};
+
+const VISUAL_PARSE_OCR_FIELDS: Readonly<Record<string, true>> = {
+	engine: true,
+	model: true,
+	languages: true,
+	timeoutMs: true,
+};
+
+const VISUAL_PARSE_LOCAL_OCR_ENGINES: Readonly<Record<string, true>> = {
+	auto: true,
+	kordoc: true,
+	tesseract: true,
+};
+
+const VISUAL_PARSE_OCR_ENGINES: Readonly<Record<string, true>> = {
+	...VISUAL_PARSE_LOCAL_OCR_ENGINES,
+	vlm: true,
 };
 
 export function normalizeVisualParseConfig(raw: unknown, path = "visualParse"): VisualParseCliConfig | false {
@@ -1707,6 +1742,12 @@ export function normalizeVisualParseConfig(raw: unknown, path = "visualParse"): 
 		if (extractor.kind === "vlm" && extractor.model === undefined && out.enabled !== false) {
 			throw new ConfigError(`${path}.extractor.model is required when ${path}.extractor.kind is "vlm"`);
 		}
+		if (extRecord.engine !== undefined) {
+			if (typeof extRecord.engine !== "string" || VISUAL_PARSE_LOCAL_OCR_ENGINES[extRecord.engine] !== true) {
+				throw new ConfigError(`${path}.extractor.engine must be "auto", "kordoc", or "tesseract"`);
+			}
+			extractor.engine = extRecord.engine as VisualParseExtractorCliConfig["engine"];
+		}
 		if (extRecord.languages !== undefined) {
 			extractor.languages = normalizeConfigLanguages(extRecord.languages);
 		}
@@ -1721,6 +1762,49 @@ export function normalizeVisualParseConfig(raw: unknown, path = "visualParse"): 
 			extractor.timeoutMs = extRecord.timeoutMs;
 		}
 		out.extractor = extractor;
+	}
+	if (record.ocr !== undefined) {
+		if (record.ocr === false) {
+			out.ocr = false;
+		} else {
+			if (typeof record.ocr !== "object" || record.ocr === null || Array.isArray(record.ocr)) {
+				throw new ConfigError(`${path}.ocr must be false or an object`);
+			}
+			const ocrRecord = record.ocr as Record<string, unknown>;
+			for (const key of Object.keys(ocrRecord)) {
+				if (VISUAL_PARSE_OCR_FIELDS[key] !== true) {
+					throw new ConfigError(`Unknown field '${path}.ocr.${key}'`);
+				}
+			}
+			const ocr: VisualParseOcrCliConfig = {};
+			if (ocrRecord.engine !== undefined) {
+				if (typeof ocrRecord.engine !== "string" || VISUAL_PARSE_OCR_ENGINES[ocrRecord.engine] !== true) {
+					throw new ConfigError(`${path}.ocr.engine must be "auto", "kordoc", "tesseract", or "vlm"`);
+				}
+				ocr.engine = ocrRecord.engine as VisualParseOcrCliConfig["engine"];
+			}
+			if (ocrRecord.model !== undefined) {
+				const parsedModel = modelReference(ocrRecord.model, `${path}.ocr.model`);
+				if (parsedModel !== undefined) ocr.model = parsedModel;
+			}
+			if (ocr.engine === "vlm" && ocr.model === undefined && out.enabled !== false) {
+				throw new ConfigError(`${path}.ocr.model is required when ${path}.ocr.engine is "vlm"`);
+			}
+			if (ocrRecord.languages !== undefined) {
+				ocr.languages = normalizeConfigLanguages(ocrRecord.languages);
+			}
+			if (ocrRecord.timeoutMs !== undefined) {
+				if (
+					typeof ocrRecord.timeoutMs !== "number" ||
+					!Number.isInteger(ocrRecord.timeoutMs) ||
+					ocrRecord.timeoutMs <= 0
+				) {
+					throw new ConfigError(`${path}.ocr.timeoutMs must be a positive integer`);
+				}
+				ocr.timeoutMs = ocrRecord.timeoutMs;
+			}
+			out.ocr = ocr;
+		}
 	}
 	for (const field of [
 		"maxPagesPerFile",
@@ -1797,6 +1881,7 @@ export function buildAgentOptions(config: CliConfig, agentDir?: string): Omit<Au
 						...(config.visualParse.threshold !== undefined ? { threshold: config.visualParse.threshold } : {}),
 						...(config.visualParse.gate !== undefined ? { gate: config.visualParse.gate } : {}),
 						...(config.visualParse.extractor !== undefined ? { extractor: config.visualParse.extractor } : {}),
+						...(config.visualParse.ocr !== undefined ? { ocr: config.visualParse.ocr } : {}),
 						...(config.visualParse.maxPagesPerFile !== undefined
 							? { maxPagesPerFile: config.visualParse.maxPagesPerFile }
 							: {}),

@@ -173,4 +173,55 @@ describe("visual page extractors (VLM & OCR)", () => {
 		expect(extractor.fingerprint).toContain("ocr");
 		expect(ocrProvider).toHaveBeenCalledTimes(1);
 	});
+
+	it("supports remote vision-model OCR mode (`mode: 'ocr'`) and local engine selection (`kordoc` vs `tesseract` vs `auto`)", async () => {
+		const complete = vi.fn(
+			async (model: Model<Api>, context: { systemPrompt?: string }): Promise<AssistantMessage> => {
+				expect(context.systemPrompt).toContain("document OCR engine");
+				return {
+					role: "assistant",
+					content: [{ type: "text", text: "Handwritten memo: Call Kim at 3pm" }],
+					api: model.api,
+					provider: model.provider,
+					model: model.id,
+					usage: {
+						input: 300,
+						output: 15,
+						cacheRead: 0,
+						cacheWrite: 0,
+						totalTokens: 315,
+						cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+					},
+					stopReason: "stop",
+					timestamp: Date.now(),
+				};
+			},
+		);
+
+		const remoteOcr = createVlmVisualPageExtractor({
+			model: fakeVisionChatModel(),
+			mode: "ocr",
+			apiKey: "test-key",
+			complete,
+		});
+		expect(remoteOcr.kind).toBe("ocr");
+		expect(remoteOcr.remote).toBe(true);
+		expect(remoteOcr.fingerprint).toContain("ocr:v1-ocr:");
+		const out = await remoteOcr.extract({
+			virtualPath: "/docs/handwriting.pdf",
+			page: 1,
+			image: { data: samplePng, mimeType: "image/png" },
+		});
+		expect(out.extractorKind).toBe("ocr");
+		expect(out.markdown).toBe("Handwritten memo: Call Kim at 3pm");
+
+		const autoKoEn = createOcrVisualPageExtractor({ engine: "auto", languages: ["ko", "en"] });
+		expect(autoKoEn.modelId).toBe("kordoc:pp-ocrv5:en+ko");
+		const autoJa = createOcrVisualPageExtractor({ engine: "auto", languages: ["ja", "en"] });
+		expect(autoJa.modelId).toBe("tesseract:en+ja");
+		const forcedTesseract = createOcrVisualPageExtractor({ engine: "tesseract", languages: ["ko", "en"] });
+		expect(forcedTesseract.modelId).toBe("tesseract:en+ko");
+		const forcedKordoc = createOcrVisualPageExtractor({ engine: "kordoc", languages: ["ko", "en"] });
+		expect(forcedKordoc.modelId).toBe("kordoc:pp-ocrv5:en+ko");
+	});
 });

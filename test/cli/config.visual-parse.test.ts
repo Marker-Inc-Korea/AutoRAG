@@ -75,6 +75,41 @@ describe("visualParse CLI config", () => {
 		});
 	});
 
+	it("normalizes independent visualParse.ocr settings (local engines, remote VLM OCR model, and false)", () => {
+		const remoteOcr = normalizeVisualParseConfig({
+			enabled: true,
+			extractor: {
+				kind: "vlm",
+				model: { provider: "openrouter", id: "google/gemini-3.5-flash-lite" },
+			},
+			ocr: {
+				engine: "vlm",
+				model: { provider: "openrouter", id: "qwen/qwen3-vl-8b-instruct", name: "Qwen3 VL 8B" },
+			},
+		});
+		expect(remoteOcr).toEqual({
+			enabled: true,
+			extractor: {
+				kind: "vlm",
+				model: { provider: "openrouter", id: "google/gemini-3.5-flash-lite" },
+			},
+			ocr: {
+				engine: "vlm",
+				model: { provider: "openrouter", id: "qwen/qwen3-vl-8b-instruct", name: "Qwen3 VL 8B" },
+			},
+		});
+		expect(normalizeVisualParseConfig({ enabled: true, ocr: { engine: "kordoc" } })).toEqual({
+			enabled: true,
+			ocr: { engine: "kordoc" },
+		});
+		expect(normalizeVisualParseConfig({ enabled: true, ocr: false })).toEqual({
+			enabled: true,
+			ocr: false,
+		});
+		expect(() => normalizeVisualParseConfig({ enabled: true, ocr: { engine: "vlm" } })).toThrow(ConfigError);
+		expect(() => normalizeVisualParseConfig({ enabled: true, ocr: { engine: "magic" } })).toThrow(ConfigError);
+	});
+
 	it("accepts false and disabled objects", () => {
 		expect(normalizeVisualParseConfig(false)).toBe(false);
 		expect(normalizeVisualParseConfig({ enabled: false })).toEqual({ enabled: false });

@@ -1,12 +1,14 @@
 import { basename } from "node:path";
 import type { Api, AssistantMessage, Context, Model } from "@earendil-works/pi-ai";
 import { completeSimple } from "@earendil-works/pi-ai/compat";
+import { parse as kordocParse } from "kordoc";
 import { DEFAULT_LANGUAGES, type LanguageTag } from "../language.ts";
-import { createTesseractOcrProvider, type OcrProvider } from "./ocr-engines.ts";
+import { BUILTIN_OCR_LANGUAGES, createTesseractOcrProvider, type OcrProvider } from "./ocr-engines.ts";
 import type { VisualImageMimeType } from "./page-render.ts";
 import { normalizeMarkdown } from "./text.ts";
 
 export type VisualExtractorKind = "vlm" | "ocr";
+export type LocalOcrEngine = "auto" | "kordoc" | "tesseract";
 
 export interface VisualExtractInput {
 	readonly virtualPath: string;
@@ -27,18 +29,30 @@ export interface VisualExtractResult {
 export interface VisualPageExtractor {
 	readonly kind: VisualExtractorKind;
 	readonly modelId: string;
+	/** True when this extractor calls a remote API (so it runs in the high-concurrency HTTP lane rather than local CPU OCR lane). */
+	readonly remote?: boolean;
 	/** Stable identity for incremental caching; changes trigger re-extraction of visually rich pages. */
 	readonly fingerprint: string;
 	extract(input: VisualExtractInput): Promise<VisualExtractResult>;
 }
 
 const VLM_PROMPT_VERSION = "v3-focused";
+const REMOTE_OCR_PROMPT_VERSION = "v1-ocr";
 const OCR_PROMPT_VERSION = "v1";
 const DEFAULT_VLM_TIMEOUT_MS = 60_000;
 const DEFAULT_VLM_MAX_TOKENS = 4_096;
 const DEFAULT_VLM_MAX_RETRIES = 2;
 const DEFAULT_VLM_RETRY_BASE_MS = 750;
 const MAX_CONTEXT_TEXT_CHARS = 3_000;
+
+const REMOTE_OCR_SYSTEM_PROMPT = [
+	"You are a precision document OCR engine building a searchable Markdown transcript for a scanned, handwritten, or text-missing page.",
+	"Transcribe ALL visible text on this page faithfully in reading order:",
+	"- Preserve headings, paragraphs, bullet lists, form labels/values, stamps, headers/footers, and simple tables as clean Markdown.",
+	"- Preserve the original language (e.g., Korean, English, Japanese) and exact numbers, dates, codes, amounts, names, and punctuation.",
+	"- If handwriting or low-contrast text is partially legible, transcribe what is visible without inventing missing words.",
+	"- Do NOT summarize, interpret, or add commentary; output clean Markdown text only without wrapping code fences.",
+].join("\n");
 
 const VLM_SYSTEM_PROMPT = [
 	"You are a precision document visual parser building a supplementary Markdown mirror for a retrieval system.",
@@ -67,6 +81,8 @@ export interface VlmVisualPageExtractorOptions {
 	readonly apiKey?: string;
 	readonly timeoutMs?: number;
 	readonly maxTokens?: number;
+	/** `"vlm"` for visually rich charts/diagrams (default), or `"ocr"` for remote vision-model OCR transcription. */
+	readonly mode?: VisualExtractorKind;
 	/** Transient 429 / 5xx / timeout retry count per page call (default 2). */
 	readonly maxRetries?: number;
 	/** Initial backoff in ms before retrying a rate-limited/transient VLM call (default 750ms). */
@@ -156,6 +172,9 @@ export function createVlmVisualPageExtractor(options: VlmVisualPageExtractorOpti
 		);
 	}
 	const modelId = `${model.provider}/${model.id}`;
+	const mode: VisualExtractorKind = options.mode ?? "vlm";
+	const systemPrompt = mode === "ocr" ? REMOTE_OCR_SYSTEM_PROMPT : VLM_SYSTEM_PROMPT;
+	const promptVersion = mode === "ocr" ? REMOTE_OCR_PROMPT_VERSION : VLM_PROMPT_VERSION;
 	const timeoutMs = options.timeoutMs ?? DEFAULT_VLM_TIMEOUT_MS;
 	const maxTokens = options.maxTokens ?? DEFAULT_VLM_MAX_TOKENS;
 	const maxRetries = Math.max(0, Math.floor(options.maxRetries ?? DEFAULT_VLM_MAX_RETRIES));
@@ -171,16 +190,20 @@ export function createVlmVisualPageExtractor(options: VlmVisualPageExtractorOpti
 			}));
 
 	return {
-		kind: "vlm",
+		kind: mode,
 		modelId,
-		fingerprint: `vlm:${VLM_PROMPT_VERSION}:${modelId}`,
+		remote: true,
+		fingerprint: `${mode}:${promptVersion}:${modelId}`,
 		async extract(input: VisualExtractInput): Promise<VisualExtractResult> {
 			const base64 = Buffer.from(
 				input.image.data.buffer,
 				input.image.data.byteOffset,
 				input.image.data.byteLength,
 			).toString("base64");
-			const userText = buildVlmUserText(input);
+			const userText =
+				mode === "ocr"
+					? `Document: ${basename(input.virtualPath)} (Page ${input.page})\nTranscribe all visible text, handwriting, form fields, and tables on this page into accurate Markdown.`
+					: buildVlmUserText(input);
 			for (let attempt = 0; ; attempt += 1) {
 				if (input.signal?.aborted) throw input.signal.reason ?? new Error("Aborted");
 				const controller = new AbortController();
@@ -194,7 +217,7 @@ export function createVlmVisualPageExtractor(options: VlmVisualPageExtractorOpti
 					const response = await complete(
 						model,
 						{
-							systemPrompt: VLM_SYSTEM_PROMPT,
+							systemPrompt,
 							messages: [
 								{
 									role: "user",
@@ -214,7 +237,7 @@ export function createVlmVisualPageExtractor(options: VlmVisualPageExtractorOpti
 					);
 					return {
 						markdown: cleanExtractedMarkdown(extractAssistantText(response)),
-						extractorKind: "vlm",
+						extractorKind: mode,
 						extractorModel: modelId,
 					};
 				} catch (error) {
@@ -233,6 +256,8 @@ export function createVlmVisualPageExtractor(options: VlmVisualPageExtractorOpti
 }
 
 export interface OcrVisualPageExtractorOptions {
+	/** Local OCR engine: `"auto"` (PP-OCRv5 for ko/en, Tesseract otherwise), `"kordoc"` (PP-OCRv5), or `"tesseract"`. */
+	readonly engine?: LocalOcrEngine;
 	readonly languages?: readonly LanguageTag[];
 	readonly timeoutMs?: number;
 	readonly cachePath?: string;
@@ -240,22 +265,53 @@ export interface OcrVisualPageExtractorOptions {
 	readonly ocrProvider?: OcrProvider;
 }
 
-/** Create a local OCR-backed visual page extractor (Tesseract by default, or an injected OCR engine). */
+function createKordocBuiltinOcrProvider(): OcrProvider {
+	return async (pageImage) => {
+		const buf = Buffer.from(pageImage.buffer, pageImage.byteOffset, pageImage.byteLength);
+		const result = await kordocParse(buf, { ocr: true });
+		if (!result.success) {
+			throw new Error(result.error || "kordoc built-in PP-OCRv5 failed");
+		}
+		return result.markdown;
+	};
+}
+
+/**
+ * Create a local OCR-backed visual page extractor.
+ * - `engine: "auto"` (default when omitted in runtime) uses kordoc's built-in PP-OCRv5 when all languages are Korean/English,
+ *   and Tesseract otherwise.
+ * - `engine: "kordoc"` forces kordoc's built-in PP-OCRv5.
+ * - `engine: "tesseract"` forces local Tesseract (`tesseract.js`).
+ */
 export function createOcrVisualPageExtractor(options: OcrVisualPageExtractorOptions = {}): VisualPageExtractor {
 	const languages = options.languages && options.languages.length > 0 ? options.languages : DEFAULT_LANGUAGES;
 	const langKey = [...new Set(languages)].sort().join("+");
-	const modelId = `tesseract:${langKey}`;
+	const requestedEngine: LocalOcrEngine = options.engine ?? (options.ocrProvider !== undefined ? "tesseract" : "auto");
+	const resolvedEngine: "kordoc" | "tesseract" =
+		options.ocrProvider !== undefined
+			? "tesseract"
+			: requestedEngine === "kordoc"
+				? "kordoc"
+				: requestedEngine === "tesseract"
+					? "tesseract"
+					: languages.every((language) => BUILTIN_OCR_LANGUAGES.has(language))
+						? "kordoc"
+						: "tesseract";
+	const modelId = resolvedEngine === "kordoc" ? `kordoc:pp-ocrv5:${langKey}` : `tesseract:${langKey}`;
 	const provider =
 		options.ocrProvider ??
-		createTesseractOcrProvider({
-			languages,
-			timeoutMs: options.timeoutMs,
-			cachePath: options.cachePath,
-		});
+		(resolvedEngine === "kordoc"
+			? createKordocBuiltinOcrProvider()
+			: createTesseractOcrProvider({
+					languages,
+					timeoutMs: options.timeoutMs,
+					cachePath: options.cachePath,
+				}));
 
 	return {
 		kind: "ocr",
 		modelId,
+		remote: false,
 		fingerprint: `ocr:${OCR_PROMPT_VERSION}:${modelId}`,
 		async extract(input: VisualExtractInput): Promise<VisualExtractResult> {
 			const raw = await provider(input.image.data, input.page, input.image.mimeType);

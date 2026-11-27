@@ -10,6 +10,7 @@ import { createDefaultPageRenderer, type PageRenderer } from "../parser/page-ren
 import {
 	createOcrVisualPageExtractor,
 	createVlmVisualPageExtractor,
+	type LocalOcrEngine,
 	type VisualExtractorKind,
 	type VisualPageExtractor,
 } from "../parser/visual-extractor.ts";
@@ -43,6 +44,17 @@ export interface VisualParseResolvedModel {
 export interface VisualParseExtractorAgentConfig {
 	readonly kind: VisualExtractorKind;
 	readonly model?: VisualParseExtractorModelRef | VisualParseResolvedModel;
+	readonly engine?: LocalOcrEngine;
+	readonly languages?: readonly LanguageTag[];
+	readonly timeoutMs?: number;
+	readonly cachePath?: string;
+}
+
+export interface VisualParseOcrAgentConfig {
+	/** `"auto"` (PP-OCRv5 for ko/en else Tesseract), `"kordoc"` (PP-OCRv5), `"tesseract"`, or `"vlm"` (remote OCR model). */
+	readonly engine?: LocalOcrEngine | "vlm";
+	/** Remote vision/OCR model reference when `engine === "vlm"` (or when a remote model is chosen). */
+	readonly model?: VisualParseExtractorModelRef | VisualParseResolvedModel;
 	readonly languages?: readonly LanguageTag[];
 	readonly timeoutMs?: number;
 	readonly cachePath?: string;
@@ -55,7 +67,9 @@ export interface VisualParseAgentOptions {
 	readonly threshold?: number;
 	readonly gate?: VisualParseGateAgentConfig | VisualPageGate;
 	readonly extractor?: VisualParseExtractorAgentConfig | VisualPageExtractor;
-	/** Optional dedicated OCR extractor seam when `extractor` is VLM (defaults to local Tesseract OCR). */
+	/** Independent OCR configuration for `ocr`-routed pages (local PP-OCRv5/Tesseract, remote OCR model, or `false` to disable OCR). */
+	readonly ocr?: VisualParseOcrAgentConfig | false;
+	/** Optional dedicated OCR extractor seam when `extractor` is VLM (defaults to local auto PP-OCRv5/Tesseract OCR). */
 	readonly ocrExtractor?: VisualPageExtractor;
 	readonly renderer?: PageRenderer;
 	readonly maxPagesPerFile?: number;
@@ -195,30 +209,54 @@ export async function resolveVisualParseSyncOptions(input: {
 				...(input.env !== undefined ? { env: input.env } : {}),
 			});
 
-	const defaultOcrExtractor = (): VisualPageExtractor =>
-		visualParse.ocrExtractor ??
-		createOcrVisualPageExtractor({
-			languages:
-				!isVisualPageExtractor(visualParse.extractor) && visualParse.extractor?.languages !== undefined
-					? visualParse.extractor.languages
-					: input.languages,
-			timeoutMs: !isVisualPageExtractor(visualParse.extractor) ? visualParse.extractor?.timeoutMs : undefined,
+	const resolveOcrConfig = async (
+		ocrConfig: VisualParseOcrAgentConfig | false | undefined,
+		fallbackExtractorConfig: VisualParseExtractorAgentConfig | undefined,
+	): Promise<VisualPageExtractor | undefined> => {
+		if (visualParse.ocrExtractor !== undefined) return visualParse.ocrExtractor;
+		if (ocrConfig === false) return undefined;
+		const engine =
+			ocrConfig?.engine ?? (ocrConfig?.model !== undefined ? "vlm" : (fallbackExtractorConfig?.engine ?? "auto"));
+		if (engine === "vlm") {
+			const modelSpec = ocrConfig?.model ?? fallbackExtractorConfig?.model;
+			if (modelSpec === undefined) {
+				throw new Error("visualParse.ocr.model is required when visualParse.ocr.engine is 'vlm'.");
+			}
+			const resolved = isResolvedModel(modelSpec)
+				? modelSpec
+				: await resolveVlmModelRef(modelSpec, agentDir, input.env);
+			return createVlmVisualPageExtractor({
+				model: resolved.model,
+				mode: "ocr",
+				...(resolved.apiKey !== undefined ? { apiKey: resolved.apiKey } : {}),
+				...(ocrConfig?.timeoutMs !== undefined ? { timeoutMs: ocrConfig.timeoutMs } : {}),
+			});
+		}
+		return createOcrVisualPageExtractor({
+			engine,
+			languages: ocrConfig?.languages ?? fallbackExtractorConfig?.languages ?? input.languages,
+			timeoutMs: ocrConfig?.timeoutMs ?? fallbackExtractorConfig?.timeoutMs,
 			cachePath:
-				(!isVisualPageExtractor(visualParse.extractor) ? visualParse.extractor?.cachePath : undefined) ??
-				tesseractCachePathFor(input.workspaceRoot),
+				ocrConfig?.cachePath ?? fallbackExtractorConfig?.cachePath ?? tesseractCachePathFor(input.workspaceRoot),
 		});
+	};
 
 	let vlmExtractor: VisualPageExtractor | undefined;
 	let ocrExtractor: VisualPageExtractor | undefined;
 	if (isVisualPageExtractor(visualParse.extractor)) {
 		if (visualParse.extractor.kind === "vlm") {
 			vlmExtractor = visualParse.extractor;
-			ocrExtractor = visualParse.ocrExtractor;
+			ocrExtractor =
+				visualParse.ocr !== undefined
+					? await resolveOcrConfig(visualParse.ocr, undefined)
+					: visualParse.ocrExtractor;
 		} else {
 			ocrExtractor = visualParse.extractor;
 		}
-	} else if (visualParse.extractor === undefined || visualParse.extractor.kind === "ocr") {
-		ocrExtractor = defaultOcrExtractor();
+	} else if (visualParse.extractor === undefined) {
+		ocrExtractor = await resolveOcrConfig(visualParse.ocr, undefined);
+	} else if (visualParse.extractor.kind === "ocr") {
+		ocrExtractor = await resolveOcrConfig(visualParse.ocr, visualParse.extractor);
 	} else {
 		if (visualParse.extractor.model === undefined) {
 			throw new Error("visualParse.extractor.model is required when visualParse.extractor.kind is 'vlm'.");
@@ -231,8 +269,11 @@ export async function resolveVisualParseSyncOptions(input: {
 			...(resolved.apiKey !== undefined ? { apiKey: resolved.apiKey } : {}),
 			...(visualParse.extractor.timeoutMs !== undefined ? { timeoutMs: visualParse.extractor.timeoutMs } : {}),
 		});
-		// When VLM mode is configured, scanned/handwritten/missing-text pages route to local OCR automatically.
-		ocrExtractor = defaultOcrExtractor();
+		// When VLM mode is configured, `ocr`-routed pages use the configured OCR engine/model (or local auto OCR unless `ocr: false`).
+		ocrExtractor = await resolveOcrConfig(visualParse.ocr, undefined);
+	}
+	if (vlmExtractor === undefined && ocrExtractor === undefined) {
+		return undefined;
 	}
 
 	const renderer =
