@@ -489,3 +489,8 @@ def test_the_generated_scripts_embed_values_as_data_not_code(helper, tmp_path):
     path.write_text(script, encoding="utf-8")
     run_script(path)
     assert not (tmp_path / "pwned").exists()
+
+
+def test_keep_env_includes_windows_runtime_variables(helper):
+    for key in ("USERPROFILE", "APPDATA", "LOCALAPPDATA", "SystemRoot", "COMSPEC", "PATHEXT"):
+        assert key in helper.KEEP_ENV

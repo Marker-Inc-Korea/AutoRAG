@@ -6,7 +6,7 @@
  * real MinSync index (dense + SPLADE), the real hosted Jev judge, a real OpenRouter reranker and a real 2026+ chat
  * model run every search. Training runs the shipped WASM XGBoost trainer, in process. To keep a live run
  * small, the log is seeded with `SEED_RUNS` replayed runs on top of the real searches (same record shape, written
- * through the real recorder), because a trainer needs ~100 runs and a real search costs several model calls.
+ * through the real recorder), because a trainer needs ~300 runs and a real search costs several model calls.
  *
  *   AUTORAG_LTR_LIVE=1 [AUTORAG_LTR_LIVE_MODEL=qwen/qwen3.7-flash] bun run vitest run test/live-e2e/ltr-serving.test.ts
  *

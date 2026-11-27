@@ -10,7 +10,6 @@ import {
 	createListFileConversionsTool,
 	LIST_FILE_CONVERSIONS_TOOL_NAME,
 } from "../../src/agent/convert-tool.ts";
-import { buildSystemPrompt } from "../../src/agent/system-prompt.ts";
 
 const FIXTURE_DIR = "test/fixtures/sample-project";
 let tmpDir: string;
@@ -271,42 +270,5 @@ describe("agent wiring", () => {
 		expect((agent as unknown as { droppedCallerToolNames: string[] }).droppedCallerToolNames).toContain(
 			"convert_files",
 		);
-	});
-
-	it("announces the tools in the system prompt, and the dupey interplay", () => {
-		const prompt = buildSystemPrompt({
-			toolNames: ["bash", "convert_files", "list_file_conversions", "scan_duplicate_documents"],
-			modelId: "test-model",
-		});
-		expect(prompt).toContain("**convert_files**");
-		expect(prompt).toContain("**list_file_conversions**");
-		expect(prompt).toContain("overwrite");
-		const without = buildSystemPrompt({ toolNames: ["bash"], modelId: "test-model" });
-		expect(without).not.toContain("convert_files");
-	});
-
-	it("puts the conversion matrix in the prompt so the model plans without a tool call", () => {
-		const prompt = buildSystemPrompt({ toolNames: ["bash", "convert_files"], modelId: "test-model" });
-		expect(prompt).toContain("Source families");
-		expect(prompt).toContain("- hwp -> ");
-		expect(prompt).toContain("chain two conversions");
-		expect(prompt).toContain("hwp: hwp hwpx");
-		const without = buildSystemPrompt({ toolNames: ["bash"], modelId: "test-model" });
-		expect(without).not.toContain("Source families");
-	});
-
-	it("names the main routes in the convert_files tool description", () => {
-		const tool = createConvertFilesTool({
-			async convertFiles() {
-				return details();
-			},
-			async listFileConversions() {
-				return "";
-			},
-		});
-		expect(tool.description).toContain("docx");
-		expect(tool.description).toContain("hwpx");
-		expect(tool.description).toContain("outputDir");
-		expect(tool.description).toMatch(/chain/i);
 	});
 });

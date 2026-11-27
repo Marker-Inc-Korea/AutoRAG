@@ -73,8 +73,8 @@ In the bot chat: `/start` (menu and pairing), `/new`, `/compact`, `/next`, `/con
 - The bot token and pairing live in `~/.pi/agent/telegram.json` (under `PI_CODING_AGENT_DIR` if set),
   never in AutoRAG config.
 - The prompt queue is per session. Anything waiting when the process exits is lost and not replayed.
-- A bridged `tui` defaults to `full` permission because there is no terminal dialog; an explicit
-  `--permission-mode`, `AUTORAG_PERMISSION_MODE`, or config value still wins.
+- A bridged `tui` defaults to `readonly` disk permissions; pass
+  `--permission-mode full`, `AUTORAG_PERMISSION_MODE=full`, or config `"permissionMode": "full"` to allow writes.
 - `autorag search` (print/JSON modes) never polls Telegram.
 
 ## Keeping it running

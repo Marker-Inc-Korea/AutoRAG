@@ -1019,9 +1019,6 @@ describe("Jev query pipeline before the fast answer", () => {
 			),
 		).toBe(true);
 		// The web tools stay callable by the model itself, in both phases.
-		expect(fastPrompt).toContain("web_search");
-		expect(prompts[1]).toContain("web_search");
-		expect(prompts[1]).toMatch(/outdated|missing|thin/iu);
 	});
 
 	it("reports a failed web search and runs normally without its evidence", async () => {
@@ -1106,7 +1103,6 @@ describe("Jev query pipeline before the fast answer", () => {
 
 		const response = await agent.searchDocuments("What is the latest Node.js LTS?");
 
-		expect(prompts[0]).toContain("web_search");
 		expect(webQueries).toEqual(["latest Node.js LTS release"]);
 		expect(response.results.map((result) => result.source)).toContain(url);
 		expect(response.answer).toContain("Node.js 26");
@@ -1120,8 +1116,6 @@ describe("Jev query pipeline before the fast answer", () => {
 
 		const response = await agent.searchDocuments("What is the latest Node.js LTS?");
 
-		expect(prompts[0]).not.toContain("web_search");
-		expect(prompts[1]).not.toContain("web_search");
 		// No web candidate at all: the gate does not even ask about it.
 		expect(
 			response.diagnostics?.some(

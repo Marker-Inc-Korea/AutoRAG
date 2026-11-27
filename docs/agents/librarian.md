@@ -28,14 +28,14 @@ autorag search "What are our primary Q3 deliverables?"
 | `--scope <scope>` | Narrow retrieval to an opaque virtual-path scope. |
 | `--fast-thinking <lvl>` | Thinking level for the fast first answer. |
 | `--final-thinking <lvl>` | Thinking level for the verified final answer. |
-| `--permission-mode <m>` | Approval gate for file changes: `full` (the default for `search`), `auto`, or `ask`. See [Permission modes](permissions.md). |
+| `--permission-mode <m>` | Disk permission mode: `readonly` (default; OS-level read-only) or `full`. See [Permission modes](permissions.md). |
 
 Thinking levels are `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`. The two phases
 default to `minimal` (fast) and `high` (verification). Global flags such as `--json`, `--debug`,
 `--config`, `--search-paths`, `--workspace`, and `--model-provider` are accepted by every command;
 see [Global flags](../reference/cli.md#global-flags).
 
-`autorag search` has no terminal to ask on, so it defaults to `full` permission. An explicit
+`autorag search` defaults to `readonly` so unattended runs cannot modify files on disk. An explicit
 `--permission-mode`, `AUTORAG_PERMISSION_MODE`, or config value still wins.
 
 ### Exit codes
@@ -121,7 +121,9 @@ are not registered.
 
 | Tool | Arguments | Purpose |
 | --- | --- | --- |
-| `bash` | `command` | Filesystem discovery and document reading with real paths (`ls`, `find`, `grep`, `cat`); in local sessions it also performs user-requested file organization. |
+| `bash` | `command` | Filesystem discovery and document reading with real paths (`ls`, `find`, `cat`); in local sessions it also performs user-requested file organization. Recursive `grep`/`rg` over a whole search root belongs to the `grep` tool below, not `bash`. |
+| `grep` | `pattern`, `path?`, `glob?`, `ignoreCase?`, `literal?`, `context?`, `limit?` | Exact-string and regex search. Inside the configured search folders it searches the [parsed markdown mirrors](#parsed-mirror-grep-and-read) instead of the originals, so PDF, HWP/HWPX, DOCX, XLSX, PPTX and EML are searchable; elsewhere it is Pi's plain `grep`. |
+| `read` | `path`, `offset?`, `limit?` | Read a file. For parsed document formats (and anything under a cloud folder) inside the search folders it reads the parsed markdown mirror; everything else is Pi's plain `read`. |
 | `write` | `path`, `content` | Create or save a file in a local session. |
 | `edit` | `path`, old/new text | Update or replace an existing file in a local session. |
 | `search_all_documents` | `query`, `topK?`, `scope?`, `since?`, `until?` | Fan out across every configured retrieval method and merge/rank candidates. |
@@ -178,6 +180,34 @@ the returned path. Datasource retrieval sources use slash-prefixed virtual ident
 `/kakao/...`, `/mailcrawl/...`, `/slack/...`, `/discord/...`, and `/github/...`; they are not OS
 paths and must never be passed to `cd`, `cat`, or other filesystem tools — search them through the
 connection's `search_datasource_<id>` tool.
+
+### Parsed-mirror `grep` and `read`
+
+`refresh` already turns every supported document into a markdown mirror under
+`<workspace>/.autorag/minsync/files/`, one file per original at the same relative path plus `.md`.
+`grep` and `read` use those mirrors when they are given a path inside a configured search folder (or
+no path for `grep`):
+
+- **Binary formats are searchable.** A plain `grep` over the originals finds nothing inside a PDF,
+  HWP, DOCX, XLSX or PPTX. The mirror is text, so an exact identifier, error code, amount or clause
+  number is found in milliseconds. SPLADE retrieval is weaker on exact strings than the old BM25
+  index; this is the tool for them.
+- **Results name the original.** Every hit carries the original absolute path, an `[eN]` evidence id
+  the answer can cite, the parsed line number (`L#`), and the page and section when the parser
+  measured them. The mirror path never reaches the model. A glob such as `*.pdf` is rewritten to
+  match the mirror's `*.pdf.md` name.
+- **`read` continues where `grep` stopped.** `read` on the original path with `offset=L#` returns
+  the same parsed lines, with the page/section header. Line numbers are parsed-markdown lines, not
+  lines of the original file.
+- **No cloud downloads.** The mirror is a local file, so neither tool hydrates an online-only
+  placeholder. `read` serves the mirror for any file inside a cloud folder.
+- **Never stale without saying so.** A plain-text file edited after the last refresh is searched and
+  read from disk; for a document format whose original is newer than its mirror, the result says
+  the source changed since the last refresh.
+- **Falls back to Pi.** A path outside the search folders, or a file with no mirror yet, goes to
+  Pi's own `grep`/`read`. When `rg` is not installed the search runs in-process instead.
+
+Like every query path, this only reads what `refresh` built: it never parses or indexes.
 
 The librarian may organize, create, and modify local files with `bash`/`write`/`edit` when the user
 asks, but never performs permanent, unrecoverable deletion: files are moved to the OS trash instead.

@@ -226,18 +226,18 @@ describe("runSearch", () => {
 		expect(JSON.parse(stdout[0]).answer).toBe("[1] answer");
 	});
 
-	it("runs ungated by default, since nobody is there to approve, and honours an explicit mode", async () => {
+	it("defaults to readonly permission mode and honours an explicit override", async () => {
 		const modes: unknown[] = [];
 		const factory = (options: { permissionMode?: unknown }) => {
 			modes.push(options.permissionMode);
 			return completeStream();
 		};
 		await runSearch(context(["query"]).ctx, { modelResolver: () => ({ model: model() }), agentFactory: factory });
-		await runSearch(context(["query"], { "permission-mode": "ask" }).ctx, {
+		await runSearch(context(["query"], { "permission-mode": "full" }).ctx, {
 			modelResolver: () => ({ model: model() }),
 			agentFactory: factory,
 		});
-		expect(modes).toEqual(["full", "ask"]);
+		expect(modes).toEqual(["readonly", "full"]);
 	});
 
 	it("forwards retrieval options", async () => {

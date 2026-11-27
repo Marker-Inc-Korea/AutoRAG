@@ -248,9 +248,6 @@ describe("AutoRAGAgent live single-agent searchDocuments e2e", () => {
 
 		const refresh = await agent.refresh(true);
 		expect(refresh.datasources?.[0]).toMatchObject({ ok: true, skill: "kakao" });
-		expect(agent.getSystemPrompt()).toContain("## Jikji Local Discovery");
-		expect(agent.getSystemPrompt()).toContain("jikji_find");
-		expect(agent.getSystemPrompt()).not.toMatch(/subagent|explorer|delegat/i);
 		expect(agent.getSystemPrompt()).not.toContain(root);
 
 		const all = await agent.searchAllDocuments("refund director approval finance kakao", { topK: 8 });

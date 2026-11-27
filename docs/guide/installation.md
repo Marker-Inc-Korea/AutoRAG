@@ -5,7 +5,7 @@ description: "Install the AutoRAG CLI, meet its prerequisites, verify the setup 
 
 # Installation
 
-AutoRAG Agent ships as the npm package `@autorag/librarian`, which installs two executables: `autorag` (the CLI) and `autorag-mcp` (the model-free MCP server). This page covers prerequisites, installation, verification, platform notes, and updates.
+AutoRAG Agent ships as the npm package `@autorag/librarian` for **macOS, Linux, and Windows**, installing two executables: `autorag` (the CLI) and `autorag-mcp` (the model-free MCP server). This page covers prerequisites, installation, verification, platform notes, and updates.
 
 The fastest path is to hand a prompt to your coding agent: see [Agent skills](../agents/skills.md) for the `autorag-setup` and `autorag-lite-setup` skills, which install, configure, and verify AutoRAG for you.
 
@@ -13,6 +13,7 @@ The fastest path is to hand a prompt to your coding agent: see [Agent skills](..
 
 | Requirement | Version | Notes |
 |---|---|---|
+| Operating system | macOS, Linux, Windows | Official support across the CLI, TUI, MCP server, and agent integrations. |
 | Node.js | `>=24.0.0` | The package's `engines` field requires Node 24. |
 | Bun | `>=1.2` | Optional; Bun can install and run the CLI instead of Node. |
 | Rust toolchain | optional | Only needed to auto-install Jikji from crates.io; without it, `jikji-unavailable` and Jikji discovery is skipped. |

@@ -1,7 +1,7 @@
 /**
  * What `filee-cli` can convert, grouped so the model can plan any conversion
  * without a tool call. Generated from `filee-cli formats <format>` for every
- * source format (v2.0.0); `test/live-e2e/filee-matrix.test.ts` re-checks every
+ * source format (v2.5.0); `test/live-e2e/filee-matrix.test.ts` re-checks every
  * claim against the real binary, so a Filee upgrade that changes a route fails
  * there instead of silently misleading the model.
  *
@@ -48,10 +48,16 @@ export const SOURCE_FAMILIES: Readonly<Record<string, readonly string[]>> = {
 		"exr",
 		"hdr",
 		"xcf",
+		"pdn",
+		"vtf",
+		"kra",
+		"ani",
+		"fits",
+		"exe",
 		"raw",
 		"livp",
 	],
-	vector: ["svg", "svgz", "eps", "ps", "emf", "wmf", "odg", "ai", "cdr", "cgm", "vsd", "fodg"],
+	vector: ["svg", "svgz", "eps", "ps", "emf", "wmf", "odg", "ai", "cdr", "cgm", "vsd", "fodg", "canvas"],
 	word: [
 		"docx",
 		"docm",
@@ -123,8 +129,8 @@ export const SOURCE_FAMILIES: Readonly<Record<string, readonly string[]>> = {
 		"snb",
 		"tcr",
 	],
-	data: ["json", "jsonl", "yaml", "toml", "xml", "vcf"],
-	geo: ["geojson", "kml", "kmz", "gpx", "shp"],
+	data: ["json", "jsonl", "yaml", "toml", "xml", "vcf", "ics", "har", "plist"],
+	geo: ["geojson", "kml", "kmz", "gpx", "shp", "fit", "osm"],
 	video: [
 		"mp4",
 		"m4v",
@@ -148,6 +154,14 @@ export const SOURCE_FAMILIES: Readonly<Record<string, readonly string[]>> = {
 		"swf",
 		"wtv",
 		"cavs",
+		"bik",
+		"dav",
+		"flc",
+		"h264",
+		"h265",
+		"m4s",
+		"nov",
+		"usm",
 	],
 	audio: [
 		"mp3",
@@ -180,9 +194,14 @@ export const SOURCE_FAMILIES: Readonly<Record<string, readonly string[]>> = {
 		"dff",
 		"dts",
 		"spx",
+		"m4r",
+		"qta",
+		"xm",
+		"it",
+		"s3m",
 	],
 	model3d: ["glb", "gltf", "stl", "obj", "3mf", "ply", "fbx"],
-	cad: ["dwg", "dxf"],
+	cad: ["dwg", "dxf", "gcode"],
 	email: ["eml", "msg"],
 	archive: [
 		"zip",
@@ -206,10 +225,21 @@ export const SOURCE_FAMILIES: Readonly<Record<string, readonly string[]>> = {
 		"arj",
 		"alz",
 		"egg",
+		"rpm",
+		"split",
+		"nupkg",
+		"apks",
+		"aab",
+		"zxp",
+		"mcpack",
+		"mcworld",
+		"mcaddon",
+		"mctemplate",
+		"mrpack",
 	],
 	compress: ["gz", "bz2", "xz", "lz", "lzma", "z"],
-	font: ["ttf", "otf", "woff", "woff2", "eot"],
-	subtitle: ["srt", "ass", "vtt", "smi", "lrc", "ttml", "sub", "ssa", "scc"],
+	font: ["ttf", "otf", "woff", "woff2", "eot", "fon"],
+	subtitle: ["srt", "ass", "vtt", "smi", "lrc", "ttml", "sub", "ssa", "scc", "krc"],
 };
 
 export const TARGET_GROUPS: Readonly<Record<string, readonly string[]>> = {
@@ -244,6 +274,7 @@ export const TARGET_GROUPS: Readonly<Record<string, readonly string[]>> = {
 		"miff",
 	],
 	"heic-icns": ["heic", "icns"],
+	"image-layered": ["xcf", "pdn", "vtf"],
 	vector: ["svg", "svgz", "eps", "ps", "emf", "wmf", "odg"],
 	"vector-core": ["svg", "eps", "ps", "odg"],
 	word: ["docx", "docm", "dotx", "dotm", "odt", "rtf", "doc", "fodt", "ott"],
@@ -285,7 +316,7 @@ export const TARGET_GROUPS: Readonly<Record<string, readonly string[]>> = {
 		"tcr",
 	],
 	"ebook-core": ["epub", "fb2", "cbz", "htmlz", "txtz"],
-	data: ["json", "jsonl", "yaml", "toml", "xml", "vcf"],
+	data: ["json", "jsonl", "yaml", "toml", "xml", "vcf", "ics"],
 	geo: ["geojson", "kml", "kmz", "gpx", "shp"],
 	video: [
 		"mp4",
@@ -330,6 +361,7 @@ export const TARGET_GROUPS: Readonly<Record<string, readonly string[]>> = {
 		"tta",
 		"w64",
 		"eac3",
+		"m4r",
 	],
 	model3d: ["glb", "gltf", "stl", "obj", "3mf", "ply"],
 	cad: ["dwg", "dxf"],
@@ -343,9 +375,23 @@ export const TARGET_GROUPS: Readonly<Record<string, readonly string[]>> = {
 export const ROUTES: Readonly<
 	Record<string, { readonly groups: readonly string[]; readonly formats: readonly string[] }>
 > = {
-	image: { groups: ["image", "video", "vector", "heic-icns", "pdf"], formats: ["cbz", "docx", "dxf", "hwpx", "txt"] },
+	image: {
+		groups: ["image", "video", "vector", "heic-icns", "image-layered", "pdf"],
+		formats: ["cbz", "docx", "dxf", "hwpx", "txt"],
+	},
 	vector: {
-		groups: ["image", "markup", "word", "vector", "ebook-core", "video-core", "heic-icns", "hwp", "pdf"],
+		groups: [
+			"image",
+			"markup",
+			"word",
+			"vector",
+			"ebook-core",
+			"video-core",
+			"heic-icns",
+			"image-layered",
+			"hwp",
+			"pdf",
+		],
 		formats: ["dxf"],
 	},
 	word: { groups: ["image", "markup", "word", "ebook-core", "vector-core", "hwp", "pdf"], formats: [] },
@@ -355,7 +401,19 @@ export const ROUTES: Readonly<
 	},
 	slide: { groups: ["image", "markup", "word", "slide", "ebook-core", "vector-core", "hwp", "pdf"], formats: [] },
 	hwp: {
-		groups: ["image", "ebook", "markup", "word", "slide", "vector", "video-core", "heic-icns", "hwp", "pdf"],
+		groups: [
+			"image",
+			"ebook",
+			"markup",
+			"word",
+			"slide",
+			"vector",
+			"video-core",
+			"heic-icns",
+			"image-layered",
+			"hwp",
+			"pdf",
+		],
 		formats: ["dxf"],
 	},
 	pdf: {
@@ -369,11 +427,12 @@ export const ROUTES: Readonly<
 			"vector",
 			"subtitle-core",
 			"heic-icns",
+			"image-layered",
 			"hwp",
 			"cad",
 			"pdf",
 		],
-		formats: ["pptx"],
+		formats: ["pptx", "xlsx", "ods", "csv"],
 	},
 	markup: { groups: ["image", "ebook", "markup", "word", "vector-core", "hwp", "pdf"], formats: ["pptx"] },
 	ebook: { groups: ["image", "markup", "word", "ebook-core", "vector-core", "hwp", "pdf"], formats: [] },
@@ -383,12 +442,22 @@ export const ROUTES: Readonly<
 	},
 	geo: { groups: ["markup", "word", "sheet", "data", "geo", "hwp", "pdf"], formats: ["epub", "fb2", "htmlz", "txtz"] },
 	video: {
-		groups: ["image", "audio", "video", "subtitle", "vector-core", "heic-icns", "pdf"],
+		groups: ["image", "audio", "video", "subtitle", "vector-core", "heic-icns", "image-layered", "pdf"],
 		formats: ["cbz", "docx", "hwpx", "txt"],
 	},
 	audio: { groups: ["audio"], formats: [] },
 	model3d: {
-		groups: ["image", "audio", "video", "model3d", "vector-core", "subtitle-core", "heic-icns", "pdf"],
+		groups: [
+			"image",
+			"audio",
+			"video",
+			"model3d",
+			"vector-core",
+			"subtitle-core",
+			"heic-icns",
+			"image-layered",
+			"pdf",
+		],
 		formats: ["cbz", "docx", "hwpx", "txt"],
 	},
 	cad: {
@@ -402,6 +471,7 @@ export const ROUTES: Readonly<
 			"ebook-core",
 			"subtitle-core",
 			"heic-icns",
+			"image-layered",
 			"hwp",
 			"cad",
 			"pdf",
@@ -431,7 +501,7 @@ export const ROUTES: Readonly<
 	archive: { groups: ["container"], formats: [] },
 	compress: { groups: ["container", "compressed"], formats: [] },
 	font: { groups: ["font"], formats: [] },
-	subtitle: { groups: ["subtitle"], formats: [] },
+	subtitle: { groups: ["subtitle"], formats: ["txt"] },
 };
 
 /** Every format in `family`, or undefined for an unknown family. */

@@ -35,7 +35,7 @@ Relative paths in the config file (and in a migrated legacy config) resolve agai
 | `webSearch` | object | enabled | `web_search` + `web_fetch` tools |
 | `jev` | object | `{backend:<default>}` | The required decision model |
 | `queryDecomposition` | object \| `false` | `{model:<default>}` | Question decomposition; `false` lets the session model decompose |
-| `permissionMode` | `"auto"` \| `"ask"` \| `"full"` | `"auto"` | Approval gate for file changes by the agent |
+| `permissionMode` | `"readonly"` \| `"full"` | `"readonly"` | Disk permission mode (`readonly`: OS-sandboxed read-only; `full`: read/write) |
 | `rerank` | object \| `false` | absent (off) | Post-merge reranking; opt-in |
 | `rankingLog` | `boolean` | `true` | `false` stops writing the learning-to-rank log beside the memory file |
 | `ltr` | object | absent (off) | Opt-in learning-to-rank serving and retraining (see below) |
@@ -296,7 +296,7 @@ Secrets never appear in the config: a connector references a credential by envir
     "apiKeyEnv": "OPENROUTER_API_KEY",
     "topN": 25
   },
-  "permissionMode": "auto",
+  "permissionMode": "readonly",
 
   "parserOptions": { "ocr": { "enabled": false }, "fileTimeoutMs": 120000 },
 
@@ -324,7 +324,7 @@ Malformed config fails fast with a `ConfigError`; the command exits `2`. Unknown
 - ``Config field 'excludePaths' must be a non-empty string array``.
 - `MinSync is required and cannot be disabled; remove `minSync: false` / `minSync.enabled: false` from the config.`
 - `jev.enabled is no longer supported: ...` — the old `enabled` switch was removed; the decision model is required.
-- `--permission-mode must be one of: ask, auto, full`.
+- `--permission-mode must be one of: readonly, full`.
 - `rerank.provider must be one of: openrouter, dazzi`.
 
 ::: warning **Secrets**

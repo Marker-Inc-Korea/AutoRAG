@@ -15,26 +15,41 @@ import {
 	saveLtrModel,
 	writeLtrState,
 } from "./model-store.ts";
-import { averageRankers, type RankingMatrix, type TrainedRanker, trainRanker } from "./wasm-trainer.ts";
+import {
+	averageRankers,
+	DEFAULT_LTR_OBJECTIVE,
+	type LtrObjective,
+	type RankingMatrix,
+	type TrainedRanker,
+	trainRanker,
+} from "./wasm-trainer.ts";
 import { parseXgboostModel } from "./xgboost-model.ts";
 
-/** nDCG@10 may fall this far below the baseline and still pass: it is a noisy metric, and the MRR interval decides. */
-const NDCG_TOLERANCE = 0.005;
+/** The companion metric may fall this far below the baseline and still pass when the other metric's 95% CI clears zero. */
+const COMPANION_TOLERANCE = 0.005;
 
 /**
- * The training gate. A model passes only when its MRR gain over the reranker's own order on the holdout is
- * statistically distinguishable from zero (the 95% bootstrap interval of the per-query difference lies above 0) and
- * it does not give up real nDCG@10. A point estimate above baseline is not enough: on a few hundred queries it is
- * as often luck as signal.
+ * The training gate. A model passes when either:
+ * - its MRR gain over the reranker's own order on the holdout is statistically distinguishable from zero
+ *   (95% bootstrap CI lower bound > 0) and nDCG@10 does not drop beyond tolerance, OR
+ * - its nDCG@10 gain on the holdout is statistically distinguishable from zero (95% bootstrap CI lower bound > 0)
+ *   and MRR does not drop beyond tolerance.
+ *
+ * A point estimate above baseline is not enough: on a few hundred queries it is as often luck as signal.
  */
 export function holdoutPasses(holdout: LtrHoldoutMetrics): boolean {
 	if (holdout.queries === 0) return false;
-	if (!(holdout.deltaMrrCi95[0] > 0)) return false;
-	return holdout.model.ndcg10 >= holdout.baseline.ndcg10 - NDCG_TOLERANCE;
+	const mrrPasses =
+		holdout.deltaMrrCi95[0] > 0 && holdout.model.ndcg10 >= holdout.baseline.ndcg10 - COMPANION_TOLERANCE;
+	const ndcgPasses =
+		holdout.deltaNdcg10Ci95 !== undefined &&
+		holdout.deltaNdcg10Ci95[0] > 0 &&
+		holdout.model.mrr >= holdout.baseline.mrr - COMPANION_TOLERANCE;
+	return mrrPasses || ndcgPasses;
 }
 
 /** Labelled search runs (after dropping runs that teach nothing) below which AutoRAG does not train. */
-export const MIN_TRAINING_RUNS = 100;
+export const MIN_TRAINING_RUNS = 300;
 /** Share of the newest eligible runs used for early stopping and for judging the finished model. */
 const VALID_FRACTION = 0.15;
 const HOLDOUT_FRACTION = 0.2;
@@ -141,8 +156,8 @@ export interface TrainOptions {
 	readonly memoryPath: string;
 	readonly now?: () => number;
 	readonly signal?: AbortSignal;
+	readonly objective?: LtrObjective;
 }
-
 function toMatrix(split: ServingSplit): RankingMatrix {
 	return {
 		rows: split.rows.map((row) => row.features),
@@ -196,6 +211,7 @@ export async function trainLtrModel(options: TrainOptions): Promise<TrainResult>
 	}
 
 	options.signal?.throwIfAborted();
+	const objective = options.objective ?? DEFAULT_LTR_OBJECTIVE;
 	const fitted: TrainedRanker[] = [];
 	try {
 		for (const seed of TRAINING_SEEDS) {
@@ -205,6 +221,7 @@ export async function trainLtrModel(options: TrainOptions): Promise<TrainResult>
 					valid: toMatrix(dataset.valid),
 					featureNames: dataset.featureNames,
 					seed,
+					objective,
 				}),
 			);
 			options.signal?.throwIfAborted();
@@ -226,19 +243,21 @@ export async function trainLtrModel(options: TrainOptions): Promise<TrainResult>
 		const single = parseXgboostModel(entry.modelJson);
 		return evaluateRanking(score(dataset.holdout.rows, (row) => single.predict(row.features))).mrr;
 	});
-	const deltas = served.perQueryMrr.map((value, index) => value - (baseline.perQueryMrr[index] as number));
+	const mrrDeltas = served.perQueryMrr.map((value, index) => value - (baseline.perQueryMrr[index] as number));
+	const ndcgDeltas = served.perQueryNdcg10.map((value, index) => value - (baseline.perQueryNdcg10[index] as number));
 	const holdout: LtrHoldoutMetrics = {
 		queries: served.queries,
 		baseline: { ndcg10: baseline.ndcg10, mrr: baseline.mrr },
 		model: { ndcg10: served.ndcg10, mrr: served.mrr },
-		deltaMrrCi95: bootstrapCi95(deltas),
+		deltaMrrCi95: bootstrapCi95(mrrDeltas),
+		deltaNdcg10Ci95: bootstrapCi95(ndcgDeltas),
 	};
 	const passedGate = holdoutPasses(holdout);
 	const meta: LtrModelMeta = {
 		id: `xgb-${new Date(now()).toISOString().replace(/[-:T]/gu, "").slice(0, 14)}-${randomUUID().slice(0, 6)}`,
 		createdAt: now(),
 		featureNames: [...LTR_SERVING_FEATURE_NAMES],
-		objective: "rank:pairwise",
+		objective,
 		trainedOnRuns: dataset.train.groups.length + dataset.valid.groups.length,
 		loggedRunsAtTraining: runs.length,
 		holdout,

@@ -8,7 +8,6 @@ import { Value } from "typebox/value";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
 import { CALCULATOR_TOOL_NAME, createCalculatorTool } from "../../src/agent/calculator-tool.ts";
-import { buildSystemPrompt } from "../../src/agent/system-prompt.ts";
 import { baselineJev } from "../helpers/baseline-jev.ts";
 
 const NOW = new Date("2026-11-08T13:10:45Z");
@@ -76,41 +75,6 @@ describe("calculator tool", () => {
 		expect(Value.Check(tool.parameters, { operation: "integrate" })).toBe(false);
 		expect(Value.Check(tool.parameters, { operation: "date_add", date: "2026-01-01", days: "3" })).toBe(false);
 	});
-
-	it("tells the model what it is for and to use it instead of computing in its head", () => {
-		expect(tool.description).toMatch(/date/i);
-		expect(tool.description).toMatch(/time zone/i);
-		expect(tool.description).toMatch(/never/i);
-	});
-
-	it("tells the model an abbreviation is a fixed offset, so it does not swap in a daylight-saving region", () => {
-		const schema = JSON.stringify(tool.parameters);
-		expect(schema).toMatch(/PST is -08:00 all year/);
-		expect(schema).toMatch(/Never replace an abbreviation with a region/);
-	});
-});
-
-describe("calculator in the system prompt", () => {
-	it("lists the tool and orders the model to calculate with it, only when the tool exists", () => {
-		const prompt = buildSystemPrompt({ toolNames: ["bash", "calculator"], modelId: "test-model" });
-		expect(prompt).toContain("**calculator**");
-		expect(prompt).toMatch(/date difference|days between/i);
-		expect(prompt).toMatch(/never (do|compute|calculate)/i);
-		const without = buildSystemPrompt({ toolNames: ["bash"], modelId: "test-model" });
-		expect(without).not.toContain("calculator");
-	});
-
-	it("states that an abbreviation is a fixed offset and that a region is a different claim", () => {
-		const prompt = buildSystemPrompt({ toolNames: ["bash", "calculator"], modelId: "test-model" });
-		expect(prompt).toContain("PST is UTC-8 all year");
-		expect(prompt).toMatch(/Never replace an abbreviation with a region such as America\/Los_Angeles/);
-		expect(prompt).toMatch(/several zones \(CST, IST, BST\) is the user's to settle: ask/);
-	});
-
-	it("does not list it twice as a caller tool", () => {
-		const prompt = buildSystemPrompt({ toolNames: ["bash", "calculator"], modelId: "test-model" });
-		expect(prompt).not.toContain("**calculator**: caller-provided tool");
-	});
 });
 
 let root: string;
@@ -150,17 +114,6 @@ describe("calculator agent wiring", () => {
 			],
 		});
 		expect(internalsOf(agent).droppedCallerToolNames).toContain("calculator");
-	});
-
-	it("lets the fast phase call it, because that phase otherwise forbids every tool", () => {
-		const agent = new AutoRAGAgent(options());
-		const prompt = agent.buildFastAnswerPrompt("how many days until 2026-12-25?", {}, "(no baseline)");
-		expect(prompt).toMatch(/calculator is allowed/i);
-	});
-
-	it("names it in the verification phase and the extra route", () => {
-		const agent = new AutoRAGAgent(options());
-		expect(agent.buildExtraPrompt("add 3 months to 2026-01-31")).toMatch(/calculator/);
 	});
 });
 

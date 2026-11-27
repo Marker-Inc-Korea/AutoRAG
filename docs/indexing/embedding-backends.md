@@ -67,7 +67,7 @@ The default applies only to MinSync's local Qwen3 (no `id`, or `native:Qwen/Qwen
 
 Semantic search over everything except the MinSync datasource needs an embedding backend that is alive: a remote endpoint, a running `inl serve`, or the optional in-process addon. Without one, memory, the chat-sidecar semantic search, gist, discrawl, mailcrawl, lazykatok, and Hister fall back to keyword search or report `embedding-unavailable`; the MinSync datasource keeps working because `minsync` embeds in-process by itself.
 
-Without a remote endpoint, keep the daemon running. `--idle-timeout 0` serves until stopped; the default of 300 s frees the ~2.8 GB model after five idle minutes, and the next semantic call then fails until the daemon is started again. Do not pass `--state-dir`: only the default state directory is discovered.
+Without a remote endpoint, keep the daemon running. From inl-server 0.3.4 `inl serve` serves until stopped by default, and a restarted instance comes back on the port it used before. Older versions (and `minsync serve` before the MinSync release that takes 0.3.4) exit after 300 s without a request, which frees the ~2.8 GB model but makes the next semantic call fail until the daemon is started again, and choose a new port on every start; pass `--idle-timeout 0` there. Do not pass `--state-dir`: only the default state directory is discovered.
 
 **macOS (launchd).** Save as `~/Library/LaunchAgents/dev.im-not-llm.inl-serve.plist` (replace `YOU` and the path from `which inl`):
 
@@ -100,6 +100,8 @@ launchctl bootout gui/$(id -u)/dev.im-not-llm.inl-serve        # stop and unload
 ```
 
 **Linux (systemd user unit).** Create `~/.config/systemd/user/inl-serve.service` with `ExecStart=%h/.cargo/bin/inl serve --idle-timeout 0` and `Restart=always`, then run `systemctl --user enable --now inl-serve`.
+
+**Windows (Task Scheduler).** Register a user-level logon task that runs `inl serve --idle-timeout 0` (for example with `schtasks /Create /TN inl-serve /SC ONLOGON /TR "inl serve --idle-timeout 0"`), or start it in a terminal.
 
 **Without a service manager**, run `inl serve --idle-timeout 0` in a terminal, or press **Ctrl+Shift+E** / type `/embedding on` in `autorag tui`. If you do not have `inl`, `minsync serve --idle-timeout 0` serves the same state root.
 

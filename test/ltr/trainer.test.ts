@@ -7,6 +7,7 @@ import {
 	evaluateRanking,
 	holdoutPasses,
 	MIN_TRAINING_RUNS,
+	shouldRetrain,
 	TRAINING_SEEDS,
 	trainLtrModel,
 } from "../../src/ltr/trainer.ts";
@@ -51,28 +52,47 @@ describe("evaluateRanking", () => {
 });
 
 describe("holdoutPasses", () => {
-	const verdict = (base: number, model: number, ci: [number, number], ndcgBase = 0.8, ndcgModel = 0.8) => ({
+	const verdict = (
+		base: number,
+		model: number,
+		ci: [number, number],
+		ndcgBase = 0.8,
+		ndcgModel = 0.8,
+		ndcgCi?: [number, number],
+	) => ({
 		queries: 100,
 		baseline: { ndcg10: ndcgBase, mrr: base },
 		model: { ndcg10: ndcgModel, mrr: model },
 		deltaMrrCi95: ci,
+		...(ndcgCi !== undefined ? { deltaNdcg10Ci95: ndcgCi } : {}),
 	});
 
 	it("passes a significant MRR gain, even when nDCG@10 moved by float noise", () => {
 		expect(holdoutPasses(verdict(0.765, 0.783, [0.004, 0.032], 0.79816, 0.79813))).toBe(true);
 	});
 
-	it("rejects a gain whose interval includes zero: a point estimate above baseline is not evidence", () => {
+	it("passes a significant nDCG@10 gain when MRR is flat or within tolerance", () => {
+		expect(holdoutPasses(verdict(0.764, 0.761, [-0.012, 0.006], 0.625, 0.642, [0.004, 0.03]))).toBe(true);
+		expect(holdoutPasses(verdict(0.764, 0.759, [-0.015, 0.005], 0.625, 0.642, [0.004, 0.03]))).toBe(true);
+	});
+
+	it("rejects a significant nDCG@10 gain that costs real MRR beyond tolerance", () => {
+		expect(holdoutPasses(verdict(0.764, 0.75, [-0.03, 0.002], 0.625, 0.645, [0.005, 0.035]))).toBe(false);
+	});
+
+	it("rejects a gain whose intervals both include zero: a point estimate above baseline is not evidence", () => {
+		expect(holdoutPasses(verdict(0.765, 0.783, [-0.01, 0.045], 0.8, 0.815, [-0.005, 0.035]))).toBe(false);
+		// Older meta.json records without deltaNdcg10Ci95 still follow the MRR-only path cleanly.
 		expect(holdoutPasses(verdict(0.765, 0.783, [-0.01, 0.045]))).toBe(false);
 	});
 
 	it("rejects a significant MRR gain that costs real nDCG@10", () => {
-		expect(holdoutPasses(verdict(0.7, 0.75, [0.01, 0.09], 0.8, 0.77))).toBe(false);
+		expect(holdoutPasses(verdict(0.7, 0.75, [0.01, 0.09], 0.8, 0.77, [-0.05, -0.01]))).toBe(false);
 	});
 
 	it("rejects an empty holdout and a model that is worse", () => {
-		expect(holdoutPasses({ ...verdict(0.7, 0.8, [0.01, 0.2]), queries: 0 })).toBe(false);
-		expect(holdoutPasses(verdict(0.8, 0.7, [-0.2, -0.01]))).toBe(false);
+		expect(holdoutPasses({ ...verdict(0.7, 0.8, [0.01, 0.2], 0.7, 0.8, [0.01, 0.2]), queries: 0 })).toBe(false);
+		expect(holdoutPasses(verdict(0.8, 0.7, [-0.2, -0.01], 0.8, 0.7, [-0.2, -0.01]))).toBe(false);
 	});
 });
 
@@ -85,6 +105,16 @@ describe("trainLtrModel (WASM XGBoost, no Python)", () => {
 		expect(listLtrModels(ltrDirectory(memoryPath))).toHaveLength(0);
 	});
 
+	it("requires at least 300 usable runs: 299 is refused, 300 is trained on", async () => {
+		expect(MIN_TRAINING_RUNS).toBe(300);
+		seedLog(299);
+		const refused = await trainLtrModel({ memoryPath });
+		expect(refused.status).toBe("insufficient-data");
+		expect(refused.eligibleRuns).toBe(299);
+		expect(shouldRetrain({ loggedRuns: 299, lastAttemptRuns: undefined, minNewRuns: 1 })).toBe(false);
+		expect(shouldRetrain({ loggedRuns: 300, lastAttemptRuns: undefined, minNewRuns: 1 })).toBe(true);
+	});
+
 	it("learns a pattern that beats the reranker and stores a model that passed the gate", async () => {
 		// Gold is always the dense rank 1 chunk and the stub reranker always puts it last: a pattern worth learning.
 		seedLog(MIN_TRAINING_RUNS + 60);
@@ -92,8 +122,12 @@ describe("trainLtrModel (WASM XGBoost, no Python)", () => {
 		expect(result.status, result.reason).toBe("trained");
 		const [stored] = listLtrModels(ltrDirectory(memoryPath));
 		expect(stored?.passedGate).toBe(true);
+		expect(stored?.objective).toBe("rank:ndcg");
+		expect(stored?.featureNames).toContain("sparse_best_rank");
 		expect(stored?.holdout.model.mrr).toBeGreaterThan(stored?.holdout.baseline.mrr ?? 1);
 		expect(stored?.holdout.deltaMrrCi95[0]).toBeGreaterThan(0);
+		expect(stored?.holdout.deltaNdcg10Ci95).toBeDefined();
+		expect(stored?.holdout.deltaNdcg10Ci95?.[0]).toBeGreaterThan(0);
 		expect(stored?.trainer?.xgboost).toMatch(/^\d+\.\d+\.\d+$/u);
 		expect(stored?.seeds).toEqual(TRAINING_SEEDS.length);
 		expect(JSON.parse(readFileSync(join(ltrDirectory(memoryPath), "state.json"), "utf-8")).lastAttemptRuns).toBe(

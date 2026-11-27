@@ -109,3 +109,43 @@ def test_rule_ids_that_could_escape_the_state_dir_are_rejected(bad):
     helper = load_helper()
     with pytest.raises(helper.SetupError):
         helper.valid_id(bad)
+
+
+def test_fire_script_queues_stdin_and_invokes_hermes_without_shell(tmp_path):
+    helper = load_helper()
+    state = tmp_path / "state"
+    hermes_home = tmp_path / "hh"
+    hermes_home.mkdir()
+    recorded = tmp_path / "calls.json"
+    fake_hermes = tmp_path / "fake_hermes.py"
+    fake_hermes.write_text(
+        "import json, os, sys\n"
+        f"open({str(recorded)!r}, 'w', encoding='utf-8').write(json.dumps({{'argv': sys.argv[1:], 'hermes_home': os.environ.get('HERMES_HOME')}}))\n",
+        encoding="utf-8",
+    )
+    fire = state / "fire.py"
+    state.mkdir(parents=True)
+    fire.write_text(
+        helper.render_fire_script(state, hermes_home, [sys.executable, str(fake_hermes)], fake_hermes, "autorag-inv"),
+        encoding="utf-8",
+    )
+    payload = json.dumps([{"type": "create", "path": "/tmp/a.pdf"}])
+    done = subprocess.run([sys.executable, str(fire)], input=payload, capture_output=True, text=True, check=True)
+    assert done.returncode == 0
+    queued = list((state / "queue").glob("*.json"))
+    assert len(queued) == 1
+    assert json.loads(queued[0].read_text(encoding="utf-8")) == [{"type": "create", "path": "/tmp/a.pdf"}]
+    call = json.loads(recorded.read_text(encoding="utf-8"))
+    assert call["argv"] == ["cron", "run", "autorag-inv"]
+    assert call["hermes_home"] == str(hermes_home)
+
+
+def test_hermes_environment_pythons_discovers_both_posix_and_windows_venvs(tmp_path):
+    helper = load_helper()
+    posix_py = tmp_path / "installs" / "a" / "environments" / "1" / "venv" / "bin" / "python"
+    win_py = tmp_path / "installs" / "b" / "environments" / "2" / "venv" / "Scripts" / "python.exe"
+    for p in (posix_py, win_py):
+        p.parent.mkdir(parents=True)
+        p.write_text("", encoding="utf-8")
+    found = helper.hermes_environment_pythons(tmp_path)
+    assert str(posix_py) in found and str(win_py) in found

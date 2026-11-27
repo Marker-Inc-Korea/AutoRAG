@@ -1,7 +1,6 @@
 import type { BackendRequest, BackendResponse, JevBackend, RawAnswer } from "jev-use";
 import { CITATION_QUESTION_ID_PREFIX } from "../../src/agent/citation-relevance.ts";
 import type { JevToolOptions } from "../../src/agent/jev-extension.ts";
-import { PERMISSION_GATE_QUESTION_ID } from "../../src/agent/permission-judgment.ts";
 import { FOLLOW_UP_QUESTION_ID, QUERY_ROUTE_QUESTION_ID } from "../../src/agent/query-routing.ts";
 
 type Question = BackendRequest["questions"][number];
@@ -14,17 +13,10 @@ function answer(question: Question): RawAnswer {
 			if (question.id === FOLLOW_UP_QUESTION_ID || question.id.startsWith(CITATION_QUESTION_ID_PREFIX)) {
 				return { answer: 1 };
 			}
-			// Every permission category is flagged, so the gate never approves a call on its own.
-			if (question.id.startsWith("permission_")) return { answer: 1 };
 			return { answer: 0 };
 		case "choice": {
 			const labels = Array.isArray(question.options) ? question.options : Object.keys(question.options ?? {});
-			const winner =
-				question.id === QUERY_ROUTE_QUESTION_ID
-					? "local"
-					: question.id === PERMISSION_GATE_QUESTION_ID
-						? "deny"
-						: (labels[0] ?? "");
+			const winner = question.id === QUERY_ROUTE_QUESTION_ID ? "local" : (labels[0] ?? "");
 			return { answer: winner, distribution: { [winner]: 1 }, confidence: 1 };
 		}
 		case "score":

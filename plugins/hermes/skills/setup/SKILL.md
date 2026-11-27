@@ -186,9 +186,12 @@ and still works. It stays that way because nothing starts the local embedding
 daemon for MCP clients. Start it once; it keeps running until stopped:
 
 ```bash
-BIN="$(command -v minsync || find "$WORKSPACE/.autorag/bin" -name minsync -type f | head -1)"
+# macOS / Linux
+BIN="$(command -v inl || command -v minsync || find "$WORKSPACE/.autorag/bin" -name minsync -type f | head -1)"
 nohup "$BIN" serve --idle-timeout 0 >/dev/null 2>&1 &
 ```
+
+On Windows, run `minsync.exe serve --idle-timeout 0` (or `inl.exe serve --idle-timeout 0`) in a separate terminal or background PowerShell job (`Start-Process -WindowStyle Hidden`).
 
 Measured: with the daemon up, the `embedding-unavailable` diagnostic disappears
 and search uses dense retrieval too. On a four-document corpus the top result

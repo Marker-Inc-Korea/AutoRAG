@@ -21,6 +21,8 @@ export interface LtrHoldoutMetrics {
 	readonly model: { readonly ndcg10: number; readonly mrr: number };
 	/** 95% bootstrap interval of the per-query MRR difference (model minus baseline). */
 	readonly deltaMrrCi95: readonly [number, number];
+	/** 95% bootstrap interval of the per-query nDCG@10 difference (model minus baseline). Optional for older meta.json files. */
+	readonly deltaNdcg10Ci95?: readonly [number, number];
 }
 
 export interface LtrModelMeta {

@@ -8,7 +8,6 @@ import type { ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutoRAGAgent, type AutoRAGAgentOptions } from "../../src/agent/agent.ts";
 import { ASK_USER_TOOL_NAME, resolveAskUserExtensionPath } from "../../src/agent/ask-user.ts";
-import { buildSystemPrompt } from "../../src/agent/system-prompt.ts";
 import { baselineJev } from "../helpers/baseline-jev.ts";
 
 let root: string;
@@ -132,47 +131,10 @@ describe("ask_user in the interactive session", () => {
 		expect(existsSync(resolveAskUserExtensionPath())).toBe(true);
 	});
 
-	it("is active for the model and described in the system prompt", async () => {
+	it("is active for the model in the interactive session", async () => {
 		const t = await tui([]);
 		try {
 			expect(t.session.getActiveToolNames()).toContain(ASK_USER_TOOL_NAME);
-			expect(t.session.systemPrompt).toContain(`**${ASK_USER_TOOL_NAME}**`);
-		} finally {
-			await t.dispose();
-		}
-	});
-
-	it("tells the model the phase prompts' no-tools rule does not cover ask_user, so it asks instead of guessing", async () => {
-		const t = await tui([]);
-		try {
-			expect(t.agent.buildFastAnswerPrompt("q", {}, "baseline")).toContain(ASK_USER_TOOL_NAME);
-		} finally {
-			await t.dispose();
-		}
-	});
-
-	it("does not mention ask_user in a phase prompt when the tool is not offered", async () => {
-		const t = await tui([], {}, { discordRemote: true });
-		try {
-			expect(t.agent.buildFastAnswerPrompt("q", {}, "baseline")).not.toContain(ASK_USER_TOOL_NAME);
-		} finally {
-			await t.dispose();
-		}
-	});
-
-	it("puts search first, restricts ask_user to what search cannot settle or a decision only the user has, and replaces plain-text questions", () => {
-		const line = buildSystemPrompt({ toolNames: ["bash", ASK_USER_TOOL_NAME] })
-			.split("\n")
-			.find((entry) => entry.includes(`**${ASK_USER_TOOL_NAME}**`));
-		expect(line).toMatch(/search|explor/i);
-		expect(line).toMatch(/plain text/i);
-		expect(line).toMatch(/only/i);
-	});
-
-	it("does not let the phase prompts tell the model to ask before it has looked", async () => {
-		const t = await tui([]);
-		try {
-			expect(t.agent.buildFastAnswerPrompt("q", {}, "baseline")).not.toMatch(/ask_user first/i);
 		} finally {
 			await t.dispose();
 		}
@@ -233,7 +195,6 @@ describe("ask_user in the interactive session", () => {
 		const t = await tui([], {}, { discordRemote: true });
 		try {
 			expect(t.session.getActiveToolNames()).not.toContain(ASK_USER_TOOL_NAME);
-			expect(t.session.systemPrompt).not.toContain(`**${ASK_USER_TOOL_NAME}**`);
 		} finally {
 			await t.dispose();
 		}

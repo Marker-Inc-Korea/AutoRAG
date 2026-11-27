@@ -4,7 +4,6 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
 import { createEverythingSearchTool, EVERYTHING_SEARCH_TOOL_NAME } from "../../src/agent/everything-search-tool.ts";
-import { buildSystemPrompt } from "../../src/agent/system-prompt.ts";
 import type { EverythingRunner, EverythingSearchRequest } from "../../src/everything/index.ts";
 
 const FIXTURE_DIR = "test/fixtures/sample-project";
@@ -109,51 +108,6 @@ describe("everything_search tool", () => {
 	});
 });
 
-describe("system prompt Everything guidance", () => {
-	it("documents Everything only when the tool is available", () => {
-		const withTool = buildSystemPrompt({
-			toolNames: ["bash", EVERYTHING_SEARCH_TOOL_NAME],
-		});
-		expect(withTool).toContain(`- **${EVERYTHING_SEARCH_TOOL_NAME}**:`);
-		expect(withTool).toContain("## Windows Everything File-Name Search");
-		expect(withTool).toContain("ext:");
-		expect(withTool).not.toContain(`- **${EVERYTHING_SEARCH_TOOL_NAME}**: caller-provided tool`);
-
-		const withoutTool = buildSystemPrompt({ toolNames: ["bash"] });
-		expect(withoutTool).not.toContain("Everything");
-	});
-
-	it("routes file discovery to everything_search instead of a jikji_find tool that is not registered", () => {
-		const prompt = buildSystemPrompt({
-			toolNames: ["bash", EVERYTHING_SEARCH_TOOL_NAME, "search_all_documents"],
-		});
-		expect(prompt).not.toContain("jikji_find");
-		expect(prompt).toContain("use `everything_search` actively to locate relevant files and folders");
-	});
-
-	it("names both discovery tools when Jikji and Everything are registered", () => {
-		const prompt = buildSystemPrompt({
-			toolNames: ["bash", "jikji_find", EVERYTHING_SEARCH_TOOL_NAME],
-			jikjiIndexingEnabled: true,
-		});
-		expect(prompt).toMatch(/`jikji_find`[^\n]*`everything_search`|`everything_search`[^\n]*`jikji_find`/);
-	});
-
-	it("does not steer a jikji-less agent toward jikji_find in the search prompt", () => {
-		const agent = new AutoRAGAgent({
-			searchPaths: [FIXTURE_DIR],
-			workspacePath: tmpDir,
-			memoryPath: join(tmpDir, "memory.json"),
-			minSync: { autoInstall: false },
-			jikji: false,
-			everything: false,
-			fsearch: false,
-		});
-		expect(agent.getSystemPrompt()).not.toContain("jikji_find");
-		expect(agent.buildSearchPrompt("q", {})).not.toContain("jikji_find");
-	});
-});
-
 interface AgentInternals {
 	innerAgent: { state: { tools: Array<{ name: string; execute: (...args: unknown[]) => Promise<unknown> }> } };
 }
@@ -195,10 +149,9 @@ describe("AutoRAGAgent Everything wiring", () => {
 		});
 	}
 
-	it("registers everything_search and its prompt section on Windows", () => {
+	it("registers everything_search on Windows", () => {
 		const agent = windowsAgent();
 		expect(toolNames(agent)).toContain(EVERYTHING_SEARCH_TOOL_NAME);
-		expect(agent.getSystemPrompt()).toContain("## Windows Everything File-Name Search");
 	});
 
 	it("passes configured file and folder exclusions to Everything search", async () => {
@@ -235,7 +188,6 @@ describe("AutoRAGAgent Everything wiring", () => {
 			fsearch: false,
 		});
 		expect(toolNames(mac)).not.toContain(EVERYTHING_SEARCH_TOOL_NAME);
-		expect(mac.getSystemPrompt()).not.toContain("Everything");
 
 		const disabled = new AutoRAGAgent({
 			searchPaths: [FIXTURE_DIR],
@@ -312,13 +264,4 @@ describe("AutoRAGAgent Everything wiring", () => {
 		);
 		expect(agent.refreshComponentStatus().everything).toBe("degraded");
 	});
-});
-
-describe("system prompt name alternatives", () => {
-	it.each([EVERYTHING_SEARCH_TOOL_NAME, "fsearch_search"])(
-		"tells the model %s takes parallel alternatives",
-		(tool) => {
-			expect(buildSystemPrompt({ toolNames: ["bash", tool] })).toContain("`alternatives`");
-		},
-	);
 });

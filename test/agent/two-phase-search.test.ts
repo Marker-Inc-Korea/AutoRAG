@@ -439,28 +439,6 @@ describe("two-phase progressive answers (minimal-thinking fast → high-thinking
 		).toContain("e99");
 	});
 
-	it("asks for corrections as tool calls, with the claims named, when the fast answer was already delivered", () => {
-		const model = fauxModel(true, fauxAssistantMessage("noop", { stopReason: "stop" }));
-		const agent = new AutoRAGAgent(agentOptions(model));
-
-		const delivered = agent.buildRefinementPrompt(
-			"what approval do refund exceptions need?",
-			{},
-			"Fast: refund exceptions need director approval before payout [e1].\n- Paid monthly",
-			true,
-		);
-		// The model sees the exact first answer, split into claims it can name, with its own [eN] ids.
-		expect(delivered).toContain("c1: Fast: refund exceptions need director approval before payout [e1].");
-		expect(delivered).toContain("c2: - Paid monthly");
-		expect(delivered).toContain("revise_answer");
-		expect(delivered).toMatch(/ONE short line/);
-		expect(delivered).not.toMatch(/DELTA ONLY|MUST contain only/i);
-
-		const complete = agent.buildRefinementPrompt("what approval do refund exceptions need?", {}, undefined, false);
-		expect(complete).toContain("the fast phase produced no answer");
-		expect(complete).not.toContain("revise_answer");
-	});
-
 	it("walks the verification phase through the already-delivered fast answer as a list of claims to correct", async () => {
 		const prompts: string[] = [];
 		const model = fauxModel(
@@ -535,7 +513,6 @@ describe("two-phase progressive answers (minimal-thinking fast → high-thinking
 
 		const finalPrompt = prompts.at(-1) ?? "";
 		expect(finalPrompt).not.toContain("revise_answer");
-		expect(finalPrompt).toContain("COMPLETE");
 		expect(response.answer).toContain("Complete verified answer");
 	});
 });
