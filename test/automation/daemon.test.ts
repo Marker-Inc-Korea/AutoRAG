@@ -119,6 +119,39 @@ describe("startAutomationDaemon (unit)", () => {
 		}
 	});
 
+	it("skips disabled rules without removing them from config", async () => {
+		vi.useFakeTimers();
+		writeAutomations([
+			{
+				id: "off",
+				enabled: false,
+				paths: [inbox],
+				events: ["create"],
+				include: ["**/*.pdf"],
+				debounceMs: 100,
+				run: ["node", "-e", "0"],
+			},
+		]);
+		const fb = fakeBackend();
+		const runs: Array<{ id: string }> = [];
+		const daemon = await startAutomationDaemon({
+			home,
+			watcher: fb.backend,
+			runner: async (a, evs) => {
+				runs.push({ id: a.id });
+				return okRecord(a.id, evs);
+			},
+		});
+		try {
+			expect(fb.activeCount()).toBe(0);
+			fb.emit(inbox, [{ type: "create", path: join(inbox, "a.pdf") }]);
+			await vi.advanceTimersByTimeAsync(500);
+			expect(runs).toHaveLength(0);
+		} finally {
+			await daemon.stop();
+		}
+	});
+
 	it("runs at most one instance per automation in flight and batches events that arrive mid-run", async () => {
 		vi.useFakeTimers();
 		writeAutomations([{ id: "a", paths: [inbox], debounceMs: 100, run: ["node", "-e", "0"] }]);

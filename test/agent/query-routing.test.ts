@@ -11,6 +11,7 @@ import {
 	QUERY_ROUTE_QUESTION_ID,
 	routeQuery,
 	selectDatasources,
+	shouldDecomposeQuery,
 	WEB_DATASOURCE_ID,
 } from "../../src/agent/query-routing.ts";
 
@@ -419,6 +420,23 @@ describe("routeQuery (Jev branch + decomposition check)", () => {
 		);
 		expect(decision.route).toBe("local");
 		expect(decision.fallbackReason).toBeUndefined();
+	});
+});
+
+describe("shouldDecomposeQuery (explicit local route bypass)", () => {
+	it("asks Jev only the decomposition question without route classification", async () => {
+		const askedIds: string[] = [];
+		const backend: JevBackend = {
+			name: "recording",
+			async judge(request) {
+				askedIds.push(...request.questions.map((q) => q.id));
+				return { answers: [{ answer: 0.85 }] };
+			},
+		};
+		const decision = await shouldDecomposeQuery(judgeWith(backend), "compare Q1 and Q2 revenue");
+		expect(askedIds).toEqual([DECOMPOSE_QUESTION_ID]);
+		expect(decision.decompose).toBe(true);
+		expect(decision.decomposeProbability).toBe(0.85);
 	});
 });
 
