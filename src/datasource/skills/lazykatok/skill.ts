@@ -20,11 +20,18 @@ import type {
 	SourceDescription,
 } from "../../types.ts";
 import { LazykatokBm25Method, LazykatokHybridMethod, type LazykatokSearchClient } from "./methods.ts";
-import type { LazykatokDoctorResult, LazykatokIndexResult, LazykatokSyncResult } from "./types.ts";
+import type {
+	LazykatokDoctorResult,
+	LazykatokGrepOptions,
+	LazykatokGrepResult,
+	LazykatokIndexResult,
+	LazykatokSyncResult,
+} from "./types.ts";
 export interface LazykatokSkillClient extends LazykatokSearchClient {
 	doctor(signal?: AbortSignal): Promise<LazykatokDoctorResult>;
 	sync(signal?: AbortSignal): Promise<LazykatokSyncResult>;
 	index(signal?: AbortSignal): Promise<LazykatokIndexResult>;
+	grep?(pattern: string, options?: LazykatokGrepOptions): Promise<LazykatokGrepResult>;
 }
 
 export interface LazykatokSkillOptions {
@@ -155,41 +162,78 @@ export class LazykatokSkill implements DatasourceSkill {
 		this.sidecar?.close();
 	}
 
-	/** Exact substring/regex grep over lazykatok's read-only SQLite archive via sidecar. */
+	/** Exact substring/regex grep over lazykatok's read-only SQLite archive via sidecar or native CLI. */
 	async grep(pattern: string, options?: DatasourceGrepOptions): Promise<readonly DatasourceGrepHit[]> {
-		const { sidecar } = this;
-		if (sidecar === undefined || pattern.length === 0) return [];
+		if (pattern.length === 0) return [];
 		options?.signal?.throwIfAborted();
-		const descriptor = sidecar.descriptor;
-		const raw = sidecar.grepExact(pattern, {
+		const { sidecar } = this;
+		if (sidecar !== undefined) {
+			const descriptor = sidecar.descriptor;
+			const raw = sidecar.grepExact(pattern, {
+				literal: options?.literal,
+				ignoreCase: options?.ignoreCase,
+				context: options?.context,
+				limit: options?.limit,
+				maxPerMessage: options?.maxPerSource,
+			});
+			const out: DatasourceGrepHit[] = [];
+			for (const hit of raw) {
+				const chunkId = descriptor.chunkId(hit.key, hit.metadata);
+				const source = datasourceSourcePath(KAKAO_DATASOURCE_ID, this.instanceId, chunkId);
+				if (!matchesDatasourceScope(source, options?.scope)) continue;
+				const hierarchy = descriptor.hierarchy(hit.metadata).join("/");
+				const sender = hit.metadata.senderNickname;
+				const label = [hierarchy, sender]
+					.filter((v): v is string => typeof v === "string" && v.length > 0)
+					.join(" | ");
+				out.push({
+					source,
+					content: hit.content,
+					lineNumber: hit.lineNumber,
+					lineEnd: hit.lineEnd,
+					...(label.length > 0 ? { label } : {}),
+					metadata: {
+						...hit.metadata,
+						datasourceId: KAKAO_DATASOURCE_ID,
+						instanceId: this.instanceId,
+						hierarchy,
+						...(hit.publishedAt !== undefined ? { publishedAt: hit.publishedAt } : {}),
+					},
+				});
+			}
+			return out;
+		}
+		if (this.client.grep === undefined) return [];
+		const cliResult = await this.client.grep(pattern, {
 			literal: options?.literal,
 			ignoreCase: options?.ignoreCase,
 			context: options?.context,
 			limit: options?.limit,
-			maxPerMessage: options?.maxPerSource,
+			maxPerChunk: options?.maxPerSource,
+			signal: options?.signal,
 		});
+		if (!cliResult.ok) return [];
 		const out: DatasourceGrepHit[] = [];
-		for (const hit of raw) {
-			const chunkId = descriptor.chunkId(hit.key, hit.metadata);
-			const source = datasourceSourcePath(KAKAO_DATASOURCE_ID, this.instanceId, chunkId);
+		for (const hit of cliResult.data) {
+			const source = datasourceSourcePath(KAKAO_DATASOURCE_ID, this.instanceId, hit.chunkId);
 			if (!matchesDatasourceScope(source, options?.scope)) continue;
-			const hierarchy = descriptor.hierarchy(hit.metadata).join("/");
-			const sender = hit.metadata.senderNickname;
-			const label = [hierarchy, sender]
-				.filter((v): v is string => typeof v === "string" && v.length > 0)
-				.join(" | ");
+			const label = [hit.chatName, hit.senderNickname].filter((v) => v.length > 0).join(" | ");
 			out.push({
 				source,
-				content: hit.content,
+				content: hit.snippet,
 				lineNumber: hit.lineNumber,
 				lineEnd: hit.lineEnd,
 				...(label.length > 0 ? { label } : {}),
 				metadata: {
-					...hit.metadata,
 					datasourceId: KAKAO_DATASOURCE_ID,
 					instanceId: this.instanceId,
-					hierarchy,
-					...(hit.publishedAt !== undefined ? { publishedAt: hit.publishedAt } : {}),
+					chunkId: hit.chunkId,
+					chatId: hit.chatId,
+					chatName: hit.chatName,
+					senderNickname: hit.senderNickname,
+					startedAt: hit.startedAt,
+					endedAt: hit.endedAt,
+					parentChunkIds: hit.parentChunkIds,
 				},
 			});
 		}
@@ -303,6 +347,7 @@ export class LazykatokSkill implements DatasourceSkill {
 				"",
 				"## Native CLI",
 				"The external `lazykatok` CLI owns the archive, index, and credentials. When the dedicated tool cannot express what you need, call lazykatok directly through `bash`:",
+				'- `lazykatok grep "<pattern>" -F -i --json --limit 20` — exact literal/regex grep over synced chunks (no FTS or embeddings)',
 				'- `lazykatok search bm25 "<query>" --json --limit 20` — lexical search (`semantic` mode also available)',
 				"- `lazykatok chunk get <chunkId> --json` — fetch one chunk by id (chunk ids appear in result metadata)",
 				"- `lazykatok chunk context <chunkId> --json` — surrounding messages of a chunk",

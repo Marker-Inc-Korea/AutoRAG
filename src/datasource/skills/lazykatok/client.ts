@@ -12,6 +12,9 @@ import type {
 	LazykatokDoctorInfo,
 	LazykatokDoctorResult,
 	LazykatokFailure,
+	LazykatokGrepHit,
+	LazykatokGrepOptions,
+	LazykatokGrepResult,
 	LazykatokIndexInfo,
 	LazykatokIndexResult,
 	LazykatokOk,
@@ -118,6 +121,26 @@ export class LazykatokClient {
 		if (parsed === undefined) return toFailure(result, "invalid-json");
 		const hits = normalizeHits(parsed);
 		return hits === undefined ? toFailure(result, "invalid-shape") : searchOk(hits, result);
+	}
+
+	async grep(pattern: string, options?: LazykatokGrepOptions): Promise<LazykatokGrepResult> {
+		const args = ["grep", pattern, "--json"];
+		if (options?.literal) args.push("--literal");
+		if (options?.ignoreCase) args.push("--ignore-case");
+		if (options?.context !== undefined) args.push("--context", String(options.context));
+		if (options?.limit !== undefined) args.push("--limit", String(options.limit));
+		if (options?.maxPerChunk !== undefined) args.push("--max-per-chunk", String(options.maxPerChunk));
+		if (options?.chat) args.push("--chat", options.chat);
+		if (options?.chatName) args.push("--chat-name", options.chatName);
+		if (options?.sender) args.push("--sender", options.sender);
+		if (options?.since) args.push("--since", options.since);
+		if (options?.until) args.push("--until", options.until);
+		const result = await this.run(args, options?.signal);
+		if (!result.ok) return toFailure(result);
+		const parsed = parseJsonValue(result.stdout);
+		if (parsed === undefined) return toFailure(result, "invalid-json");
+		const hits = normalizeGrepHits(parsed);
+		return hits === undefined ? toFailure(result, "invalid-shape") : ok(hits, result);
 	}
 
 	async chunkGet(chunkId: string, signal?: AbortSignal): Promise<LazykatokChunkResult> {
@@ -437,6 +460,60 @@ function normalizeIndex(raw: Record<string, unknown>): LazykatokIndexInfo | unde
 	// client's contract is path-opaque, so those paths are not surfaced.
 	const metadata = stripKnown(raw, new Set(["chunkCount", "candidate_chunks", "documents"]));
 	return { chunkCount, metadata };
+}
+
+function normalizeGrepHits(raw: unknown): readonly LazykatokGrepHit[] | undefined {
+	if (!Array.isArray(raw)) return undefined;
+	const out: LazykatokGrepHit[] = [];
+	for (const entry of raw) {
+		const record = asRecord(entry);
+		if (record === undefined) return undefined;
+		const chunkId = asString(record.chunk_id) ?? asString(record.chunkId);
+		const chatId = asString(record.chat_id) ?? asString(record.chatId) ?? "";
+		const chatName = asString(record.chat_name) ?? asString(record.chatName) ?? "";
+		const senderNickname = asString(record.sender_nickname) ?? asString(record.senderNickname) ?? "";
+		const startedAt = asString(record.started_at) ?? asString(record.startedAt) ?? "";
+		const endedAt = asString(record.ended_at) ?? asString(record.endedAt) ?? "";
+		const lineNumber = asNumber(record.line_number) ?? asNumber(record.lineNumber);
+		const lineEnd = asNumber(record.line_end) ?? asNumber(record.lineEnd) ?? lineNumber;
+		const matchedLine = asString(record.matched_line) ?? asString(record.matchedLine);
+		const snippet = asString(record.snippet);
+		if (
+			chunkId === undefined ||
+			chunkId.length === 0 ||
+			lineNumber === undefined ||
+			lineEnd === undefined ||
+			matchedLine === undefined ||
+			snippet === undefined
+		) {
+			return undefined;
+		}
+		const contextBefore = Array.isArray(record.context_before)
+			? record.context_before.filter((v): v is string => typeof v === "string")
+			: [];
+		const contextAfter = Array.isArray(record.context_after)
+			? record.context_after.filter((v): v is string => typeof v === "string")
+			: [];
+		const parentChunkIds = Array.isArray(record.parent_chunk_ids)
+			? record.parent_chunk_ids.filter((v): v is string => typeof v === "string")
+			: [];
+		out.push({
+			chunkId,
+			chatId,
+			chatName,
+			senderNickname,
+			startedAt,
+			endedAt,
+			lineNumber,
+			lineEnd,
+			matchedLine,
+			snippet,
+			contextBefore,
+			contextAfter,
+			parentChunkIds,
+		});
+	}
+	return out;
 }
 
 function normalizeHits(raw: unknown): readonly LazykatokSearchHit[] | undefined {

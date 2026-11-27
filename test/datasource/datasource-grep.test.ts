@@ -19,6 +19,7 @@ import {
 import { CRAWLER_DESCRIPTORS } from "../../src/datasource/sidecar/descriptors.ts";
 import { CrawlerSidecar } from "../../src/datasource/sidecar/index.ts";
 import { DiscrawlSkill } from "../../src/datasource/skills/discrawl/skill.ts";
+import { LazykatokSkill } from "../../src/datasource/skills/lazykatok/skill.ts";
 import { MailcrawlSkill } from "../../src/datasource/skills/mailcrawl/skill.ts";
 import { NotionSkill } from "../../src/datasource/skills/notion/index.ts";
 import { ObsidianSkill } from "../../src/datasource/skills/obsidian/skill.ts";
@@ -373,6 +374,44 @@ describe("DatasourceSkill.grep across real datasource types", () => {
 		expect(notionHits).toHaveLength(1);
 		expect(notionHits[0]?.source).toContain("/notion/default/");
 		expect(notionHits[0]?.content).toContain("Q4 Launch Plan");
+
+		// 4. Lazykatok native CLI fallback when sidecar is absent
+		const kakaoCli = new LazykatokSkill({
+			client: {
+				doctor: async () => ({ ok: true, data: { ready: true }, stdout: "", stderr: "", code: 0 }),
+				sync: async () => ({ ok: true, data: { synced: true }, stdout: "", stderr: "", code: 0 }),
+				index: async () => ({ ok: true, data: { chunkCount: 1 }, stdout: "", stderr: "", code: 0 }),
+				search: async () => ({ ok: true, hits: [], data: { hits: [] }, stdout: "", stderr: "", code: 0 }),
+				grep: async (pattern) => ({
+					ok: true,
+					data: [
+						{
+							chunkId: "chk-42",
+							chatId: "room-1",
+							chatName: "Ops Sync",
+							senderNickname: "Alex",
+							startedAt: "2026-06-01T09:00:00Z",
+							endedAt: "2026-06-01T09:01:00Z",
+							lineNumber: 2,
+							lineEnd: 2,
+							matchedLine: `code=${pattern}`,
+							snippet: `code=${pattern}`,
+							contextBefore: [],
+							contextAfter: [],
+							parentChunkIds: [],
+						},
+					],
+					stdout: "",
+					stderr: "",
+					code: 0,
+				}),
+			},
+		});
+		const kakaoHits = await kakaoCli.grep!("KATOK_ERR_88", { literal: true });
+		expect(kakaoHits).toHaveLength(1);
+		expect(kakaoHits[0]?.source).toBe("/kakao/default/chunks/chk-42");
+		expect(kakaoHits[0]?.label).toBe("Ops Sync | Alex");
+		expect(kakaoHits[0]?.content).toContain("KATOK_ERR_88");
 	});
 });
 
