@@ -35,6 +35,13 @@ export interface MinSyncWorkspaceSyncResult {
 	 * them silently.
 	 */
 	readonly excluded: readonly string[];
+	/**
+	 * Parsed-mirror ids that could not be materialized in the staging tree
+	 * because the filesystem rejected the path length or name (e.g.
+	 * `ENAMETOOLONG` or Windows `EINVAL`). Isolated per document so one long
+	 * path never aborts the refresh for other files.
+	 */
+	readonly stagingFailed: readonly string[];
 }
 
 interface MinSyncStagingEntry {
@@ -75,23 +82,39 @@ export function syncMinSyncWorkspace(
 
 	const currentState: Record<string, MinSyncStagingEntry> = {};
 	const desiredPaths = new Set<string>();
+	const stagedEntries: MinSyncWorkspaceEntry[] = [];
+	const stagingFailed: string[] = [];
 	for (const entry of entries) {
 		const mirrorEntry = index.entries[entry.virtualPath];
 		if (mirrorEntry === undefined) continue;
 		const previousEntry = previousState?.entries[entry.virtualPath];
-		const unchanged =
-			previousEntry?.outputPath === mirrorEntry.outputPath &&
-			previousEntry.updatedAt === mirrorEntry.updatedAt &&
-			isRegularFile(entry.minSyncPath);
+		let unchanged: boolean;
+		try {
+			unchanged =
+				previousEntry?.outputPath === mirrorEntry.outputPath &&
+				previousEntry.updatedAt === mirrorEntry.updatedAt &&
+				isRegularFile(entry.minSyncPath);
+		} catch (error) {
+			if (!isPerDocumentStagingError(error)) throw error;
+			stagingFailed.push(entry.virtualPath);
+			continue;
+		}
 		if (!unchanged) {
-			ensureManagedDirectory(filesRoot, dirname(entry.minSyncPath));
-			copyFileAtomically(entry.parsedOutputPath, entry.minSyncPath);
+			try {
+				ensureManagedDirectory(filesRoot, dirname(entry.minSyncPath));
+				copyFileAtomically(entry.parsedOutputPath, entry.minSyncPath);
+			} catch (error) {
+				if (!isPerDocumentStagingError(error)) throw error;
+				stagingFailed.push(entry.virtualPath);
+				continue;
+			}
 		}
 		currentState[entry.virtualPath] = {
 			outputPath: mirrorEntry.outputPath,
 			updatedAt: mirrorEntry.updatedAt,
 		};
 		desiredPaths.add(entry.minSyncPath);
+		stagedEntries.push(entry);
 	}
 
 	// `desiredPaths` is driven by the whole mirror index, not by one parse batch,
@@ -100,7 +123,7 @@ export function syncMinSyncWorkspace(
 	removeUnexpectedStagedFiles(filesRoot, desiredPaths);
 	saveStagingState(workspacePath, { version: 1, entries: currentState });
 
-	return { workspacePath, entries, excluded };
+	return { workspacePath, entries: stagedEntries, excluded, stagingFailed };
 }
 
 function stagingStatePath(workspacePath: string): string {
@@ -163,13 +186,23 @@ function ensureManagedDirectory(filesRoot: string, directory: string): void {
 }
 
 function copyFileAtomically(source: string, destination: string): void {
-	const temporaryPath = join(dirname(destination), `.${basename(destination)}.${randomUUID()}.tmp`);
+	const temporaryPath = join(dirname(destination), `.${randomUUID()}.tmp`);
 	try {
 		copyFileSync(source, temporaryPath);
 		renameWithRetry(temporaryPath, destination);
-	} finally {
-		rmSync(temporaryPath, { force: true });
+	} catch (error) {
+		try {
+			rmSync(temporaryPath, { force: true });
+		} catch {
+			// Never let cleanup mask the copy/rename error (e.g. ENAMETOOLONG on lstat).
+		}
+		throw error;
 	}
+}
+
+function isPerDocumentStagingError(error: unknown): boolean {
+	if (!isRecord(error) || typeof error.code !== "string") return false;
+	return error.code === "ENAMETOOLONG" || error.code === "EINVAL";
 }
 
 function isRegularFile(path: string): boolean {
