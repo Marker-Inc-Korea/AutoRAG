@@ -134,6 +134,18 @@ describeFSearch("buildFSearchIndexArgs", () => {
 			"/docs/.autorag",
 		]);
 	});
+
+	it("caps --exclude-path argv bytes to avoid OS ARG_MAX / E2BIG while preserving priority exclusions", () => {
+		const manyExcludes = Array.from(
+			{ length: 20_000 },
+			(_, index) => `/Users/developer/workspace/project-${index}/node_modules/subpackage-${index}`,
+		);
+		const args = buildFSearchIndexArgs("/db", ["/Users/developer/workspace"], ["/ws/.autorag", ...manyExcludes]);
+		const argvBytes = args.reduce((sum, arg) => sum + Buffer.byteLength(arg, "utf8") + 1, 0);
+		expect(argvBytes).toBeLessThanOrEqual(256 * 1024);
+		expect(args).toContain("/ws/.autorag");
+		expect(args.filter((a) => a === "--exclude-path").length).toBeLessThan(manyExcludes.length);
+	});
 });
 
 describeFSearch("parseFSearchJsonLines", () => {
@@ -426,6 +438,22 @@ describeFSearch("FSearchClient", () => {
 		if (result.ok) throw new Error("expected failure");
 		expect(result.reason).toBe("index-failed");
 		expect(result.message).toContain("fsearch-cli: cannot read /docs");
+	});
+
+	it("returns an index-failed result instead of throwing when spawn fails synchronously (e.g. E2BIG)", async () => {
+		const hugePath = `/tmp/${"x".repeat(600_000)}`;
+		const client = new FSearchClient({
+			root,
+			folders: [hugePath, hugePath],
+			binaryPath: "/usr/bin/true",
+			platform: "darwin",
+			watch: false,
+		});
+		const result = await client.index();
+		expect(result.ok).toBe(false);
+		if (result.ok) throw new Error("expected failure");
+		expect(result.reason).toBe("index-failed");
+		expect(result.message).toMatch(/E2BIG/i);
 	});
 
 	it("falls back to a slow filesystem walk when fsearch-cli is not installed", async () => {

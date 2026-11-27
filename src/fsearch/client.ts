@@ -144,6 +144,13 @@ const DEFAULT_POLL_INTERVAL_MS = 250;
 const DEFAULT_MAX_RESULTS = 100;
 const MAX_RESULTS_CAP = 1000;
 const MAX_OUTPUT_BYTES = 8 * 1024 * 1024;
+/**
+ * Upper bound on argv bytes passed to `fsearch-cli index` so huge developer trees
+ * with thousands of excluded folders never overflow OS `ARG_MAX` (`spawn E2BIG`).
+ * Any exclusions omitted from native `--exclude-path` are still enforced client-side
+ * by `this.isExcludedPath` on every search response.
+ */
+const MAX_INDEX_ARGV_BYTES = 256 * 1024;
 
 const SORT_KEYS: Record<FSearchSort, readonly [key: string, descending: boolean]> = {
 	"name-ascending": ["name", false],
@@ -210,7 +217,14 @@ export function buildFSearchIndexArgs(
 ): string[] {
 	const args = ["index", "--db", dbPath];
 	for (const folder of folders) args.push("--include", folder);
-	for (const folder of excludeFolders) args.push("--exclude-path", folder);
+	let argvBytes = args.reduce((sum, arg) => sum + Buffer.byteLength(arg, "utf8") + 1, 0);
+	const flagBytes = Buffer.byteLength("--exclude-path", "utf8") + 1;
+	for (const folder of excludeFolders) {
+		const entryBytes = flagBytes + Buffer.byteLength(folder, "utf8") + 1;
+		if (argvBytes + entryBytes > MAX_INDEX_ARGV_BYTES) break;
+		args.push("--exclude-path", folder);
+		argvBytes += entryBytes;
+	}
 	return args;
 }
 
@@ -528,10 +542,12 @@ export class FSearchClient {
 		args: readonly string[],
 		result: FSearchRunResult,
 	): FSearchFailure {
+		const previewArgs =
+			args.length <= 12 ? args.join(" ") : `${args.slice(0, 12).join(" ")} … (${args.length} args total)`;
 		return {
 			ok: false,
 			reason,
-			message: `${binaryPath} ${args.join(" ")} exit ${result.code}: ${(result.stderr || result.stdout).trim()}`,
+			message: `${binaryPath} ${previewArgs} exit ${result.code}: ${(result.stderr || result.stdout).trim()}`,
 		};
 	}
 }
@@ -542,7 +558,17 @@ function runProcess(command: string, args: readonly string[], timeoutMs: number)
 	const promise = new Promise<FSearchRunResult>((resolve) => {
 		resolvePromise = resolve;
 	});
-	const child = spawn(command, args, { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+	let child: ReturnType<typeof spawn>;
+	try {
+		child = spawn(command, args, { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+	} catch (error) {
+		resolvePromise({
+			code: null,
+			stdout: "",
+			stderr: `${command}: ${error instanceof Error ? error.message : String(error)}`,
+		});
+		return promise;
+	}
 	const stdout: Buffer[] = [];
 	const stderr: Buffer[] = [];
 	let bytes = 0;
@@ -580,7 +606,12 @@ function runProcess(command: string, args: readonly string[], timeoutMs: number)
 }
 
 function launchDetached(command: string, args: readonly string[]): number | undefined {
-	const child = spawn(command, args, { detached: true, stdio: "ignore", windowsHide: true });
+	let child: ReturnType<typeof spawn>;
+	try {
+		child = spawn(command, args, { detached: true, stdio: "ignore", windowsHide: true });
+	} catch {
+		return undefined;
+	}
 	child.on("error", () => {
 		// The stats poll reports the daemon as not serving; searches still load the database file.
 	});
