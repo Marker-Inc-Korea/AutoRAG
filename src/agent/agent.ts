@@ -231,6 +231,7 @@ import {
 	type QueryRoute,
 	routeQuery,
 	selectDatasources,
+	shouldDecomposeQuery,
 	WEB_DATASOURCE_ID,
 } from "./query-routing.ts";
 import {
@@ -2740,7 +2741,7 @@ export class AutoRAGAgent {
 					if (turnText !== undefined) captured = await this.deriveAnswer(turnText);
 					return;
 				}
-				const plan = await this.planQuery(trimmedQuery, resolved, planAbort.signal);
+				const plan = await this.planQuery(trimmedQuery, resolved, planAbort.signal, options.routeOverride);
 				if (plan.route === "config" && plan.selfConfigSkill !== undefined && this.selfConfig !== undefined) {
 					// Self-configuration: no retrieval and no fast answer. The model
 					// gets the full setup skill and edits the config itself, then
@@ -3308,6 +3309,7 @@ export class AutoRAGAgent {
 			readonly providerApiKeys?: Readonly<Record<string, string>>;
 		},
 		signal: AbortSignal,
+		routeOverride?: QueryRoute,
 	): Promise<{
 		readonly route: QueryRoute;
 		readonly queries: readonly string[];
@@ -3318,47 +3320,84 @@ export class AutoRAGAgent {
 		readonly organizeSkill?: PackagedAgentSkill;
 	}> {
 		const judge = this.jevJudge;
-		const routing = this.searchProgress.step(
-			"route",
-			"Routing the question",
-			() => routeQuery(judge, query, { selfConfig: this.selfConfig !== undefined }),
-			(routed) => routed.route,
-		);
-		// The datasource check needs only the question, so it starts with the route check instead of after it. It is
-		// speculative: its progress step and diagnostics are kept only when the run takes the local plan. Its outcome is
-		// captured here so a failure that lands before it is read cannot surface as an unhandled rejection.
-		const selectionOutcome = this.searchProgress
-			.step(
-				"datasource-select",
-				"Choosing datasources to search",
-				() => this.selectSearchDatasources(query),
-				({ choice }) => {
-					const ids = [...choice.datasources, ...(choice.web ? [WEB_DATASOURCE_ID] : [])];
-					return ids.length === 0 ? "none" : ids.join(", ");
-				},
-			)
-			.then(
-				(plan): { readonly plan: SearchDatasourcePlan } => ({ plan }),
-				(error: unknown): { readonly error: unknown } => ({ error }),
-			);
-		const decision = await routing;
-		const discardSelection = (): void => this.searchProgress.discardStep("datasource-select");
-		if (decision.fallbackReason !== undefined) {
-			this.routingDiagnostics.push({
-				code: "query-route-fallback",
-				severity: "warning",
-				message: `Jev query routing fell back to local search. ${decision.fallbackReason}`,
-				source: "jev",
-			});
-			// The confidence floor keeps a real non-local verdict off the run but
-			// the question is still answerable: run the full local plan. Only an
-			// unavailable backend or an unusable verdict keeps the bare fallback.
-			if (decision.floorApplied !== true) {
-				discardSelection();
-				return { route: FALLBACK_QUERY_ROUTE, queries: [query], datasources: [], web: false };
+		// When the caller explicitly chose a route (e.g. an explicit Find / Summarize / Organize / Automate mode),
+		// bypass Jev's initial branch classification and take that route directly.
+		let route: QueryRoute;
+		let decomposeWanted = false;
+		let routeProbability: number | undefined;
+		let selectionOutcome: Promise<{ readonly plan: SearchDatasourcePlan } | { readonly error: unknown }> | undefined;
+		const startSelection = (): Promise<{ readonly plan: SearchDatasourcePlan } | { readonly error: unknown }> =>
+			this.searchProgress
+				.step(
+					"datasource-select",
+					"Choosing datasources to search",
+					() => this.selectSearchDatasources(query),
+					({ choice }) => {
+						const ids = [...choice.datasources, ...(choice.web ? [WEB_DATASOURCE_ID] : [])];
+						return ids.length === 0 ? "none" : ids.join(", ");
+					},
+				)
+				.then(
+					(plan): { readonly plan: SearchDatasourcePlan } => ({ plan }),
+					(error: unknown): { readonly error: unknown } => ({ error }),
+				);
+		const discardSelection = (): void => {
+			if (selectionOutcome !== undefined) this.searchProgress.discardStep("datasource-select");
+		};
+		const explicitRoute =
+			routeOverride !== undefined && (routeOverride !== "config" || this.selfConfig !== undefined)
+				? routeOverride
+				: undefined;
+		if (explicitRoute !== undefined) {
+			route = explicitRoute;
+			if (route === "local") {
+				selectionOutcome = startSelection();
+				const decomp = await this.searchProgress.step(
+					"route",
+					"Planning search queries",
+					() => shouldDecomposeQuery(judge, query),
+					() => route,
+				);
+				decomposeWanted = decomp.decompose;
+			} else {
+				await this.searchProgress.step(
+					"route",
+					"Routing the question",
+					async () => route,
+					(routed) => routed,
+				);
 			}
+		} else {
+			const routing = this.searchProgress.step(
+				"route",
+				"Routing the question",
+				() => routeQuery(judge, query, { selfConfig: this.selfConfig !== undefined }),
+				(routed) => routed.route,
+			);
+			// The datasource check needs only the question, so it starts with the route check instead of after it. It is
+			// speculative: its progress step and diagnostics are kept only when the run takes the local plan. Its outcome is
+			// captured here so a failure that lands before it is read cannot surface as an unhandled rejection.
+			selectionOutcome = startSelection();
+			const decision = await routing;
+			if (decision.fallbackReason !== undefined) {
+				this.routingDiagnostics.push({
+					code: "query-route-fallback",
+					severity: "warning",
+					message: `Jev query routing fell back to local search. ${decision.fallbackReason}`,
+					source: "jev",
+				});
+				// The confidence floor keeps a real non-local verdict off the run but
+				// the question is still answerable: run the full local plan. Only an
+				// unavailable backend or an unusable verdict keeps the bare fallback.
+				if (decision.floorApplied !== true) {
+					discardSelection();
+					return { route: FALLBACK_QUERY_ROUTE, queries: [query], datasources: [], web: false };
+				}
+			}
+			route = decision.route;
+			decomposeWanted = decision.decompose;
+			routeProbability = decision.routeProbability;
 		}
-		let route = decision.route;
 		let selfConfigSkill: PackagedAgentSkill | undefined;
 		if (route === "config") {
 			try {
@@ -3389,7 +3428,7 @@ export class AutoRAGAgent {
 		}
 		if (route !== "local") discardSelection();
 		let queries: readonly string[] = [query];
-		if (decision.decompose && route === "local") {
+		if (decomposeWanted && route === "local") {
 			const target = this.queryDecompositionModel ?? {
 				model: resolved.model,
 				...((resolved.apiKey ?? resolved.providerApiKeys?.[resolved.model.provider]) !== undefined
@@ -3414,17 +3453,21 @@ export class AutoRAGAgent {
 		}
 		let selection: SearchDatasourceChoice = { datasources: [], web: false };
 		if (route === "local") {
-			const outcome = await selectionOutcome;
+			const outcome = await (selectionOutcome ?? startSelection());
 			if ("error" in outcome) throw outcome.error;
 			this.routingDiagnostics.push(...outcome.plan.diagnostics);
 			selection = outcome.plan.choice;
 		}
-		const probability = decision.routeProbability === undefined ? "" : ` (p=${decision.routeProbability.toFixed(2)})`;
+		const probability = routeProbability === undefined ? "" : ` (p=${routeProbability.toFixed(2)})`;
+		const routedBy =
+			explicitRoute !== undefined
+				? `Caller explicitly routed the question to ${route}`
+				: `Jev routed the question to ${route}${probability}`;
 		this.routingDiagnostics.push({
 			code: "query-routed",
 			severity: "info",
 			message:
-				`Jev routed the question to ${route}${probability}; ` +
+				`${routedBy}; ` +
 				(route === "config"
 					? "configuring AutoRAG with the full setup skill; no retrieval and no fast answer."
 					: route === "organize"
@@ -3432,7 +3475,7 @@ export class AutoRAGAgent {
 						: route === "extra"
 							? "carrying out the request with every tool; no retrieval and no verification."
 							: `searching with ${queries.length} ${queries.length === 1 ? "query" : "queries"}: ${queries.map((entry) => JSON.stringify(entry)).join(", ")}.`),
-			source: "jev",
+			source: explicitRoute !== undefined ? "route-override" : "jev",
 		});
 		return {
 			route,

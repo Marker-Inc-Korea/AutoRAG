@@ -59,6 +59,15 @@ export interface RetrievalOptions {
 	 * they only narrow: a method that does not know a filter ignores it, and none can reach past the operator's config.
 	 */
 	filters?: Readonly<Record<string, readonly string[]>>;
+	/**
+	 * Explicit Turn-1 route override chosen by the caller (e.g. a user clicking an
+	 * explicit Find / Summarize / Organize / Automate mode chip in the UI).
+	 * When set, Turn 1 skips Jev's initial query-route classification and executes
+	 * the requested branch directly (`local` still runs decomposition + datasource
+	 * selection; `organize` loads the organize skill; `config` loads the setup
+	 * skill when self-config is enabled; `extra` runs a direct single tool turn).
+	 */
+	routeOverride?: "local" | "organize" | "extra" | "config";
 	signal?: AbortSignal;
 	/**
 	 * Owned by the retrieval pipeline, not by callers: invoked when a method answered through a fallback.
