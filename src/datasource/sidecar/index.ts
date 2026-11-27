@@ -19,6 +19,7 @@ import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import { pathToFileURL } from "node:url";
 import type { Embedder, EmbeddingIdentity } from "../../embedding/embedder.ts";
 import type { TimeWindow } from "../../retrieval/time-window.ts";
+import { compileGrepPattern, escapeSqlLike, matchLinesInText } from "../grep.ts";
 import type { CrawlerDescriptor } from "./descriptors.ts";
 import {
 	decodeVector,
@@ -37,6 +38,21 @@ export interface SidecarHit {
 	/** Milliseconds since epoch. */
 	readonly publishedAt?: number;
 	readonly metadata: Readonly<Record<string, string>>;
+}
+
+export interface SidecarGrepOptions {
+	readonly literal?: boolean;
+	readonly ignoreCase?: boolean;
+	readonly context?: number;
+	readonly limit?: number;
+	readonly maxPerMessage?: number;
+	readonly window?: TimeWindow;
+}
+
+export interface SidecarGrepHit extends SidecarHit {
+	readonly lineNumber: number;
+	readonly lineEnd: number;
+	readonly line: string;
 }
 
 export type SidecarSyncResult =
@@ -274,6 +290,63 @@ export class CrawlerSidecar {
 			params.push(window.until / 1000);
 		}
 		return { sql: clauses.length === 0 ? "" : ` and ${clauses.join(" and ")}`, params };
+	}
+
+	/**
+	 * Exact substring or regex grep directly over the attached read-only crawler archive,
+	 * honoring `liveWhere`, `workspaceId`, channel allowlists, and optional time window,
+	 * with zero embedding or FTS tokenization.
+	 */
+	grepExact(pattern: string, options: SidecarGrepOptions = {}): SidecarGrepHit[] {
+		if (pattern.length === 0) return [];
+		const limit = Math.max(1, Math.floor(options.limit ?? 100));
+		const maxPerMessage = Math.max(1, Math.floor(options.maxPerMessage ?? 10));
+		const context = Math.min(20, Math.max(0, Math.floor(options.context ?? 0)));
+		if (!this.attachCrawler()) return [];
+		const matcher = compileGrepPattern(pattern, {
+			literal: options.literal,
+			ignoreCase: options.ignoreCase,
+		});
+		const { descriptor } = this.options;
+		const windowed = this.windowPredicate(options.window);
+		const likeClauses: string[] = [];
+		const likeParams: SQLInputValue[] = [];
+		if (options.literal) {
+			// Coarse SQLite LIKE prefilter (case-insensitive for ASCII); JS RegExp then verifies exact case/match.
+			likeClauses.push(`(${descriptor.textExpression}) like ? escape '\\'`);
+			likeParams.push(`%${escapeSqlLike(pattern)}%`);
+		}
+		const extraWhere = likeClauses.length > 0 ? ` and ${likeClauses.join(" and ")}` : "";
+		const orderSql =
+			descriptor.epochSecondsExpression !== undefined ? ` order by (${descriptor.epochSecondsExpression}) desc` : "";
+		const rows = this.db
+			.prepare(
+				`select ${this.select} from ${descriptor.fromClause}
+				where ${this.where}${windowed.sql}${extraWhere}${orderSql}`,
+			)
+			.iterate(...this.whereParams(), ...windowed.params, ...likeParams) as Iterable<Row>;
+
+		const hits: SidecarGrepHit[] = [];
+		for (const raw of rows) {
+			const parsed = this.toRow(raw);
+			const matched = matchLinesInText(
+				parsed.content,
+				matcher,
+				context,
+				Math.min(maxPerMessage, limit - hits.length),
+			);
+			for (const item of matched) {
+				hits.push({
+					...this.toHit(parsed, 1 / (hits.length + 1)),
+					content: item.snippet,
+					lineNumber: item.lineNumber,
+					lineEnd: item.lineEnd,
+					line: item.line,
+				});
+				if (hits.length >= limit) return hits;
+			}
+		}
+		return hits;
 	}
 
 	/** BM25-ranked lexical search. Natural-language queries are OR-ed term by term. An optional window narrows in SQL. */
