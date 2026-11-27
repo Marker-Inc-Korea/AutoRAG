@@ -45,6 +45,12 @@ export interface MinSyncSyncResult {
 	 * unindexable document is never dropped silently.
 	 */
 	readonly stagingExcluded?: readonly string[];
+	/**
+	 * Parsed-mirror ids whose staged copy failed with a per-document path error
+	 * (e.g. `ENAMETOOLONG` or `EINVAL`). Isolated so the rest of the refresh
+	 * still succeeds and indexes.
+	 */
+	readonly stagingFailed?: readonly string[];
 	/** Files MinSync skipped (exit 6, `partial`); the sync itself completed and the next sync retries them. */
 	readonly filesFailed?: readonly MinSyncFileFailure[];
 }

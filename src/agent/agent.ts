@@ -4590,6 +4590,7 @@ export class AutoRAGAgent {
 					...summary.diagnostics,
 					...minsyncDiagnostics,
 					...stagingExcludedDiagnostics(minsync?.stagingExcluded),
+					...stagingFailedDiagnostics(minsync?.stagingFailed),
 					...fileSkippedDiagnostics(minsync?.filesFailed),
 					...everythingDiagnostics,
 					...fsearchDiagnostics,
@@ -5840,6 +5841,21 @@ function stagingExcludedDiagnostics(excluded: readonly string[] | undefined): Se
 		code: "minsync-staging-excluded",
 		severity: "warning",
 		message: "Excluded from the MinSync index: this file name cannot be represented as a canonical source id.",
+		source,
+	}));
+}
+
+/**
+ * Documents whose staged MinSync path exceeded filesystem limits (e.g. ENAMETOOLONG
+ * for long filenames or deep macOS NFD paths) or was rejected as invalid. Isolated per
+ * file so the rest of the corpus still stages and indexes.
+ */
+function stagingFailedDiagnostics(failed: readonly string[] | undefined): SearchDocumentDiagnostic[] {
+	return (failed ?? []).map((source) => ({
+		code: "minsync-staging-failed",
+		severity: "warning",
+		message:
+			"Skipped from the MinSync index: file name or path is too long to stage; shorten the name or folder path.",
 		source,
 	}));
 }

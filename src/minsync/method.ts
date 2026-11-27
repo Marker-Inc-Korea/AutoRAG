@@ -131,15 +131,18 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 			workspacePath: this.workspacePath,
 			minSyncBinaryPath: binaryPath,
 		});
-		const withExcluded = (result: MinSyncSyncResult): MinSyncSyncResult =>
-			staging.excluded.length === 0 ? result : { ...result, stagingExcluded: staging.excluded };
+		const withStaging = (result: MinSyncSyncResult): MinSyncSyncResult => ({
+			...result,
+			...(staging.excluded.length > 0 ? { stagingExcluded: staging.excluded } : {}),
+			...(staging.stagingFailed.length > 0 ? { stagingFailed: staging.stagingFailed } : {}),
+		});
 		const client = new MinSyncClient({
 			binaryPath,
 			workspacePath: this.workspacePath,
 			embedder: this.embedder,
 			maxChunkSize: this.maxChunkSize,
 		});
-		return withExcluded(await client.sync(force, signal, onProgress));
+		return withStaging(await client.sync(force, signal, onProgress));
 	}
 
 	/** Report unavailable binaries without treating auto-install as already failed. */
