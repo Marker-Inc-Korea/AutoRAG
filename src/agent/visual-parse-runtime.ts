@@ -61,6 +61,9 @@ export interface VisualParseAgentOptions {
 	readonly maxPagesPerFile?: number;
 	readonly maxWidthPx?: number;
 	readonly concurrency?: number;
+	readonly gateConcurrency?: number;
+	readonly ocrConcurrency?: number;
+	readonly fileConcurrency?: number;
 }
 
 function isVisualPageGate(value: VisualParseGateAgentConfig | VisualPageGate | undefined): value is VisualPageGate {
@@ -247,5 +250,8 @@ export async function resolveVisualParseSyncOptions(input: {
 		...(visualParse.maxPagesPerFile !== undefined ? { maxPagesPerFile: visualParse.maxPagesPerFile } : {}),
 		...(visualParse.maxWidthPx !== undefined ? { maxWidthPx: visualParse.maxWidthPx } : {}),
 		...(visualParse.concurrency !== undefined ? { concurrency: visualParse.concurrency } : {}),
+		...(visualParse.gateConcurrency !== undefined ? { gateConcurrency: visualParse.gateConcurrency } : {}),
+		...(visualParse.ocrConcurrency !== undefined ? { ocrConcurrency: visualParse.ocrConcurrency } : {}),
+		...(visualParse.fileConcurrency !== undefined ? { fileConcurrency: visualParse.fileConcurrency } : {}),
 	};
 }

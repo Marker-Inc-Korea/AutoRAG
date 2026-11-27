@@ -35,7 +35,10 @@ describe("visualParse CLI config", () => {
 		const normalized = normalizeVisualParseConfig({
 			enabled: true,
 			threshold: 0.65,
-			concurrency: 6,
+			concurrency: 8,
+			gateConcurrency: 12,
+			ocrConcurrency: 2,
+			fileConcurrency: 3,
 			extractor: {
 				kind: "vlm",
 				model: { provider: "openrouter", id: "google/gemini-3.5-flash-lite", name: "Gemini 3.5 Flash Lite" },
@@ -47,7 +50,10 @@ describe("visualParse CLI config", () => {
 		expect(normalized).toEqual({
 			enabled: true,
 			threshold: 0.65,
-			concurrency: 6,
+			concurrency: 8,
+			gateConcurrency: 12,
+			ocrConcurrency: 2,
+			fileConcurrency: 3,
 			extractor: {
 				kind: "vlm",
 				model: { provider: "openrouter", id: "google/gemini-3.5-flash-lite", name: "Gemini 3.5 Flash Lite" },

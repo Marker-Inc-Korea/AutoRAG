@@ -203,8 +203,14 @@ export interface VisualParseCliConfig {
 	maxPagesPerFile?: number;
 	/** Maximum width in pixels for rendered pages (default 1024). */
 	maxWidthPx?: number;
-	/** Max concurrent page gate/extraction calls per file (default 4). */
+	/** Max concurrent VLM extraction API calls (default 8). */
 	concurrency?: number;
+	/** Max concurrent vision decision-gate API calls (default 12). */
+	gateConcurrency?: number;
+	/** Max concurrent local OCR workers (default 2). */
+	ocrConcurrency?: number;
+	/** Max files visually enriched concurrently across a batch (default 3). */
+	fileConcurrency?: number;
 }
 
 /**
@@ -1597,6 +1603,9 @@ const VISUAL_PARSE_FIELDS: Readonly<Record<string, true>> = {
 	maxPagesPerFile: true,
 	maxWidthPx: true,
 	concurrency: true,
+	gateConcurrency: true,
+	ocrConcurrency: true,
+	fileConcurrency: true,
 };
 
 const VISUAL_PARSE_GATE_FIELDS: Readonly<Record<string, true>> = {
@@ -1713,7 +1722,14 @@ export function normalizeVisualParseConfig(raw: unknown, path = "visualParse"): 
 		}
 		out.extractor = extractor;
 	}
-	for (const field of ["maxPagesPerFile", "maxWidthPx", "concurrency"] as const) {
+	for (const field of [
+		"maxPagesPerFile",
+		"maxWidthPx",
+		"concurrency",
+		"gateConcurrency",
+		"ocrConcurrency",
+		"fileConcurrency",
+	] as const) {
 		const value = record[field];
 		if (value === undefined) continue;
 		if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) {
@@ -1787,6 +1803,15 @@ export function buildAgentOptions(config: CliConfig, agentDir?: string): Omit<Au
 						...(config.visualParse.maxWidthPx !== undefined ? { maxWidthPx: config.visualParse.maxWidthPx } : {}),
 						...(config.visualParse.concurrency !== undefined
 							? { concurrency: config.visualParse.concurrency }
+							: {}),
+						...(config.visualParse.gateConcurrency !== undefined
+							? { gateConcurrency: config.visualParse.gateConcurrency }
+							: {}),
+						...(config.visualParse.ocrConcurrency !== undefined
+							? { ocrConcurrency: config.visualParse.ocrConcurrency }
+							: {}),
+						...(config.visualParse.fileConcurrency !== undefined
+							? { fileConcurrency: config.visualParse.fileConcurrency }
 							: {}),
 					};
 	}

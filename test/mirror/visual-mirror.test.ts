@@ -608,4 +608,127 @@ describe("visual-rich page gating and multi-mirror incremental sync", () => {
 		expect(manifest?.pages["2"]?.route).toBe("ocr");
 		expect(manifest?.pages["3"]?.route).toBe("vlm");
 	});
+
+	it("pipelines gate + VLM extraction concurrently across pages and across files while respecting shared rate caps", async () => {
+		// Create 3 PDFs with 6 pages each (18 pages total: 12 VLM, 3 OCR, 3 plain)
+		const registry = new ParserRegistry([new StubPagedPdfParser()]);
+		for (const name of ["doc1.pdf", "doc2.pdf", "doc3.pdf"]) {
+			writeFileSync(
+				join(docs, name),
+				["p1 chart", "p2 chart", "p3 chart", "p4 chart", "p5 scan", "p6 plain"].join("\f"),
+			);
+		}
+
+		let activeGate = 0;
+		let peakGate = 0;
+		let activeVlm = 0;
+		let peakVlm = 0;
+		let activeOcr = 0;
+		let peakOcr = 0;
+		let gateWhileVlmRunning = false;
+		const activeFiles = new Set<string>();
+		let peakFiles = 0;
+
+		const renderer: PageRenderer = {
+			fingerprint: "parallel-renderer:v1",
+			supports: () => true,
+			renderPages: async ({ virtualPath }) => [
+				fakeRenderedPage(1, `${virtualPath}:chart1`),
+				fakeRenderedPage(2, `${virtualPath}:chart2`),
+				fakeRenderedPage(3, `${virtualPath}:chart3`),
+				fakeRenderedPage(4, `${virtualPath}:chart4`),
+				fakeRenderedPage(5, `${virtualPath}:scan5`),
+				fakeRenderedPage(6, `${virtualPath}:plain6`),
+			],
+		};
+
+		const gate: VisualPageGate = {
+			fingerprint: "parallel-gate:v1",
+			judge: async ({ virtualPath, page }) => {
+				activeGate += 1;
+				peakGate = Math.max(peakGate, activeGate);
+				activeFiles.add(virtualPath);
+				peakFiles = Math.max(peakFiles, activeFiles.size);
+				if (activeVlm > 0) gateWhileVlmRunning = true;
+				await new Promise((r) => setTimeout(r, 12));
+				activeGate -= 1;
+				if (page <= 4) {
+					return { route: "vlm", visuallyRich: true, probability: 0.95, model: "jev-1.13", backend: "openrouter" };
+				}
+				if (page === 5) {
+					return { route: "ocr", visuallyRich: true, probability: 0.92, model: "jev-1.13", backend: "openrouter" };
+				}
+				return { route: "plain", visuallyRich: false, probability: 0.91, model: "jev-1.13", backend: "openrouter" };
+			},
+		};
+
+		const vlmExtractor: VisualPageExtractor = {
+			kind: "vlm",
+			modelId: "vlm-parallel",
+			fingerprint: "vlm:parallel:v1",
+			extract: async ({ virtualPath, page }) => {
+				activeVlm += 1;
+				peakVlm = Math.max(peakVlm, activeVlm);
+				activeFiles.add(virtualPath);
+				peakFiles = Math.max(peakFiles, activeFiles.size);
+				await new Promise((r) => setTimeout(r, 45));
+				activeVlm -= 1;
+				return { markdown: `VLM ${virtualPath} p.${page}`, extractorKind: "vlm", extractorModel: "vlm-parallel" };
+			},
+		};
+
+		const ocrExtractor: VisualPageExtractor = {
+			kind: "ocr",
+			modelId: "ocr-parallel",
+			fingerprint: "ocr:parallel:v1",
+			extract: async ({ virtualPath, page }) => {
+				activeOcr += 1;
+				peakOcr = Math.max(peakOcr, activeOcr);
+				await new Promise((r) => setTimeout(r, 30));
+				activeOcr -= 1;
+				return { markdown: `OCR ${virtualPath} p.${page}`, extractorKind: "ocr", extractorModel: "ocr-parallel" };
+			},
+		};
+
+		const started = Date.now();
+		await syncParsedMirrors({
+			root,
+			searchPaths: [docs],
+			registry,
+			visualParse: {
+				renderer,
+				gate,
+				vlmExtractor,
+				ocrExtractor,
+				gateConcurrency: 10,
+				concurrency: 6,
+				ocrConcurrency: 2,
+				fileConcurrency: 3,
+			},
+		});
+		const elapsedMs = Date.now() - started;
+
+		// Concurrency assertions:
+		// - Multiple files ran concurrently (peakFiles > 1)
+		// - VLM calls ran in parallel (peakVlm >= 4) and never exceeded the global cap (6)
+		// - Gate calls overlapped with in-flight VLM calls and stayed within cap (10)
+		// - OCR calls stayed bounded by ocrConcurrency (2)
+		expect(peakFiles).toBeGreaterThanOrEqual(2);
+		expect(peakVlm).toBeGreaterThanOrEqual(4);
+		expect(peakVlm).toBeLessThanOrEqual(6);
+		expect(peakGate).toBeGreaterThanOrEqual(4);
+		expect(peakGate).toBeLessThanOrEqual(10);
+		expect(peakOcr).toBeLessThanOrEqual(2);
+		expect(gateWhileVlmRunning).toBe(true);
+		// Serial wall time would be 18*12ms + 12*45ms + 3*30ms = 846ms+; parallel should finish much faster.
+		expect(elapsedMs).toBeLessThan(450);
+
+		// Every file got all 5 extracted pages (4 VLM + 1 OCR) in ascending page order
+		for (const name of ["doc1.pdf", "doc2.pdf", "doc3.pdf"]) {
+			const md = readFileSync(parsedVisualOutputPath(root, `/docs/${name}`), "utf8");
+			expect(md).toContain(`VLM /docs/${name} p.1`);
+			expect(md).toContain(`VLM /docs/${name} p.4`);
+			expect(md).toContain(`OCR /docs/${name} p.5`);
+		}
+	});
 });

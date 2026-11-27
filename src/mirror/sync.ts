@@ -41,6 +41,9 @@ import {
 import { writePagesSidecar } from "./pages-sidecar.ts";
 import { parsedMirrorRoot, parsedOutputPath } from "./paths.ts";
 import {
+	AsyncSemaphore,
+	createVisualMirrorSharedLimiters,
+	DEFAULT_VISUAL_FILE_CONCURRENCY,
 	isVisualMirrorUpToDate,
 	removeVisualMirror,
 	syncVisualMirrorForFile,
@@ -684,11 +687,20 @@ async function syncWithRegistry(
 				.map((entry) => entry.sourcePath),
 		);
 		let batchStart = 0;
+		const visualSharedLimiters =
+			options.visualParse !== undefined ? createVisualMirrorSharedLimiters(options.visualParse) : undefined;
+		const visualFileLimiter =
+			options.visualParse !== undefined
+				? new AsyncSemaphore(
+						Math.max(1, Math.floor(options.visualParse.fileConcurrency ?? DEFAULT_VISUAL_FILE_CONCURRENCY)),
+					)
+				: undefined;
 		for (;;) {
 			const batchLimit = Math.min(batchStart + batchSize, current.length);
 			// Ends early, before the placeholder that would exceed this batch's download budget.
 			let batchEnd = batchLimit;
 			const changedBefore = written + deleted;
+			const batchVisualJobs: Promise<void>[] = [];
 			gate.startBatch();
 			for (let position = batchStart; position < batchLimit; position += 1) {
 				const entry = current[position];
@@ -904,27 +916,54 @@ async function syncWithRegistry(
 						}
 					}
 					if (options.visualParse !== undefined) {
-						const visualOutcome = await syncVisualMirrorForFile({
-							root: options.root,
-							virtualPath: entry.virtualPath,
-							sourcePath: entry.sourcePath,
-							sourceVersion: entry.sourceVersion,
-							baseMirrorPath: outputPath,
-							readBytes: async () => bytes,
-							options: options.visualParse,
-							force: options.force,
-							signal: options.signal,
-						});
-						for (const visualDiag of visualOutcome.diagnostics) {
-							diagnostics.push({
-								code: visualDiag.code,
-								severity: "warning",
-								message: visualDiag.message,
-								source: entry.virtualPath,
-							});
-						}
-					}
-					if (cloudDecision.kind === "download" && gate.evictAfterParse) {
+						const visualOptions = options.visualParse;
+						const releaseAfter = cloudDecision.kind === "download" && gate.evictAfterParse;
+						const runVisual = async (): Promise<void> => {
+							try {
+								const visualOutcome = await syncVisualMirrorForFile({
+									root: options.root,
+									virtualPath: entry.virtualPath,
+									sourcePath: entry.sourcePath,
+									sourceVersion: entry.sourceVersion,
+									baseMirrorPath: outputPath,
+									readBytes: async () => bytes,
+									options: visualOptions,
+									sharedLimiters: visualSharedLimiters,
+									force: options.force,
+									signal: options.signal,
+								});
+								for (const visualDiag of visualOutcome.diagnostics) {
+									diagnostics.push({
+										code: visualDiag.code,
+										severity: "warning",
+										message: visualDiag.message,
+										source: entry.virtualPath,
+									});
+								}
+							} catch (error) {
+								if (options.signal?.aborted) throw abortReason(options.signal);
+								diagnostics.push({
+									code: "visual-render-failed",
+									severity: "warning",
+									message: error instanceof Error ? error.message : String(error),
+									source: entry.virtualPath,
+								});
+							} finally {
+								if (releaseAfter) {
+									const released = await gate.release(entry.sourcePath);
+									if (!released.ok) {
+										diagnostics.push({
+											code: "cloud-evict-failed",
+											severity: "warning",
+											message: `The file was indexed but its local copy could not be released: ${released.message}`,
+											source: entry.virtualPath,
+										});
+									}
+								}
+							}
+						};
+						batchVisualJobs.push(visualFileLimiter ? visualFileLimiter.run(runVisual) : runVisual());
+					} else if (cloudDecision.kind === "download" && gate.evictAfterParse) {
 						const released = await gate.release(entry.sourcePath);
 						if (!released.ok) {
 							diagnostics.push({
@@ -936,50 +975,58 @@ async function syncWithRegistry(
 						}
 					}
 				} else if (visualPending && options.visualParse !== undefined) {
-					try {
-						const visualOutcome = await syncVisualMirrorForFile({
-							root: options.root,
-							virtualPath: entry.virtualPath,
-							sourcePath: entry.sourcePath,
-							sourceVersion: entry.sourceVersion,
-							baseMirrorPath: outputPath,
-							readBytes: () =>
-								withTransientRetry(() => readFile(entry.sourcePath), transientRetries, transientBackoffMs),
-							options: options.visualParse,
-							force: options.force,
-							signal: options.signal,
-						});
-						for (const visualDiag of visualOutcome.diagnostics) {
+					const visualOptions = options.visualParse;
+					const releaseAfter = cloudDecision.kind === "download" && gate.evictAfterParse;
+					const runVisual = async (): Promise<void> => {
+						try {
+							const visualOutcome = await syncVisualMirrorForFile({
+								root: options.root,
+								virtualPath: entry.virtualPath,
+								sourcePath: entry.sourcePath,
+								sourceVersion: entry.sourceVersion,
+								baseMirrorPath: outputPath,
+								readBytes: () =>
+									withTransientRetry(() => readFile(entry.sourcePath), transientRetries, transientBackoffMs),
+								options: visualOptions,
+								sharedLimiters: visualSharedLimiters,
+								force: options.force,
+								signal: options.signal,
+							});
+							for (const visualDiag of visualOutcome.diagnostics) {
+								diagnostics.push({
+									code: visualDiag.code,
+									severity: "warning",
+									message: visualDiag.message,
+									source: entry.virtualPath,
+								});
+							}
+							if (visualOutcome.changed) written += 1;
+						} catch (error) {
+							if (options.signal?.aborted) throw abortReason(options.signal);
 							diagnostics.push({
-								code: visualDiag.code,
+								code: "visual-render-failed",
 								severity: "warning",
-								message: visualDiag.message,
+								message: error instanceof Error ? error.message : String(error),
 								source: entry.virtualPath,
 							});
+						} finally {
+							if (releaseAfter) {
+								const released = await gate.release(entry.sourcePath);
+								if (!released.ok) {
+									diagnostics.push({
+										code: "cloud-evict-failed",
+										severity: "warning",
+										message: `The file was visually indexed but its local copy could not be released: ${released.message}`,
+										source: entry.virtualPath,
+									});
+								}
+							}
 						}
-						if (visualOutcome.changed) written += 1;
-					} catch (error) {
-						if (options.signal?.aborted) throw abortReason(options.signal);
-						diagnostics.push({
-							code: "visual-render-failed",
-							severity: "warning",
-							message: error instanceof Error ? error.message : String(error),
-							source: entry.virtualPath,
-						});
-					}
-					if (cloudDecision.kind === "download" && gate.evictAfterParse) {
-						const released = await gate.release(entry.sourcePath);
-						if (!released.ok) {
-							diagnostics.push({
-								code: "cloud-evict-failed",
-								severity: "warning",
-								message: `The file was visually indexed but its local copy could not be released: ${released.message}`,
-								source: entry.virtualPath,
-							});
-						}
-					}
+					};
+					batchVisualJobs.push(visualFileLimiter ? visualFileLimiter.run(runVisual) : runVisual());
 				}
 			}
+			if (batchVisualJobs.length > 0) await Promise.all(batchVisualJobs);
 			const finalBatch = batchEnd >= current.length;
 			if (finalBatch && deferDeletions) await applyDeleteDecisions();
 			// A batch that changed no mirror output has nothing new to index; the

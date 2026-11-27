@@ -36,6 +36,8 @@ const VLM_PROMPT_VERSION = "v3-focused";
 const OCR_PROMPT_VERSION = "v1";
 const DEFAULT_VLM_TIMEOUT_MS = 60_000;
 const DEFAULT_VLM_MAX_TOKENS = 4_096;
+const DEFAULT_VLM_MAX_RETRIES = 2;
+const DEFAULT_VLM_RETRY_BASE_MS = 750;
 const MAX_CONTEXT_TEXT_CHARS = 3_000;
 
 const VLM_SYSTEM_PROMPT = [
@@ -65,8 +67,40 @@ export interface VlmVisualPageExtractorOptions {
 	readonly apiKey?: string;
 	readonly timeoutMs?: number;
 	readonly maxTokens?: number;
+	/** Transient 429 / 5xx / timeout retry count per page call (default 2). */
+	readonly maxRetries?: number;
+	/** Initial backoff in ms before retrying a rate-limited/transient VLM call (default 750ms). */
+	readonly retryBaseMs?: number;
 	/** Programmatic seam for tests or custom transports. */
 	readonly complete?: VlmCompleteFn;
+	/** Optional sleep seam for retry tests. */
+	readonly sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
+}
+
+function isRetryableVlmError(error: unknown): boolean {
+	const message = error instanceof Error ? error.message : String(error);
+	return /\b(429|500|502|503|504|529)\b|rate[\s-]?limit|too many requests|overloaded|temporar|econnreset|etimedout|fetch failed/iu.test(
+		message,
+	);
+}
+
+function defaultRetrySleep(ms: number, signal?: AbortSignal): Promise<void> {
+	if (ms <= 0) return Promise.resolve();
+	return new Promise<void>((resolve, reject) => {
+		if (signal?.aborted) {
+			reject(signal.reason ?? new Error("Aborted"));
+			return;
+		}
+		const onAbort = () => {
+			clearTimeout(timer);
+			reject(signal?.reason ?? new Error("Aborted"));
+		};
+		const timer = setTimeout(() => {
+			signal?.removeEventListener("abort", onAbort);
+			resolve();
+		}, ms);
+		signal?.addEventListener("abort", onAbort, { once: true });
+	});
 }
 
 function extractAssistantText(message: AssistantMessage): string {
@@ -124,6 +158,9 @@ export function createVlmVisualPageExtractor(options: VlmVisualPageExtractorOpti
 	const modelId = `${model.provider}/${model.id}`;
 	const timeoutMs = options.timeoutMs ?? DEFAULT_VLM_TIMEOUT_MS;
 	const maxTokens = options.maxTokens ?? DEFAULT_VLM_MAX_TOKENS;
+	const maxRetries = Math.max(0, Math.floor(options.maxRetries ?? DEFAULT_VLM_MAX_RETRIES));
+	const retryBaseMs = Math.max(0, options.retryBaseMs ?? DEFAULT_VLM_RETRY_BASE_MS);
+	const sleepFn = options.sleep ?? defaultRetrySleep;
 	const complete: VlmCompleteFn =
 		options.complete ??
 		((targetModel, context, callOptions) =>
@@ -143,43 +180,53 @@ export function createVlmVisualPageExtractor(options: VlmVisualPageExtractorOpti
 				input.image.data.byteOffset,
 				input.image.data.byteLength,
 			).toString("base64");
-			const controller = new AbortController();
-			const onAbort = () => controller.abort(input.signal?.reason);
-			input.signal?.addEventListener("abort", onAbort, { once: true });
-			const timer = setTimeout(
-				() => controller.abort(new Error(`VLM visual extraction timed out after ${timeoutMs}ms`)),
-				timeoutMs,
-			);
-			try {
-				const response = await complete(
-					model,
-					{
-						systemPrompt: VLM_SYSTEM_PROMPT,
-						messages: [
-							{
-								role: "user",
-								timestamp: Date.now(),
-								content: [
-									{ type: "text", text: buildVlmUserText(input) },
-									{ type: "image", data: base64, mimeType: input.image.mimeType },
-								],
-							},
-						],
-					},
-					{
-						...(options.apiKey !== undefined ? { apiKey: options.apiKey } : {}),
-						maxTokens,
-						signal: controller.signal,
-					},
+			const userText = buildVlmUserText(input);
+			for (let attempt = 0; ; attempt += 1) {
+				if (input.signal?.aborted) throw input.signal.reason ?? new Error("Aborted");
+				const controller = new AbortController();
+				const onAbort = () => controller.abort(input.signal?.reason);
+				input.signal?.addEventListener("abort", onAbort, { once: true });
+				const timer = setTimeout(
+					() => controller.abort(new Error(`VLM visual extraction timed out after ${timeoutMs}ms`)),
+					timeoutMs,
 				);
-				return {
-					markdown: cleanExtractedMarkdown(extractAssistantText(response)),
-					extractorKind: "vlm",
-					extractorModel: modelId,
-				};
-			} finally {
-				clearTimeout(timer);
-				input.signal?.removeEventListener("abort", onAbort);
+				try {
+					const response = await complete(
+						model,
+						{
+							systemPrompt: VLM_SYSTEM_PROMPT,
+							messages: [
+								{
+									role: "user",
+									timestamp: Date.now(),
+									content: [
+										{ type: "text", text: userText },
+										{ type: "image", data: base64, mimeType: input.image.mimeType },
+									],
+								},
+							],
+						},
+						{
+							...(options.apiKey !== undefined ? { apiKey: options.apiKey } : {}),
+							maxTokens,
+							signal: controller.signal,
+						},
+					);
+					return {
+						markdown: cleanExtractedMarkdown(extractAssistantText(response)),
+						extractorKind: "vlm",
+						extractorModel: modelId,
+					};
+				} catch (error) {
+					if (input.signal?.aborted || attempt >= maxRetries || !isRetryableVlmError(error)) {
+						throw error;
+					}
+					const delayMs = retryBaseMs * 2 ** attempt;
+					await sleepFn(delayMs, input.signal);
+				} finally {
+					clearTimeout(timer);
+					input.signal?.removeEventListener("abort", onAbort);
+				}
 			}
 		},
 	};

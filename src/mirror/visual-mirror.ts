@@ -17,8 +17,66 @@ import { parsedVisualManifestPath, parsedVisualOutputPath } from "./paths.ts";
 
 const VISUAL_MANIFEST_VERSION = 1;
 
-/** Default parallel workers for per-page visual gating and extraction within one file. */
-export const DEFAULT_VISUAL_PAGE_CONCURRENCY = 4;
+/**
+ * Default parallel API workers for per-page visual gating and VLM extraction within one file.
+ * Decoupled from local OCR concurrency so remote HTTP calls (decision gate + VLM) fly in parallel
+ * while CPU-heavy local Tesseract OCR stays bounded.
+ */
+export const DEFAULT_VISUAL_PAGE_CONCURRENCY = 8;
+/** Default parallel workers for the lightweight vision decision gate. */
+export const DEFAULT_VISUAL_GATE_CONCURRENCY = 12;
+/** Default parallel workers for local CPU-bound OCR extraction (Tesseract). */
+export const DEFAULT_VISUAL_OCR_CONCURRENCY = 2;
+/** Default parallel file workers when enriching multiple documents in one Stage 2 visual pass. */
+export const DEFAULT_VISUAL_FILE_CONCURRENCY = 3;
+
+export class AsyncSemaphore {
+	private active = 0;
+	private readonly queue: Array<() => void> = [];
+
+	constructor(private readonly max: number) {}
+
+	async run<T>(fn: () => Promise<T>): Promise<T> {
+		if (this.active >= this.max) {
+			await new Promise<void>((resolve) => {
+				this.queue.push(resolve);
+			});
+		}
+		this.active += 1;
+		try {
+			return await fn();
+		} finally {
+			this.active -= 1;
+			this.queue.shift()?.();
+		}
+	}
+}
+
+/** Shared cross-file concurrency pools so parallel files still obey global gate/VLM/OCR API limits. */
+export interface VisualMirrorSharedLimiters {
+	readonly gate: AsyncSemaphore;
+	readonly vlm: AsyncSemaphore;
+	readonly ocr: AsyncSemaphore;
+}
+
+export function createVisualMirrorSharedLimiters(options: VisualMirrorSyncOptions): VisualMirrorSharedLimiters {
+	const vlmConcurrency = Math.max(1, Math.floor(options.concurrency ?? DEFAULT_VISUAL_PAGE_CONCURRENCY));
+	const gateConcurrency = Math.max(
+		1,
+		Math.floor(
+			options.gateConcurrency ??
+				(options.concurrency !== undefined
+					? Math.max(vlmConcurrency, DEFAULT_VISUAL_GATE_CONCURRENCY)
+					: DEFAULT_VISUAL_GATE_CONCURRENCY),
+		),
+	);
+	const ocrConcurrency = Math.max(1, Math.floor(options.ocrConcurrency ?? DEFAULT_VISUAL_OCR_CONCURRENCY));
+	return {
+		gate: new AsyncSemaphore(gateConcurrency),
+		vlm: new AsyncSemaphore(vlmConcurrency),
+		ocr: new AsyncSemaphore(ocrConcurrency),
+	};
+}
 
 /** Per-page cached visual-gating and VLM/OCR extraction record. */
 export interface VisualPageRecord {
@@ -66,8 +124,14 @@ export interface VisualMirrorSyncOptions {
 	readonly renderer?: PageRenderer;
 	readonly maxPagesPerFile?: number;
 	readonly maxWidthPx?: number;
-	/** Max concurrent page gate/extraction calls per file (default {@link DEFAULT_VISUAL_PAGE_CONCURRENCY}). */
+	/** Max concurrent VLM/page extraction API calls per file (default {@link DEFAULT_VISUAL_PAGE_CONCURRENCY}). */
 	readonly concurrency?: number;
+	/** Max concurrent vision decision-gate API calls (default max(concurrency, {@link DEFAULT_VISUAL_GATE_CONCURRENCY})). */
+	readonly gateConcurrency?: number;
+	/** Max concurrent local OCR workers (default {@link DEFAULT_VISUAL_OCR_CONCURRENCY}). */
+	readonly ocrConcurrency?: number;
+	/** Max files visually enriched concurrently across a batch (default {@link DEFAULT_VISUAL_FILE_CONCURRENCY}). */
+	readonly fileConcurrency?: number;
 }
 
 function resolveExtractors(options: VisualMirrorSyncOptions): {
@@ -285,6 +349,7 @@ export async function syncVisualMirrorForFile(input: {
 	readonly baseMirrorPath: string;
 	readonly readBytes: () => Promise<Uint8Array>;
 	readonly options: VisualMirrorSyncOptions;
+	readonly sharedLimiters?: VisualMirrorSharedLimiters;
 	readonly force?: boolean;
 	readonly signal?: AbortSignal;
 }): Promise<VisualMirrorFileOutcome> {
@@ -378,10 +443,70 @@ export async function syncVisualMirrorForFile(input: {
 	};
 
 	let hadPageFailure = false;
-	const concurrency = Math.max(1, Math.floor(input.options.concurrency ?? DEFAULT_VISUAL_PAGE_CONCURRENCY));
-	let nextIndex = 0;
+	const limiters = input.sharedLimiters ?? createVisualMirrorSharedLimiters(input.options);
+	const gateLimiter = limiters.gate;
+	const vlmLimiter = limiters.vlm;
+	const ocrLimiter = limiters.ocr;
+	const extractPromises: Promise<void>[] = [];
 
-	const processPage = async (rendered: (typeof renderedPages)[number]): Promise<void> => {
+	// Two-lane pipeline:
+	// 1) Gate lane runs fast vision-classifier calls at `gateConcurrency` (default 12), and as soon as a page is
+	//    classified as `vlm` or `ocr`, immediately enqueues its extraction into the VLM (default 8) or OCR (default 2)
+	//    lane without blocking gate workers from screening the remaining pages.
+	// 2) Both lanes overlap completely, so slow VLM/OCR pages never stall gate screening for the rest of the document.
+	const scheduleExtraction = (args: {
+		readonly rendered: (typeof renderedPages)[number];
+		readonly pageKey: string;
+		readonly extractedText: string;
+		readonly baseTextSha256: string;
+		readonly cached: VisualPageRecord | undefined;
+		readonly route: Exclude<VisualPageRoute, "plain">;
+		readonly probability: number;
+		readonly targetExtractor: VisualPageExtractor;
+	}): void => {
+		const limiter = args.targetExtractor.kind === "ocr" ? ocrLimiter : vlmLimiter;
+		const job = limiter.run(async () => {
+			if (input.signal?.aborted) throw abortReason(input.signal);
+			try {
+				const extracted = await args.targetExtractor.extract({
+					virtualPath: input.virtualPath,
+					page: args.rendered.page,
+					image: { data: args.rendered.data, mimeType: args.rendered.mimeType },
+					extractedText: args.extractedText,
+					signal: input.signal,
+				});
+				pagesExtracted += 1;
+				nextPages[args.pageKey] = {
+					page: args.rendered.page,
+					imageSha256: args.rendered.sha256,
+					baseTextSha256: args.baseTextSha256,
+					gateFingerprint: input.options.gate.fingerprint,
+					gateProbability: args.probability,
+					route: args.route,
+					visuallyRich: true,
+					extractorFingerprint: args.targetExtractor.fingerprint,
+					extractorKind: extracted.extractorKind,
+					extractorModel: extracted.extractorModel,
+					markdown: extracted.markdown,
+					updatedAt: new Date().toISOString(),
+				};
+				// Persist incrementally as visually-rich/OCR pages finish so an abort never wastes completed calls.
+				persistPartial(`${input.sourceVersion}:in-progress`);
+			} catch (error) {
+				if (input.signal?.aborted) throw abortReason(input.signal);
+				hadPageFailure = true;
+				diagnostics.push({
+					code: "visual-extract-failed",
+					page: args.rendered.page,
+					message: `Page ${args.rendered.page} visual extraction (${args.route}) failed: ${error instanceof Error ? error.message : String(error)}`,
+				});
+				if (args.cached !== undefined) nextPages[args.pageKey] = args.cached;
+			}
+		});
+		extractPromises.push(job);
+	};
+
+	const screenPage = async (rendered: (typeof renderedPages)[number]): Promise<void> => {
 		if (input.signal?.aborted) throw abortReason(input.signal);
 		const pageKey = String(rendered.page);
 		const extractedText = baseTexts.get(rendered.page) ?? "";
@@ -423,12 +548,15 @@ export async function syncVisualMirrorForFile(input: {
 			pagesReused += 1;
 		} else {
 			try {
-				const verdict = await input.options.gate.judge({
-					virtualPath: input.virtualPath,
-					page: rendered.page,
-					image: { data: rendered.data, mimeType: rendered.mimeType },
-					extractedText,
-					signal: input.signal,
+				const verdict = await gateLimiter.run(async () => {
+					if (input.signal?.aborted) throw abortReason(input.signal);
+					return input.options.gate.judge({
+						virtualPath: input.virtualPath,
+						page: rendered.page,
+						image: { data: rendered.data, mimeType: rendered.mimeType },
+						extractedText,
+						signal: input.signal,
+					});
 				});
 				route = verdict.route ?? (verdict.visuallyRich ? "vlm" : "plain");
 				probability = verdict.probability;
@@ -461,54 +589,20 @@ export async function syncVisualMirrorForFile(input: {
 			return;
 		}
 
-		try {
-			const extracted = await targetExtractor.extract({
-				virtualPath: input.virtualPath,
-				page: rendered.page,
-				image: { data: rendered.data, mimeType: rendered.mimeType },
-				extractedText,
-				signal: input.signal,
-			});
-			pagesExtracted += 1;
-			nextPages[pageKey] = {
-				page: rendered.page,
-				imageSha256: rendered.sha256,
-				baseTextSha256,
-				gateFingerprint: input.options.gate.fingerprint,
-				gateProbability: probability,
-				route,
-				visuallyRich: true,
-				extractorFingerprint: targetExtractor.fingerprint,
-				extractorKind: extracted.extractorKind,
-				extractorModel: extracted.extractorModel,
-				markdown: extracted.markdown,
-				updatedAt: new Date().toISOString(),
-			};
-			// Persist incrementally as visually-rich/OCR pages finish so an abort never wastes completed calls.
-			persistPartial(`${input.sourceVersion}:in-progress`);
-		} catch (error) {
-			if (input.signal?.aborted) throw abortReason(input.signal);
-			hadPageFailure = true;
-			diagnostics.push({
-				code: "visual-extract-failed",
-				page: rendered.page,
-				message: `Page ${rendered.page} visual extraction (${route}) failed: ${error instanceof Error ? error.message : String(error)}`,
-			});
-			if (cached !== undefined) nextPages[pageKey] = cached;
-		}
+		scheduleExtraction({
+			rendered,
+			pageKey,
+			extractedText,
+			baseTextSha256,
+			cached,
+			route,
+			probability,
+			targetExtractor,
+		});
 	};
 
-	const workerCount = Math.min(concurrency, renderedPages.length);
-	await Promise.all(
-		Array.from({ length: workerCount }, async () => {
-			while (nextIndex < renderedPages.length) {
-				const currentIndex = nextIndex;
-				nextIndex += 1;
-				const rendered = renderedPages[currentIndex];
-				if (rendered !== undefined) await processPage(rendered);
-			}
-		}),
-	);
+	await Promise.all(renderedPages.map((rendered) => screenPage(rendered)));
+	await Promise.all(extractPromises);
 
 	// Keep the final sourceVersion only when every rendered page completed, so a transient page error retries next run
 	// while still reusing every already-succeeded page from the manifest.
@@ -542,6 +636,7 @@ export async function accumulateVisualPages(input: {
 	readonly renderer?: PageRenderer;
 	readonly extractor: VisualPageExtractor;
 	readonly maxWidthPx?: number;
+	readonly concurrency?: number;
 	readonly signal?: AbortSignal;
 }): Promise<{ readonly extractedPages: readonly number[]; readonly visualMirrorPath: string }> {
 	const maxWidthPx = input.maxWidthPx ?? DEFAULT_VISUAL_MAX_WIDTH_PX;
@@ -560,32 +655,41 @@ export async function accumulateVisualPages(input: {
 		input.baseMirrorPath !== undefined ? extractBasePageTexts(input.baseMirrorPath) : new Map<number, string>();
 	const mergedPages: Record<string, VisualPageRecord> = { ...(existing?.pages ?? {}) };
 	const extractedPages: number[] = [];
+	const defaultConcurrency =
+		input.extractor.kind === "ocr" ? DEFAULT_VISUAL_OCR_CONCURRENCY : DEFAULT_VISUAL_PAGE_CONCURRENCY;
+	const limiter = new AsyncSemaphore(Math.max(1, Math.floor(input.concurrency ?? defaultConcurrency)));
 
-	for (const page of rendered) {
-		if (input.signal?.aborted) throw abortReason(input.signal);
-		const extractedText = baseTexts.get(page.page) ?? "";
-		const result = await input.extractor.extract({
-			virtualPath: input.virtualPath,
-			page: page.page,
-			image: { data: page.data, mimeType: page.mimeType },
-			extractedText,
-			signal: input.signal,
-		});
-		mergedPages[String(page.page)] = {
-			page: page.page,
-			imageSha256: page.sha256,
-			baseTextSha256: sha256Text(extractedText),
-			gateFingerprint: existing?.gateFingerprint ?? "targeted",
-			gateProbability: 1,
-			visuallyRich: true,
-			extractorFingerprint: input.extractor.fingerprint,
-			extractorKind: result.extractorKind,
-			extractorModel: result.extractorModel,
-			markdown: result.markdown,
-			updatedAt: new Date().toISOString(),
-		};
-		extractedPages.push(page.page);
-	}
+	await Promise.all(
+		rendered.map((page) =>
+			limiter.run(async () => {
+				if (input.signal?.aborted) throw abortReason(input.signal);
+				const extractedText = baseTexts.get(page.page) ?? "";
+				const result = await input.extractor.extract({
+					virtualPath: input.virtualPath,
+					page: page.page,
+					image: { data: page.data, mimeType: page.mimeType },
+					extractedText,
+					signal: input.signal,
+				});
+				mergedPages[String(page.page)] = {
+					page: page.page,
+					imageSha256: page.sha256,
+					baseTextSha256: sha256Text(extractedText),
+					gateFingerprint: existing?.gateFingerprint ?? "targeted",
+					gateProbability: 1,
+					route: result.extractorKind,
+					visuallyRich: true,
+					extractorFingerprint: input.extractor.fingerprint,
+					extractorKind: result.extractorKind,
+					extractorModel: result.extractorModel,
+					markdown: result.markdown,
+					updatedAt: new Date().toISOString(),
+				};
+				extractedPages.push(page.page);
+			}),
+		),
+	);
+	extractedPages.sort((a, b) => a - b);
 
 	const maxSeenPage = Object.values(mergedPages).reduce((max, record) => Math.max(max, record.page), 0);
 	const manifest: VisualMirrorManifest = {
