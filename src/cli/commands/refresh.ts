@@ -40,13 +40,22 @@ export async function runRefresh(ctx: CommandContext): Promise<number> {
 	}
 }
 
-/** All method names accepted by `--method`. */
-const ALL_METHOD_NAMES = ["all", "minsync", "parsed", "datasources", "jikji", "everything", "fsearch"] as const;
+/** All method names accepted by `--method`. `visual` is Stage 2 opt-in and never included in `all`. */
+const ALL_METHOD_NAMES = [
+	"all",
+	"minsync",
+	"parsed",
+	"visual",
+	"datasources",
+	"jikji",
+	"everything",
+	"fsearch",
+] as const;
 
 /**
  * Parse a `--method` CSV flag into a sorted set of `RefreshMethod` values.
- * Returns `undefined` when the flag is missing (meaning "all methods").
- * `all` expands to every method. Unknown values throw.
+ * Returns `undefined` when the flag is missing (meaning Stage 1 fast refresh: all methods except opt-in `visual`).
+ * `all` expands to Stage 1 methods; pass `--method visual` (or `--method parsed,visual,minsync`) to run Stage 2 VLM/OCR parsing.
  */
 export function parseMethodFlag(flag: string | boolean | undefined): readonly RefreshMethod[] | undefined {
 	if (flag === undefined || flag === true || flag === false) return undefined;
@@ -66,7 +75,15 @@ export function parseMethodFlag(flag: string | boolean | undefined): readonly Re
 		return ["parsed", "minsync", "datasources", "jikji", "everything", "fsearch"] as const;
 	}
 	// Preserve canonical order, deduplicate.
-	const order: readonly RefreshMethod[] = ["parsed", "minsync", "datasources", "jikji", "everything", "fsearch"];
+	const order: readonly RefreshMethod[] = [
+		"parsed",
+		"visual",
+		"minsync",
+		"datasources",
+		"jikji",
+		"everything",
+		"fsearch",
+	];
 	const seen = new Set<RefreshMethod>();
 	for (const m of order) {
 		if (entries.includes(m)) seen.add(m);

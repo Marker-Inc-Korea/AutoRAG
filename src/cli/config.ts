@@ -128,7 +128,7 @@ export interface WebSearchCliConfig {
 export interface JevCliConfig {
 	/**
 	 * `dazzi`, or a pi provider with decision models: `openrouter`, `openai`, `typesafe`,
-	 * `vercel-ai-gateway`, `cloudflare-workers-ai`, or `opencode` (`autorag models list --decision`).
+	 * `vercel-ai-gateway`, `cloudflare-workers-ai`, `opencode`, or `bivia` (`autorag models list --decision`).
 	 * `sllm` decides with the small chat LLM ({@link JevCliConfig.sllm}) and never calls Jev.
 	 */
 	backend?: string;
@@ -168,6 +168,68 @@ export interface LtrConfig {
 		/** New logged runs since the last training attempt before the next one. @default 200 */
 		minNewRuns?: number;
 	};
+}
+
+/** Visual-rich page gating + VLM/OCR mirror extraction config (opt-in). */
+export interface VisualParseGateCliConfig {
+	/** Vision decision backend: `bivia`, `openrouter`, `openai`, `typesafe`, `cloudflare-workers-ai`, or `dazzi`. */
+	backend?: string;
+	/** Decision model id within `backend`, e.g. `dec-1` on Bivia or `typesafe/jev-1.14` on OpenRouter. */
+	model?: string;
+	/** Calibrated P(visually_rich) threshold in (0, 1]. Default 0.6. */
+	threshold?: number;
+}
+
+export interface VisualParseExtractorCliConfig {
+	/** Extraction engine for visually-rich pages: `"vlm"` (vision LLM) or `"ocr"` (local OCR). */
+	kind: "vlm" | "ocr";
+	/** Vision chat model reference (required when `kind` is `"vlm"`). */
+	model?: AgentModelConfig;
+	/** Local OCR engine when `kind` is `"ocr"` (`"auto"` | `"kordoc"` | `"tesseract"`). */
+	engine?: "auto" | "kordoc" | "tesseract";
+	/** Document languages for `"ocr"` extraction; inherits global `languages` when omitted. */
+	languages?: LanguageTag[];
+	/** Per-page extraction timeout in milliseconds. */
+	timeoutMs?: number;
+}
+
+export interface VisualParseOcrCliConfig {
+	/**
+	 * `"auto"` (PP-OCRv5 for ko/en else Tesseract), `"kordoc"` (PP-OCRv5), `"tesseract"`,
+	 * `"api"` (official provider OCR/document-parsing API: Mistral OCR, NVIDIA Nemotron Parse, Upstage Document Parse, Z.AI GLM-OCR),
+	 * or `"vlm"` (generic remote vision model used as an OCR transcriber).
+	 */
+	engine?: "auto" | "kordoc" | "tesseract" | "api" | "vlm";
+	/** Remote OCR model reference when `engine` is `"api"` (official OCR API) or `"vlm"` (vision chat model). */
+	model?: AgentModelConfig;
+	/** Document languages for local OCR; inherits global `languages` when omitted. */
+	languages?: LanguageTag[];
+	/** Per-page OCR timeout in milliseconds. */
+	timeoutMs?: number;
+}
+
+export interface VisualParseCliConfig {
+	/** `false` disables visual-rich mirror enrichment; missing means enabled when the block is present. */
+	enabled?: boolean;
+	/** Calibrated P(visually_rich) threshold in (0, 1] for the unified decision model (`jev`). Default 0.6. */
+	threshold?: number;
+	/** Optional gate override (defaults to the single configured `jev` decision model). */
+	gate?: VisualParseGateCliConfig;
+	extractor?: VisualParseExtractorCliConfig;
+	/** Independent OCR configuration for `ocr`-routed pages (local engine, remote OCR model, or `false` to disable). */
+	ocr?: VisualParseOcrCliConfig | false;
+	/** Cap on pages inspected per document (default 50). */
+	maxPagesPerFile?: number;
+	/** Maximum width in pixels for rendered pages (default 1024). */
+	maxWidthPx?: number;
+	/** Max concurrent VLM extraction API calls (default 8). */
+	concurrency?: number;
+	/** Max concurrent vision decision-gate API calls (default 12). */
+	gateConcurrency?: number;
+	/** Max concurrent local OCR workers (default 2). */
+	ocrConcurrency?: number;
+	/** Max files visually enriched concurrently across a batch (default 3). */
+	fileConcurrency?: number;
 }
 
 /**
@@ -269,6 +331,8 @@ export interface CliConfig {
 	permissionMode?: PermissionMode;
 	/** Post-merge reranking. Absent ⇒ reranking disabled. `false` disables it. */
 	rerank?: RerankConfig | false;
+	/** Opt-in visual-rich page gating (Bivia/Jev vision decision model) + VLM/OCR supplementary mirror extraction. */
+	visualParse?: VisualParseCliConfig | false;
 	parserOptions?: Record<string, unknown>;
 	dupey?: {
 		enabled?: boolean;
@@ -1189,6 +1253,7 @@ export function resolveConfig(input: ResolveConfigInput): CliConfig {
 		config.datasources = file.datasources as DatasourcesConfig;
 	}
 	if (file.rerank !== undefined) config.rerank = normalizeRerankConfig(file.rerank, "rerank");
+	if (file.visualParse !== undefined) config.visualParse = normalizeVisualParseConfig(file.visualParse, "visualParse");
 	return config;
 }
 
@@ -1549,6 +1614,221 @@ export function normalizeRerankConfig(raw: unknown, path: string): RerankConfig 
 	return out;
 }
 
+const VISUAL_PARSE_FIELDS: Readonly<Record<string, true>> = {
+	enabled: true,
+	threshold: true,
+	gate: true,
+	extractor: true,
+	ocr: true,
+	maxPagesPerFile: true,
+	maxWidthPx: true,
+	concurrency: true,
+	gateConcurrency: true,
+	ocrConcurrency: true,
+	fileConcurrency: true,
+};
+
+const VISUAL_PARSE_GATE_FIELDS: Readonly<Record<string, true>> = {
+	backend: true,
+	model: true,
+	threshold: true,
+};
+
+const VISUAL_PARSE_EXTRACTOR_FIELDS: Readonly<Record<string, true>> = {
+	kind: true,
+	model: true,
+	engine: true,
+	languages: true,
+	timeoutMs: true,
+};
+
+const VISUAL_PARSE_OCR_FIELDS: Readonly<Record<string, true>> = {
+	engine: true,
+	model: true,
+	languages: true,
+	timeoutMs: true,
+};
+
+const VISUAL_PARSE_LOCAL_OCR_ENGINES: Readonly<Record<string, true>> = {
+	auto: true,
+	kordoc: true,
+	tesseract: true,
+};
+
+const VISUAL_PARSE_OCR_ENGINES: Readonly<Record<string, true>> = {
+	...VISUAL_PARSE_LOCAL_OCR_ENGINES,
+	api: true,
+	vlm: true,
+};
+
+export function normalizeVisualParseConfig(raw: unknown, path = "visualParse"): VisualParseCliConfig | false {
+	if (raw === false) return false;
+	if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+		throw new ConfigError(`Config field '${path}' must be false or an object`);
+	}
+	const record = raw as Record<string, unknown>;
+	for (const key of Object.keys(record)) {
+		if (VISUAL_PARSE_FIELDS[key] !== true) {
+			throw new ConfigError(`Unknown field '${path}.${key}'`);
+		}
+	}
+	const out: VisualParseCliConfig = {};
+	if (record.enabled !== undefined) {
+		if (typeof record.enabled !== "boolean") {
+			throw new ConfigError(`${path}.enabled must be a boolean`);
+		}
+		out.enabled = record.enabled;
+	}
+	if (record.threshold !== undefined) {
+		if (
+			typeof record.threshold !== "number" ||
+			!Number.isFinite(record.threshold) ||
+			record.threshold <= 0 ||
+			record.threshold > 1
+		) {
+			throw new ConfigError(`${path}.threshold must be a number in (0, 1]`);
+		}
+		out.threshold = record.threshold;
+	}
+	if (record.gate !== undefined) {
+		if (typeof record.gate !== "object" || record.gate === null || Array.isArray(record.gate)) {
+			throw new ConfigError(`${path}.gate must be an object`);
+		}
+		const gateRecord = record.gate as Record<string, unknown>;
+		for (const key of Object.keys(gateRecord)) {
+			if (VISUAL_PARSE_GATE_FIELDS[key] !== true) {
+				throw new ConfigError(`Unknown field '${path}.gate.${key}'`);
+			}
+		}
+		const gate: VisualParseGateCliConfig = {};
+		if (gateRecord.backend !== undefined) {
+			if (typeof gateRecord.backend !== "string" || gateRecord.backend.trim().length === 0) {
+				throw new ConfigError(`${path}.gate.backend must be a non-empty string`);
+			}
+			gate.backend = gateRecord.backend.trim();
+		}
+		if (gateRecord.model !== undefined) {
+			if (typeof gateRecord.model !== "string" || gateRecord.model.trim().length === 0) {
+				throw new ConfigError(`${path}.gate.model must be a non-empty string`);
+			}
+			gate.model = gateRecord.model.trim();
+		}
+		if (gateRecord.threshold !== undefined) {
+			if (
+				typeof gateRecord.threshold !== "number" ||
+				!Number.isFinite(gateRecord.threshold) ||
+				gateRecord.threshold <= 0 ||
+				gateRecord.threshold > 1
+			) {
+				throw new ConfigError(`${path}.gate.threshold must be a number in (0, 1]`);
+			}
+			gate.threshold = gateRecord.threshold;
+		}
+		out.gate = gate;
+	}
+	if (record.extractor !== undefined) {
+		if (typeof record.extractor !== "object" || record.extractor === null || Array.isArray(record.extractor)) {
+			throw new ConfigError(`${path}.extractor must be an object`);
+		}
+		const extRecord = record.extractor as Record<string, unknown>;
+		for (const key of Object.keys(extRecord)) {
+			if (VISUAL_PARSE_EXTRACTOR_FIELDS[key] !== true) {
+				throw new ConfigError(`Unknown field '${path}.extractor.${key}'`);
+			}
+		}
+		if (extRecord.kind !== "vlm" && extRecord.kind !== "ocr") {
+			throw new ConfigError(`${path}.extractor.kind must be "vlm" or "ocr"`);
+		}
+		const extractor: VisualParseExtractorCliConfig = { kind: extRecord.kind };
+		if (extRecord.model !== undefined) {
+			const parsedModel = modelReference(extRecord.model, `${path}.extractor.model`);
+			if (parsedModel !== undefined) extractor.model = parsedModel;
+		}
+		if (extractor.kind === "vlm" && extractor.model === undefined && out.enabled !== false) {
+			throw new ConfigError(`${path}.extractor.model is required when ${path}.extractor.kind is "vlm"`);
+		}
+		if (extRecord.engine !== undefined) {
+			if (typeof extRecord.engine !== "string" || VISUAL_PARSE_LOCAL_OCR_ENGINES[extRecord.engine] !== true) {
+				throw new ConfigError(`${path}.extractor.engine must be "auto", "kordoc", or "tesseract"`);
+			}
+			extractor.engine = extRecord.engine as VisualParseExtractorCliConfig["engine"];
+		}
+		if (extRecord.languages !== undefined) {
+			extractor.languages = normalizeConfigLanguages(extRecord.languages);
+		}
+		if (extRecord.timeoutMs !== undefined) {
+			if (
+				typeof extRecord.timeoutMs !== "number" ||
+				!Number.isInteger(extRecord.timeoutMs) ||
+				extRecord.timeoutMs <= 0
+			) {
+				throw new ConfigError(`${path}.extractor.timeoutMs must be a positive integer`);
+			}
+			extractor.timeoutMs = extRecord.timeoutMs;
+		}
+		out.extractor = extractor;
+	}
+	if (record.ocr !== undefined) {
+		if (record.ocr === false) {
+			out.ocr = false;
+		} else {
+			if (typeof record.ocr !== "object" || record.ocr === null || Array.isArray(record.ocr)) {
+				throw new ConfigError(`${path}.ocr must be false or an object`);
+			}
+			const ocrRecord = record.ocr as Record<string, unknown>;
+			for (const key of Object.keys(ocrRecord)) {
+				if (VISUAL_PARSE_OCR_FIELDS[key] !== true) {
+					throw new ConfigError(`Unknown field '${path}.ocr.${key}'`);
+				}
+			}
+			const ocr: VisualParseOcrCliConfig = {};
+			if (ocrRecord.engine !== undefined) {
+				if (typeof ocrRecord.engine !== "string" || VISUAL_PARSE_OCR_ENGINES[ocrRecord.engine] !== true) {
+					throw new ConfigError(`${path}.ocr.engine must be "auto", "kordoc", "tesseract", "api", or "vlm"`);
+				}
+				ocr.engine = ocrRecord.engine as VisualParseOcrCliConfig["engine"];
+			}
+			if (ocrRecord.model !== undefined) {
+				const parsedModel = modelReference(ocrRecord.model, `${path}.ocr.model`);
+				if (parsedModel !== undefined) ocr.model = parsedModel;
+			}
+			if ((ocr.engine === "vlm" || ocr.engine === "api") && ocr.model === undefined && out.enabled !== false) {
+				throw new ConfigError(`${path}.ocr.model is required when ${path}.ocr.engine is "${ocr.engine}"`);
+			}
+			if (ocrRecord.languages !== undefined) {
+				ocr.languages = normalizeConfigLanguages(ocrRecord.languages);
+			}
+			if (ocrRecord.timeoutMs !== undefined) {
+				if (
+					typeof ocrRecord.timeoutMs !== "number" ||
+					!Number.isInteger(ocrRecord.timeoutMs) ||
+					ocrRecord.timeoutMs <= 0
+				) {
+					throw new ConfigError(`${path}.ocr.timeoutMs must be a positive integer`);
+				}
+				ocr.timeoutMs = ocrRecord.timeoutMs;
+			}
+			out.ocr = ocr;
+		}
+	}
+	for (const field of [
+		"maxPagesPerFile",
+		"maxWidthPx",
+		"concurrency",
+		"gateConcurrency",
+		"ocrConcurrency",
+		"fileConcurrency",
+	] as const) {
+		const value = record[field];
+		if (value === undefined) continue;
+		if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) {
+			throw new ConfigError(`${path}.${field} must be a positive integer`);
+		}
+		out[field] = value;
+	}
+	return out;
+}
+
 export function buildAgentOptions(config: CliConfig, agentDir?: string): Omit<AutoRAGAgentOptions, "model"> {
 	const opts: Record<string, unknown> = {
 		searchPaths: config.searchPaths,
@@ -1597,6 +1877,34 @@ export function buildAgentOptions(config: CliConfig, agentDir?: string): Omit<Au
 					};
 	}
 	if (config.parserOptions) opts.parserOptions = config.parserOptions;
+	if (config.visualParse !== undefined) {
+		opts.visualParse =
+			config.visualParse === false || config.visualParse.enabled === false
+				? false
+				: {
+						enabled: config.visualParse.enabled ?? true,
+						...(config.visualParse.threshold !== undefined ? { threshold: config.visualParse.threshold } : {}),
+						...(config.visualParse.gate !== undefined ? { gate: config.visualParse.gate } : {}),
+						...(config.visualParse.extractor !== undefined ? { extractor: config.visualParse.extractor } : {}),
+						...(config.visualParse.ocr !== undefined ? { ocr: config.visualParse.ocr } : {}),
+						...(config.visualParse.maxPagesPerFile !== undefined
+							? { maxPagesPerFile: config.visualParse.maxPagesPerFile }
+							: {}),
+						...(config.visualParse.maxWidthPx !== undefined ? { maxWidthPx: config.visualParse.maxWidthPx } : {}),
+						...(config.visualParse.concurrency !== undefined
+							? { concurrency: config.visualParse.concurrency }
+							: {}),
+						...(config.visualParse.gateConcurrency !== undefined
+							? { gateConcurrency: config.visualParse.gateConcurrency }
+							: {}),
+						...(config.visualParse.ocrConcurrency !== undefined
+							? { ocrConcurrency: config.visualParse.ocrConcurrency }
+							: {}),
+						...(config.visualParse.fileConcurrency !== undefined
+							? { fileConcurrency: config.visualParse.fileConcurrency }
+							: {}),
+					};
+	}
 	if (config.dupey?.enabled === false) {
 		opts.dupey = false;
 	} else {
@@ -2362,6 +2670,9 @@ export function writeDefaultConfig(
 	if (partial.limits !== undefined) full.limits = normalizeLimitsConfig(partial.limits);
 	if (partial.refresh !== undefined) full.refresh = normalizeRefreshConfig(partial.refresh);
 	if (partial.parserOptions) full.parserOptions = partial.parserOptions;
+	if (partial.visualParse !== undefined) {
+		full.visualParse = normalizeVisualParseConfig(partial.visualParse, "visualParse");
+	}
 	// Reranking is opt-in and sends text to a remote model, so a new config carries no `rerank` block.
 	if (partial.rerank !== undefined) full.rerank = partial.rerank;
 	// Jev routing and question decomposition are on by default; new configs

@@ -6,23 +6,34 @@ import {
 	type ClassifierModel,
 	type ClassifierQuestion,
 	type ClassifierResult,
+	createProvider,
+	envApiKeyAuth,
 	InMemoryCredentialStore,
 	type JsonObject,
 	type ModelsClassifierOptions,
+	type Provider,
 } from "@earendil-works/pi-ai";
+import { typesafeSystemOneApi } from "@earendil-works/pi-ai/api/typesafe-system-one.lazy";
 import { getAgentDir, ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { BackendError, type BackendRequest, type BackendResponse, type JevBackend, type RawAnswer } from "jev-use";
 import { wireQuestionKeys } from "../cloud/jev-backend.ts";
 
 /**
- * Decision models come from pi's model catalog: pi-ai ships every provider's typed-question
- * ("classifier") models next to its chat models, with the transport for each wire dialect
- * (System One on TypeSafe, OpenRouter, Vercel AI Gateway, Cloudflare Workers AI, and OpenCode;
- * OpenAI's Decisions API for GPT-6 Luna), and pi's runtime adds the credentials in `auth.json` and
- * the provider `baseUrl` overrides in `models.json` (a proxy or gateway speaking the same dialect).
+ * Decision models come from pi's model catalog plus AutoRAG-registered decision providers (such as
+ * Articul8 Bivia): pi-ai ships every built-in provider's typed-question ("classifier") models next
+ * to its chat models, with the transport for each wire dialect (System One on TypeSafe, OpenRouter,
+ * Vercel AI Gateway, Cloudflare Workers AI, OpenCode, and Bivia; OpenAI's Decisions API for GPT-6
+ * Luna), and pi's runtime adds the credentials in `auth.json` and the provider `baseUrl` overrides
+ * in `models.json` (a proxy or gateway speaking the same dialect).
  * {@link PiDecisionBackend} puts one of those models behind jev-use's backend contract, so the
  * jev-use engine (screening, escalation) and every AutoRAG judgment stay unchanged.
  */
+
+/** Articul8 Bivia System One provider id, default base URL, model id, and API key env vars. */
+export const BIVIA_PROVIDER_ID = "bivia";
+export const BIVIA_BASE_URL = "https://api.articul8.ai/bivia/v1";
+export const BIVIA_DEFAULT_MODEL = "dec-1";
+export const BIVIA_API_KEY_ENV_VARS: readonly string[] = ["BIVIA_API_KEY", "A8_API_KEY"];
 
 /**
  * The decision model asked on each provider when the config names none. OpenRouter stays on
@@ -35,10 +46,60 @@ export const DECISION_PROVIDER_DEFAULT_MODELS: Readonly<Record<string, string>> 
 	"vercel-ai-gateway": "typesafe-ai/jev-1.13.0",
 	"cloudflare-workers-ai": "typesafe/jev",
 	opencode: "jev-1.13",
+	[BIVIA_PROVIDER_ID]: BIVIA_DEFAULT_MODEL,
 };
 
 /** The pi providers tried, in this order, when the caller names no decision backend. */
 export const DECISION_PROVIDER_ORDER: readonly string[] = Object.keys(DECISION_PROVIDER_DEFAULT_MODELS);
+
+/** Build the Articul8 Bivia native pi provider (System One dialect at `POST /v1/systemone`). */
+export function biviaProvider(): Provider {
+	const models: ClassifierModel<"typesafe-system-one">[] = [
+		{
+			type: "classifier",
+			id: BIVIA_DEFAULT_MODEL,
+			name: "Bivia (dec-1)",
+			api: "typesafe-system-one",
+			provider: BIVIA_PROVIDER_ID,
+			baseUrl: BIVIA_BASE_URL,
+			input: ["text", "image"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 64000,
+			compat: { imageInput: "assets", sendImageOptInHeader: false },
+		},
+	];
+	return createProvider({
+		id: BIVIA_PROVIDER_ID,
+		name: "Bivia",
+		baseUrl: BIVIA_BASE_URL,
+		auth: {
+			apiKey: envApiKeyAuth("Bivia API key", BIVIA_API_KEY_ENV_VARS),
+		},
+		models,
+		classifiers: {
+			"typesafe-system-one": typesafeSystemOneApi(),
+		},
+	});
+}
+
+/**
+ * Register AutoRAG's extra decision-model providers on a pi `ModelRuntime`.
+ * Skips any provider already shipped by pi-ai so future upstream additions win cleanly.
+ */
+export function registerDecisionProviders(runtime: ModelRuntime): void {
+	if (runtime.getModelsOfType("classifier", BIVIA_PROVIDER_ID).length === 0) {
+		runtime.registerNativeProvider(biviaProvider());
+	}
+}
+
+/** First non-empty env value for a Bivia API key (`BIVIA_API_KEY`, then `A8_API_KEY`). */
+export function getBiviaEnvApiKey(env: Record<string, string | undefined> = process.env): string | undefined {
+	for (const key of BIVIA_API_KEY_ENV_VARS) {
+		const value = env[key];
+		if (value !== undefined && value.length > 0) return value;
+	}
+	return undefined;
+}
 
 /** What {@link PiDecisionBackend} reads from pi's model runtime. pi's `ModelRuntime` is one. */
 export interface DecisionModelRuntime {
@@ -51,7 +112,7 @@ export interface DecisionModelRuntime {
 }
 
 export interface PiDecisionBackendOptions {
-	/** pi provider id with decision models: `openrouter`, `openai`, `typesafe`, `vercel-ai-gateway`, `cloudflare-workers-ai`, or `opencode`. */
+	/** pi provider id with decision models: `openrouter`, `openai`, `typesafe`, `vercel-ai-gateway`, `cloudflare-workers-ai`, `opencode`, or `bivia`. */
 	readonly provider: string;
 	/** Decision model id within the provider. Default: {@link DECISION_PROVIDER_DEFAULT_MODELS}, else the provider's first. */
 	readonly model?: string;
@@ -76,7 +137,7 @@ const SYSTEM_ONE_APIS: Readonly<Record<string, true>> = {
 const runtimes = new Map<string, Promise<DecisionModelRuntime>>();
 
 /** pi's runtime for one agent home, offline: the bundled catalog plus `models.json`, with `auth.json` credentials. */
-function runtimeFor(agentDir: string): Promise<DecisionModelRuntime> {
+export function decisionRuntimeFor(agentDir: string): Promise<DecisionModelRuntime> {
 	const environmentOnly = process.env.AUTORAG_AUTH_MODE === "environment";
 	const cacheKey = `${environmentOnly ? "environment" : "stored"}:${agentDir}`;
 	let runtime = runtimes.get(cacheKey);
@@ -86,6 +147,9 @@ function runtimeFor(agentDir: string): Promise<DecisionModelRuntime> {
 				? { credentials: new InMemoryCredentialStore(), modelsPath: null, refreshOnCreate: false }
 				: { authPath: join(agentDir, "auth.json"), modelsPath: join(agentDir, "models.json") }),
 			allowModelNetwork: false,
+		}).then((created) => {
+			registerDecisionProviders(created);
+			return created;
 		});
 		runtimes.set(cacheKey, runtime);
 	}
@@ -163,7 +227,7 @@ export class PiDecisionBackend implements JevBackend {
 	}
 
 	async judge(request: BackendRequest): Promise<BackendResponse> {
-		const runtime = this.runtime ?? (await runtimeFor(this.agentDir ?? getAgentDir()));
+		const runtime = this.runtime ?? (await decisionRuntimeFor(this.agentDir ?? getAgentDir()));
 		const catalog = runtime.getModelsOfType("classifier", this.name);
 		const template = catalog[0];
 		if (template === undefined) {

@@ -14,11 +14,18 @@ interface PagesSidecar {
 }
 
 /**
- * The page index of a parsed mirror entry: `parsed/files/<hash>.md` → `parsed/pages/<hash>.json`. It sits
- * beside `files/`, not in it: that directory is MinSync's stage output root and holds only parsed markdown.
+ * The page index of a parsed mirror entry:
+ * - base text mirror: `parsed/files/<hash>.md` → `parsed/pages/<hash>.json`
+ * - visual-extraction mirror: `parsed/visual/<hash>.md` → `parsed/visual-pages/<hash>.pages.json`
+ * Both sit beside `files/`, not in it: that directory is MinSync's stage output root and holds only parsed markdown.
  */
 export function pagesSidecarPath(mirrorPath: string): string {
-	return join(dirname(dirname(mirrorPath)), "pages", `${basename(mirrorPath).replace(/\.md$/u, "")}.json`);
+	const hash = basename(mirrorPath).replace(/\.md$/u, "");
+	const parentDir = dirname(mirrorPath);
+	if (basename(parentDir) === "visual") {
+		return join(dirname(parentDir), "visual-pages", `${hash}.pages.json`);
+	}
+	return join(dirname(parentDir), "pages", `${hash}.json`);
 }
 
 function digest(markdown: string): string {

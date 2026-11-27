@@ -20,8 +20,28 @@ export {
 	type OcrProvider,
 } from "./ocr-engines.ts";
 export { PptxParser } from "./office.ts";
+export {
+	createDefaultPageRenderer,
+	DEFAULT_VISUAL_MAX_PAGES_PER_FILE,
+	DEFAULT_VISUAL_MAX_WIDTH_PX,
+	type PageRenderer,
+	type PageRenderInput,
+	type RenderedPage,
+	supportsVisualPageRendering,
+	type VisualImageMimeType,
+} from "./page-render.ts";
 export { PlainTextParser } from "./plain-text.ts";
 export { ParserRegistry } from "./registry.ts";
+export {
+	createRemoteApiOcrExtractor,
+	findOfficialRemoteOcrModel,
+	isOfficialRemoteOcrProvider,
+	OFFICIAL_REMOTE_OCR_MODELS,
+	type OfficialRemoteOcrModelSpec,
+	officialRemoteOcrModelsFor,
+	type RemoteApiOcrExtractorOptions,
+	type RemoteOcrProviderId,
+} from "./remote-ocr.ts";
 export { SPREADSHEET_EXTENSIONS, SpreadsheetParser, type SpreadsheetParserOptions } from "./spreadsheet.ts";
 export {
 	type ParseDiagnostic,
@@ -30,3 +50,28 @@ export {
 	type ParseOutput,
 	Parser,
 } from "./types.ts";
+export {
+	createOcrVisualPageExtractor,
+	createVlmVisualPageExtractor,
+	type LocalOcrEngine,
+	type OcrVisualPageExtractorOptions,
+	type VisualExtractInput,
+	type VisualExtractorKind,
+	type VisualExtractResult,
+	type VisualPageExtractor,
+	type VlmCompleteFn,
+	type VlmVisualPageExtractorOptions,
+} from "./visual-extractor.ts";
+export {
+	createVisualPageGate,
+	DEFAULT_VISUAL_GATE_THRESHOLD,
+	isVisionDecisionModel,
+	resolveVisualGateBackend,
+	VISION_DECISION_PROVIDER_DEFAULT_MODELS,
+	VISION_DECISION_PROVIDER_ORDER,
+	type VisualGateInput,
+	type VisualGateOptions,
+	type VisualGateVerdict,
+	type VisualPageGate,
+	type VisualPageRoute,
+} from "./visual-gate.ts";

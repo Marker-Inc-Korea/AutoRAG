@@ -24,9 +24,14 @@ import { formatDatasourceGrepOutput, grepDatasourceSkills, resolveDatasourceGrep
 import type { DatasourceSkill } from "../datasource/types.ts";
 import { type CloudRoot, canonicalPath, isPathInside } from "../filesystem/cloud-placeholder.ts";
 import { planSourceRoots, type SourceRoot, sourceIdentifier } from "../filesystem/source-paths.ts";
-import { minSyncDocumentPath, minSyncWorkspaceRoot } from "../minsync/paths.ts";
+import {
+	MINSYNC_VISUAL_SUFFIX,
+	minSyncDocumentPath,
+	minSyncVisualDocumentPath,
+	minSyncWorkspaceRoot,
+} from "../minsync/paths.ts";
 import { readPagesSidecar } from "../mirror/pages-sidecar.ts";
-import { parsedOutputPath } from "../mirror/paths.ts";
+import { parsedOutputPath, parsedVisualOutputPath } from "../mirror/paths.ts";
 import { type ParsedPages, pageRange } from "../parser/pages.ts";
 import { describeLocation } from "../retrieval/chunk-location.ts";
 import type { EvidenceLedger } from "./evidence-ledger.ts";
@@ -75,6 +80,8 @@ export interface MirrorFileMapping {
 	readonly virtualPath: string;
 	readonly mirrorPath: string;
 	readonly pagesMirrorPath: string;
+	/** Staged visual-extraction mirror path when the file has visually-rich pages extracted. */
+	readonly visualMirrorPath?: string;
 	/** True when the original source file exists and has a strictly newer mtime than the staged mirror. */
 	readonly stale: boolean;
 }
@@ -83,6 +90,7 @@ export interface MirrorSourceResolution {
 	readonly sourcePath: string;
 	readonly virtualPath: string;
 	readonly pagesMirrorPath: string;
+	readonly mirrorKind?: "text" | "visual";
 }
 
 export type MirrorTarget =
@@ -213,6 +221,16 @@ export function rewriteMirrorGlob(glob: string): string {
 	return `${negated ? "!" : ""}${body}.md`;
 }
 
+/** Companion glob matching supplementary visual-extraction mirrors (`<original>.autorag-visual.md`). */
+export function rewriteVisualMirrorGlob(glob: string): string {
+	const cleaned = glob.replace(/^(!?)(?:\.\/)+/, "$1");
+	if (cleaned.length === 0) return cleaned;
+	const negated = cleaned.startsWith("!");
+	const body = negated ? cleaned.slice(1) : cleaned;
+	if (body.endsWith("*") || body.endsWith("/")) return cleaned;
+	return `${negated ? "!" : ""}${body}${MINSYNC_VISUAL_SUFFIX}`;
+}
+
 export function createParsedMirrorMapper(options: ParsedMirrorMapperOptions): ParsedMirrorMapper {
 	const workspaceRoot = resolve(options.workspaceRoot);
 	const filesRoot = join(minSyncWorkspaceRoot(workspaceRoot), "files");
@@ -256,13 +274,16 @@ export function createParsedMirrorMapper(options: ParsedMirrorMapperOptions): Pa
 		const owner = findOwner(sourceFile);
 		if (owner === undefined) return undefined;
 		const virtualPath = sourceIdentifier(owner.binding.root, owner.resolved);
-		const mirrorPath = minSyncDocumentPath(minSyncWorkspaceRoot(workspaceRoot), virtualPath);
+		const wsRoot = minSyncWorkspaceRoot(workspaceRoot);
+		const mirrorPath = minSyncDocumentPath(wsRoot, virtualPath);
 		if (!isRegularFile(mirrorPath)) return undefined;
+		const candidateVisual = minSyncVisualDocumentPath(wsRoot, virtualPath);
 		return {
 			sourcePath: owner.resolved,
 			virtualPath,
 			mirrorPath,
 			pagesMirrorPath: parsedOutputPath(workspaceRoot, virtualPath),
+			...(isRegularFile(candidateVisual) ? { visualMirrorPath: candidateVisual } : {}),
 			stale: isMirrorStale(owner.resolved, mirrorPath),
 		};
 	};
@@ -322,12 +343,13 @@ export function createParsedMirrorMapper(options: ParsedMirrorMapperOptions): Pa
 		const rel = relative(resolvedFilesRoot, candidate);
 		if (rel === "" || rel.startsWith("..") || isAbsolute(rel)) return undefined;
 		const posixRel = rel.split(sep).join("/");
-		if (!posixRel.endsWith(".md")) return undefined;
-		const withoutMd = posixRel.slice(0, -".md".length);
-		const slash = withoutMd.indexOf("/");
+		const isVisual = posixRel.endsWith(MINSYNC_VISUAL_SUFFIX);
+		if (!isVisual && !posixRel.endsWith(".md")) return undefined;
+		const withoutSuffix = posixRel.slice(0, -(isVisual ? MINSYNC_VISUAL_SUFFIX.length : ".md".length));
+		const slash = withoutSuffix.indexOf("/");
 		if (slash === -1) return undefined;
-		const prefixSegment = withoutMd.slice(0, slash);
-		const rest = withoutMd.slice(slash + 1);
+		const prefixSegment = withoutSuffix.slice(0, slash);
+		const rest = withoutSuffix.slice(slash + 1);
 		const binding = byPrefix.get(prefixSegment);
 		if (binding === undefined || rest.length === 0) return undefined;
 		const sourcePath = resolve(binding.resolvedRoot, ...rest.split("/"));
@@ -335,7 +357,10 @@ export function createParsedMirrorMapper(options: ParsedMirrorMapperOptions): Pa
 		return {
 			sourcePath,
 			virtualPath,
-			pagesMirrorPath: parsedOutputPath(workspaceRoot, virtualPath),
+			pagesMirrorPath: isVisual
+				? parsedVisualOutputPath(workspaceRoot, virtualPath)
+				: parsedOutputPath(workspaceRoot, virtualPath),
+			mirrorKind: isVisual ? "visual" : "text",
 		};
 	};
 
@@ -473,11 +498,17 @@ function runJsMirrorGrep(options: {
 
 	const globSpec = options.glob?.trim();
 	const mirrorGlob = globSpec && globSpec.length > 0 ? rewriteMirrorGlob(globSpec) : undefined;
+	const visualMirrorGlob = globSpec && globSpec.length > 0 ? rewriteVisualMirrorGlob(globSpec) : undefined;
 	const globMatcher = mirrorGlob ? compileSimpleGlob(mirrorGlob) : undefined;
+	const visualGlobMatcher =
+		visualMirrorGlob && visualMirrorGlob !== mirrorGlob ? compileSimpleGlob(visualMirrorGlob) : undefined;
 
 	const files: string[] = [];
 	if (options.target.kind === "file") {
 		files.push(options.target.mirrorPath);
+		if (options.target.mapping.visualMirrorPath !== undefined) {
+			files.push(options.target.mapping.visualMirrorPath);
+		}
 	} else {
 		const rootDir = options.target.mirrorPath;
 		const walk = (dir: string): void => {
@@ -496,7 +527,9 @@ function runJsMirrorGrep(options: {
 				} else if (entry.isFile() && entry.name.endsWith(".md")) {
 					if (globMatcher !== undefined) {
 						const relPosix = relative(rootDir, full).split(sep).join("/");
-						if (!globMatcher(relPosix, entry.name)) continue;
+						const matched =
+							globMatcher(relPosix, entry.name) || visualGlobMatcher?.(relPosix, entry.name) === true;
+						if (!matched) continue;
 					}
 					files.push(full);
 				}
@@ -683,10 +716,21 @@ export async function runMirrorGrep(options: RunMirrorGrepOptions): Promise<Mirr
 					if (options.ignoreCase) args.push("--ignore-case");
 					if (options.literal) args.push("--fixed-strings");
 					if (options.glob !== undefined && options.glob.trim() !== "") {
-						args.push("--glob", rewriteMirrorGlob(options.glob.trim()));
+						const trimmedGlob = options.glob.trim();
+						const baseGlob = rewriteMirrorGlob(trimmedGlob);
+						const visualGlob = rewriteVisualMirrorGlob(trimmedGlob);
+						args.push("--glob", baseGlob);
+						if (visualGlob !== baseGlob) args.push("--glob", visualGlob);
 					}
 					if (contextValue > 0) args.push("--context", String(contextValue));
-					args.push("--", options.pattern, isDir ? "." : options.target.mirrorPath);
+					if (isDir) {
+						args.push("--", options.pattern, ".");
+					} else {
+						args.push("--", options.pattern, options.target.mirrorPath);
+						if (options.target.mapping.visualMirrorPath !== undefined) {
+							args.push(options.target.mapping.visualMirrorPath);
+						}
+					}
 
 					const child = spawn(rgPath, args, {
 						cwd: isDir ? options.target.mirrorPath : undefined,
@@ -1166,7 +1210,11 @@ export function createParsedMirrorToolsExtension(options: ParsedMirrorToolsExten
 								...(loc?.section !== undefined ? { section: loc.section } : {}),
 							});
 							const staleNote = mapping.stale ? " — warning: source modified after last refresh" : "";
-							const header = `[${evidenceId !== undefined ? `${evidenceId} | ` : ""}Parsed mirror of ${mapping.sourcePath}${locLabel !== undefined ? ` (${locLabel})` : ""}${staleNote}]`;
+							const visualNote =
+								mapping.visualMirrorPath !== undefined
+									? ` · visual extraction mirror available: ${mapping.visualMirrorPath}`
+									: "";
+							const header = `[${evidenceId !== undefined ? `${evidenceId} | ` : ""}Parsed mirror of ${mapping.sourcePath}${locLabel !== undefined ? ` (${locLabel})` : ""}${staleNote}${visualNote}]`;
 							const combinedText = `${header}\n${textBlock.text}`;
 							return {
 								...mirrorResult,

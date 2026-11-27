@@ -115,9 +115,18 @@ type NativeWireQuestion =
 	| { type: "choice"; instructions: string; criteria: Record<string, string> }
 	| { type: "score"; instructions: string; criteria: string[] };
 
+/** One multimodal `image_url` part accepted by the Dazzi `/v1/jev` endpoint. */
+export interface DazziJevImagePart {
+	readonly type: "image_url";
+	readonly image_url: { readonly url: string };
+}
+
+/** Multimodal state array accepted by Dazzi `/v1/jev`: `image_url` parts plus text in order. */
+export type DazziJevWireState = string | readonly (string | DazziJevImagePart)[];
+
 interface NativeBody {
 	model: string;
-	state: string;
+	state: DazziJevWireState;
 	questions: Record<string, NativeWireQuestion>;
 }
 
@@ -212,9 +221,29 @@ export class DazziJevBackend implements JevBackend {
 	}
 }
 
-/** The state as the server requires it: a string, JSON-encoded when not already one. */
-function serializeState(state: State): string {
-	return typeof state === "string" ? state : JSON.stringify(state);
+function isMultimodalStatePart(part: unknown): part is string | DazziJevImagePart {
+	if (typeof part === "string") return true;
+	if (typeof part !== "object" || part === null) return false;
+	const record = part as Record<string, unknown>;
+	if (record.type !== "image_url" || typeof record.image_url !== "object" || record.image_url === null) return false;
+	return typeof (record.image_url as Record<string, unknown>).url === "string";
+}
+
+/**
+ * The state as the server requires it: a string, or a multimodal part list (`image_url` parts and strings)
+ * kept intact for vision decision models; any other JSON value is JSON-encoded as a string.
+ */
+function serializeState(state: State): DazziJevWireState {
+	if (typeof state === "string") return state;
+	if (
+		Array.isArray(state) &&
+		state.length > 0 &&
+		state.some((part) => typeof part === "object" && part !== null) &&
+		state.every(isMultimodalStatePart)
+	) {
+		return state;
+	}
+	return JSON.stringify(state);
 }
 
 /** Translate one question into the server's native dialect. */

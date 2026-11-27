@@ -54,6 +54,7 @@ Chat and decision credentials are read through pi-ai's provider environment conv
 | `AI_GATEWAY_API_KEY` | Credential for the `vercel-ai-gateway` Jev backend |
 | `CLOUDFLARE_API_KEY` | Credential for the `cloudflare-workers-ai` Jev backend |
 | `OPENCODE_API_KEY` | Credential for the `opencode` Jev backend |
+| `BIVIA_API_KEY`, `A8_API_KEY` | Credential for the `bivia` (Articul8 Bivia) decision backend (`BIVIA_API_KEY` takes precedence) |
 | `<PROVIDER>_API_KEY` | Generic convention for a configured endpoint's provider |
 | the var named by `minSync.embedder.apiKeyEnv` | Bearer key for a remote embedder; passed to the MinSync child as `OPENAI_API_KEY` |
 

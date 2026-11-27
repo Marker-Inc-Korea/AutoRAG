@@ -27,6 +27,8 @@ import { resolveAgentModel, resolveConfig } from "../../src/cli/config.ts";
 const LIVE = process.env.AUTORAG_DECISION_PROVIDERS_LIVE === "1" && Boolean(process.env.OPENROUTER_API_KEY);
 const FIREWORKS = LIVE && Boolean(process.env.FIREWORKS_API_KEY);
 const OPENAI = LIVE && Boolean(process.env.OPENAI_API_KEY);
+const BIVIA =
+	process.env.AUTORAG_DECISION_PROVIDERS_LIVE === "1" && Boolean(process.env.BIVIA_API_KEY || process.env.A8_API_KEY);
 
 /** Qwen3.7 Flash (2026-07), the default question-decomposition model. */
 const OPENROUTER_SLLM = { provider: "openrouter", id: "qwen/qwen3.7-flash" };
@@ -87,6 +89,20 @@ describe.skipIf(!LIVE)("decision models through pi's catalog", () => {
 		async () => {
 			const judgment = await createJevJudge({ backend: "openai" })(STATE, QUESTIONS);
 			expect(judgment.backend).toBe("openai");
+			expect(judgment.answers.deletes?.answer as number).toBeGreaterThan(0.5);
+			expect(judgment.answers.kind?.answer).toBe("delete");
+		},
+		60_000,
+	);
+
+	it.skipIf(!BIVIA)(
+		"Articul8 Bivia's System One API answers with dec-1",
+		async () => {
+			const status = await checkDecisionModel(createJevJudge({ backend: "bivia" }));
+			expect(status).toEqual({ backend: "bivia", model: "dec-1" });
+			const judgment = await createJevJudge({ backend: "bivia" })(STATE, QUESTIONS);
+			expect(judgment.backend).toBe("bivia");
+			expect(judgment.model).toBe("dec-1");
 			expect(judgment.answers.deletes?.answer as number).toBeGreaterThan(0.5);
 			expect(judgment.answers.kind?.answer).toBe("delete");
 		},

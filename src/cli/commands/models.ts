@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import { getAgentDir, ModelRuntime } from "@earendil-works/pi-coding-agent";
+import { registerDecisionProviders } from "../../agent/decision-backends.ts";
 import { PROVIDER_ID as DAZZI_PROVIDER_ID, resolveBaseUrl } from "../../cloud/config.ts";
 import { readDazziLoginToken } from "../../cloud/credential.ts";
 import { DAZZI_DEFAULT_JEV_MODEL, listDazziDecisionModels } from "../../cloud/jev-backend.ts";
@@ -50,6 +51,7 @@ async function listModelCatalog(options: ModelCatalogOptions): Promise<readonly 
 	// Register the hosted Dazzi Models plan so `--provider dazzi` sees its
 	// persisted catalog snapshot; the registration refresh is cache-only.
 	await registerDazziProvider(runtime);
+	registerDecisionProviders(runtime);
 	const key = (provider: string, id: string): string => `${provider}/${id}`;
 	const type = options.decision === true ? "classifier" : "chat";
 	let availableKeys = new Set<string>();
