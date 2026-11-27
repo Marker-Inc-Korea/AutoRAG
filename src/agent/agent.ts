@@ -1390,7 +1390,19 @@ export class AutoRAGAgent {
 		);
 		this.minSyncEmbedderConfig = options.minSync?.embedder;
 		this.minSyncBinaryPath = options.minSync?.binaryPath;
-		this.embedder = options.embedder ?? createEmbedderFromConfig({ embedder: options.minSync?.embedder });
+		this.embedder =
+			options.embedder ??
+			createEmbedderFromConfig({
+				embedder: options.minSync?.embedder,
+				autoStart: options.minSync?.autoInstall !== false,
+				resolveMinSyncBinary: () =>
+					resolveMinSyncBinary({
+						root: this.workspaceProjectRoot,
+						...(options.minSync?.binaryPath === undefined ? {} : { binaryPath: options.minSync.binaryPath }),
+						...(options.minSync?.autoInstall === undefined ? {} : { autoInstall: options.minSync.autoInstall }),
+						...(options.minSync?.installer === undefined ? {} : { installer: options.minSync.installer }),
+					}),
+			});
 		this.memoryEmbedder = options.memoryEmbedder === false ? undefined : (options.memoryEmbedder ?? this.embedder);
 		this.runLogger = new AutoRAGRunLogger(join(dirname(memPath), "logs", "runs.jsonl"));
 

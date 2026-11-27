@@ -91,6 +91,37 @@ describe("createManagedEmbedder (local)", () => {
 		expect((await embedder.health()).detail).toMatch(/addon not installed/);
 		await expect(embedder.embed(["x"])).rejects.toThrow(/Start `inl serve`/);
 	});
+
+	it("auto-starts the inl daemon on demand when autoStart is enabled and no daemon is running (#2216)", async () => {
+		const launcherPath = writeFakeInlServe(bin, { name: "inl", dimension: 4 });
+		const embedder = createManagedEmbedder({
+			home,
+			env: { ...process.env, HOME: home, PATH: bin },
+			autoStart: true,
+			launcher: { path: launcherPath },
+		});
+		try {
+			expect(await embedder.embed(["hello"])).toEqual([[0.05, 0.06, 0.07, 0.08]]);
+			expect(await embedder.health()).toMatchObject({ backend: "daemon", alive: true });
+			expect(await embedder.describeEndpoint()).toMatchObject({ backend: "daemon", dimension: 4 });
+		} finally {
+			await stopInlDaemon({ home });
+		}
+	}, 40_000);
+
+	it("reports a clear install command and never mentions @nomadamas/minsync-native when autoStart finds no launcher (#2216)", async () => {
+		const embedder = createManagedEmbedder({
+			home,
+			env: { HOME: home, PATH: bin },
+			autoStart: true,
+		});
+		const health = await embedder.health();
+		expect(health).toMatchObject({ backend: "none", alive: false });
+		expect(health.detail ?? "").not.toContain("@nomadamas/minsync-native");
+		expect(health.detail ?? "").toContain("inl serve");
+		await expect(embedder.embed(["x"])).rejects.toThrow(/cargo install inl-server/);
+		await expect(embedder.embed(["x"])).rejects.not.toThrow(/@nomadamas\/minsync-native/);
+	});
 });
 
 describe("createManagedEmbedder roles", () => {

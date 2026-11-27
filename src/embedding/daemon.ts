@@ -220,7 +220,7 @@ async function resolveLauncher(
 	const minsync = lookupExecutableInPath(env, "minsync");
 	if (minsync !== undefined) return { path: minsync, kind: "minsync" };
 	throw new InlDaemonError(
-		"neither `inl` nor `minsync` is on PATH: install im-not-llm (`cargo install inl-server`) or MinSync, then retry",
+		"neither `inl` nor `minsync` is on PATH: install im-not-llm (`cargo install inl-server --locked`) or MinSync, then retry",
 	);
 }
 
