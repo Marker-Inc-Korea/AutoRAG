@@ -7,7 +7,7 @@ import { createAutoRAGMcpServer } from "../../src/mcp/server.ts";
  * against what an agent will actually see rather than against source text. Datasource tools are dynamic (one per
  * configured archive) and are not included.
  */
-export async function registeredMcpTools(options: { readOnly: boolean }) {
+export async function registeredMcpTools(options: { readOnly: boolean; withAgent?: boolean }) {
 	// The server only reads these members at registration time.
 	const lite = {
 		config: {
@@ -19,7 +19,17 @@ export async function registeredMcpTools(options: { readOnly: boolean }) {
 		getRetrievalEngine: () => ({ getMethodRegistry: () => ({ list: () => [] }) }),
 		listDatasources: () => [],
 	} as unknown as AutoRAGLite;
-	const server = createAutoRAGMcpServer(lite, { readOnly: options.readOnly });
+	// `autorag.ask` is opt-in (`--agent`); a stub handler is enough to register it, it is never called here.
+	const server = createAutoRAGMcpServer(lite, {
+		readOnly: options.readOnly,
+		...(options.withAgent === true
+			? {
+					ask: async () => {
+						throw new Error("not called");
+					},
+				}
+			: {}),
+	});
 	const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
 	await server.connect(serverTransport);
 	const client = new Client({ name: "tool-names", version: "1.0.0" });
@@ -31,6 +41,9 @@ export async function registeredMcpTools(options: { readOnly: boolean }) {
 	}
 }
 
-export async function registeredMcpToolNames(options: { readOnly: boolean }): Promise<readonly string[]> {
+export async function registeredMcpToolNames(options: {
+	readOnly: boolean;
+	withAgent?: boolean;
+}): Promise<readonly string[]> {
 	return (await registeredMcpTools(options)).map((tool) => tool.name);
 }

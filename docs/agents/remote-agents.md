@@ -66,6 +66,7 @@ Funnel, ngrok with a reserved domain) for a stable one. Index first
 | `--port PORT` | Port (default `8765`; `--port 0` picks a free one). |
 | `--public-url URL` / `AUTORAG_MCP_PUBLIC_URL` | HTTPS origin agents reach you at. Enables OAuth and the Host/Origin allowlist for it. |
 | `--allow-write` | Also offer `autorag.refresh`, `autorag.report`, and `autorag.convert`. Default is **read-only**: a remote agent gets search and evidence only. |
+| `--agent` / `AUTORAG_MCP_AGENT` | Also offer the model-backed librarian ask tool (supports explicit route modes `auto`, `local`, `organize`, `extra`, `config`; mutating modes stay blocked unless `--allow-write` is set). |
 | `--check URL` | Replay a cloud agent's connect sequence against `URL` (see below). |
 | `--json` | With `--check`, print one JSON document. |
 | `AUTORAG_MCP_TOOLS` | Comma-separated exact tool allowlist (same as stdio). |

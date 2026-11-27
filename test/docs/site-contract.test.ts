@@ -206,7 +206,7 @@ describe("docs site: commands and tools match the code", () => {
 	});
 
 	it("only names MCP tools the server registers", async () => {
-		const registered = new Set(await registeredMcpToolNames({ readOnly: false }));
+		const registered = new Set(await registeredMcpToolNames({ readOnly: false, withAgent: true }));
 		const FILE_SUFFIX = /\.(json|md|ts|mts|js|mjs|yaml|yml|txt|org|com|dev|app|io|test|local)$/;
 		let seen = 0;
 		for (const page of pages) {
