@@ -330,9 +330,9 @@ describe("MinSyncStageSession transport", () => {
 		});
 	});
 
-	it("rejects a handshake MinSync never answers", async () => {
+	it("rejects a handshake MinSync never answers and includes child stderr in the error message", async () => {
 		const binary = join(root, "dying.mjs");
-		writeStub(binary, { kind: "exit-on-request", code: 1 });
+		writeStub(binary, { kind: "exit-on-request", code: 1 }, { stderrText: "Error: disk I/O failure" });
 
 		await withSession(binary, async (session) => {
 			const failure = await rejection(session.open(openInput()));
@@ -340,6 +340,7 @@ describe("MinSyncStageSession transport", () => {
 			// start without it.
 			expect(failure).toMatchObject({ code: "eof", op: "capabilities" });
 			expect(failure.message).toContain("before answering `capabilities`");
+			expect(failure.message).toContain("Error: disk I/O failure");
 			// The session is gone for good, and says so with the same reason.
 			await expect(session.finish()).rejects.toBe(failure);
 		});

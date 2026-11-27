@@ -622,19 +622,28 @@ export class MinSyncStageSession {
 			try {
 				stdin.write(`${JSON.stringify(request)}\n`, (error) => {
 					if (error === null || error === undefined) return;
+					const stderr = this.stderrText();
 					this.failSession(
-						new MinSyncStageError("eof", `Writing to MinSync stage failed: ${error.message}`, {
-							op: request.op,
-							stderr: this.stderrText(),
-						}),
+						new MinSyncStageError(
+							"eof",
+							formatStageEofMessage(`Writing to MinSync stage failed: ${error.message}`, stderr),
+							{
+								op: request.op,
+								stderr,
+							},
+						),
 					);
 				});
 			} catch (error) {
+				const stderr = this.stderrText();
 				this.failSession(
 					new MinSyncStageError(
 						"eof",
-						`Writing to MinSync stage failed: ${error instanceof Error ? error.message : String(error)}`,
-						{ op: request.op, stderr: this.stderrText() },
+						formatStageEofMessage(
+							`Writing to MinSync stage failed: ${error instanceof Error ? error.message : String(error)}`,
+							stderr,
+						),
+						{ op: request.op, stderr },
 					),
 				);
 			}
@@ -657,15 +666,17 @@ export class MinSyncStageSession {
 		this.exit = { code, signal };
 		const pending = this.pending;
 		const cause = signal === null ? `exit code ${code ?? "unknown"}` : `signal ${signal}`;
+		const stderr = this.stderrText();
+		const baseMessage =
+			pending === null
+				? `MinSync stage session ended (${cause}).`
+				: `MinSync stage ended (${cause}) before answering \`${pending.op}\`.`;
 		this.settleExit(this.exit);
 		this.failSession(
-			new MinSyncStageError(
-				"eof",
-				pending === null
-					? `MinSync stage session ended (${cause}).`
-					: `MinSync stage ended (${cause}) before answering \`${pending.op}\`.`,
-				{ op: pending?.op, stderr: this.stderrText() },
-			),
+			new MinSyncStageError("eof", formatStageEofMessage(baseMessage, stderr), {
+				op: pending?.op,
+				stderr,
+			}),
 		);
 	}
 
@@ -703,6 +714,17 @@ export class MinSyncStageSession {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+const STAGE_MESSAGE_STDERR_LIMIT = 512;
+
+function formatStageEofMessage(base: string, stderr: string): string {
+	if (stderr.length === 0) return base;
+	const tail =
+		stderr.length <= STAGE_MESSAGE_STDERR_LIMIT
+			? stderr
+			: `…${stderr.slice(stderr.length - STAGE_MESSAGE_STDERR_LIMIT)}`;
+	return `${base} stderr: ${tail}`;
 }
 
 /** A response line can be arbitrarily long; an error message never needs all of it. */

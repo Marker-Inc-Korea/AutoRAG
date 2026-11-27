@@ -134,6 +134,26 @@ describeFSearch("buildFSearchIndexArgs", () => {
 			"/docs/.autorag",
 		]);
 	});
+
+	it("caps --exclude-path argv bytes to avoid OS ARG_MAX / E2BIG while preserving priority exclusions", () => {
+		const manyExcludes = Array.from(
+			{ length: 20_000 },
+			(_, index) => `/Users/developer/workspace/project-${index}/node_modules/subpackage-${index}`,
+		);
+		const args = buildFSearchIndexArgs("/db", ["/Users/developer/workspace"], ["/ws/.autorag", ...manyExcludes]);
+		const argvBytes = args.reduce((sum, arg) => sum + Buffer.byteLength(arg, "utf8") + 1, 0);
+		expect(argvBytes).toBeLessThanOrEqual(256 * 1024);
+		expect(args).toContain("/ws/.autorag");
+		expect(args.filter((a) => a === "--exclude-path").length).toBeLessThan(manyExcludes.length);
+	});
+
+	it("passes --exclude-from instead of --exclude-path when an exclude file is provided", () => {
+		expect(
+			buildFSearchIndexArgs("/db", ["/docs"], ["/ws/.autorag", "/docs/ignored"], {
+				excludeFromFile: "/ws/.autorag/fsearch/excludes.txt",
+			}),
+		).toEqual(["index", "--db", "/db", "--include", "/docs", "--exclude-from", "/ws/.autorag/fsearch/excludes.txt"]);
+	});
 });
 
 describeFSearch("parseFSearchJsonLines", () => {
@@ -426,6 +446,62 @@ describeFSearch("FSearchClient", () => {
 		if (result.ok) throw new Error("expected failure");
 		expect(result.reason).toBe("index-failed");
 		expect(result.message).toContain("fsearch-cli: cannot read /docs");
+	});
+
+	it("returns an index-failed result instead of throwing when spawn fails synchronously (e.g. E2BIG)", async () => {
+		const hugePath = `/tmp/${"x".repeat(600_000)}`;
+		const client = new FSearchClient({
+			root,
+			folders: [hugePath, hugePath],
+			binaryPath: "/usr/bin/true",
+			platform: "darwin",
+			watch: false,
+		});
+		const result = await client.index();
+		expect(result.ok).toBe(false);
+		if (result.ok) throw new Error("expected failure");
+		expect(result.reason).toBe("index-failed");
+		expect(result.message).toMatch(/E2BIG/i);
+	});
+
+	it("uses --exclude-from when excludePaths exceed argv budget and falls back to capped --exclude-path on older binaries", async () => {
+		const manyExcludes = Array.from(
+			{ length: 20_000 },
+			(_, index) => `/Users/developer/workspace/project-${index}/node_modules/subpackage-${index}`,
+		);
+		const seenArgs: string[][] = [];
+		let writtenFileLines = 0;
+		const client = new FSearchClient({
+			root,
+			folders: ["/Users/developer/workspace"],
+			excludeFolders: manyExcludes,
+			platform: "darwin",
+			watch: false,
+			run: async (_command, args) => {
+				seenArgs.push([...args]);
+				if (args[0] === "--version") return { code: 0, stdout: "fsearch-cli 0.3\n", stderr: "" };
+				if (args[0] === "index") {
+					const idx = args.indexOf("--exclude-from");
+					if (idx !== -1) {
+						const file = args[idx + 1]!;
+						writtenFileLines = readFileSync(file, "utf8").trim().split("\n").length;
+						// Simulate an older fsearch-cli binary that does not recognize --exclude-from
+						return { code: 1, stdout: "", stderr: "fsearch-cli: Unknown option --exclude-from\n" };
+					}
+					return { code: 0, stdout: "", stderr: "" };
+				}
+				if (args[0] === "stats") return { code: 0, stdout: '{"live":false,"files":1,"folders":1}', stderr: "" };
+				return { code: 0, stdout: "", stderr: "" };
+			},
+		});
+		const result = await client.index();
+		expect(result).toMatchObject({ ok: true, indexedItems: 2 });
+		expect(writtenFileLines).toBeGreaterThanOrEqual(20_000);
+		const indexCalls = seenArgs.filter((a) => a[0] === "index");
+		expect(indexCalls).toHaveLength(2);
+		expect(indexCalls[0]).toContain("--exclude-from");
+		expect(indexCalls[1]).not.toContain("--exclude-from");
+		expect(indexCalls[1]).toContain("--exclude-path");
 	});
 
 	it("falls back to a slow filesystem walk when fsearch-cli is not installed", async () => {
