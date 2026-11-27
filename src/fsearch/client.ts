@@ -214,9 +214,14 @@ export function buildFSearchIndexArgs(
 	dbPath: string,
 	folders: readonly string[],
 	excludeFolders: readonly string[],
+	options?: { readonly excludeFromFile?: string },
 ): string[] {
 	const args = ["index", "--db", dbPath];
 	for (const folder of folders) args.push("--include", folder);
+	if (options?.excludeFromFile !== undefined) {
+		args.push("--exclude-from", options.excludeFromFile);
+		return args;
+	}
 	let argvBytes = args.reduce((sum, arg) => sum + Buffer.byteLength(arg, "utf8") + 1, 0);
 	const flagBytes = Buffer.byteLength("--exclude-path", "utf8") + 1;
 	for (const folder of excludeFolders) {
@@ -226,6 +231,34 @@ export function buildFSearchIndexArgs(
 		argvBytes += entryBytes;
 	}
 	return args;
+}
+
+function excludeArgsExceedBudget(
+	dbPath: string,
+	folders: readonly string[],
+	excludeFolders: readonly string[],
+): boolean {
+	let argvBytes =
+		Buffer.byteLength("index", "utf8") +
+		1 +
+		Buffer.byteLength("--db", "utf8") +
+		1 +
+		Buffer.byteLength(dbPath, "utf8") +
+		1;
+	const includeFlagBytes = Buffer.byteLength("--include", "utf8") + 1;
+	for (const folder of folders) argvBytes += includeFlagBytes + Buffer.byteLength(folder, "utf8") + 1;
+	const excludeFlagBytes = Buffer.byteLength("--exclude-path", "utf8") + 1;
+	for (const folder of excludeFolders) {
+		argvBytes += excludeFlagBytes + Buffer.byteLength(folder, "utf8") + 1;
+		if (argvBytes > MAX_INDEX_ARGV_BYTES) return true;
+	}
+	return false;
+}
+
+function isUnknownExcludeFromOption(result: FSearchRunResult): boolean {
+	if (result.code === 0 || result.code === null) return false;
+	const output = `${result.stderr}\n${result.stdout}`;
+	return /--exclude-from/i.test(output) && /(unknown|unrecognized|invalid)\s+option/i.test(output);
 }
 
 /** Parse `fsearch-cli search --json` JSON-lines output, dropping the trailing done line. */
@@ -410,14 +443,41 @@ export class FSearchClient {
 
 	private async indexLocked(binaryPath: string): Promise<FSearchIndexResult> {
 		mkdirSync(this.stateDir, { recursive: true });
-		const indexArgs = buildFSearchIndexArgs(this.dbPath, this.options.folders, [
+		const allExcludes = [
 			...new Set([
 				join(this.options.root, ".autorag"),
 				...this.options.folders.map((folder) => join(folder, ".autorag")),
 				...(this.options.excludeFolders ?? []),
 			]),
-		]);
-		const indexed = await this.run(binaryPath, indexArgs, this.options.indexTimeoutMs ?? DEFAULT_INDEX_TIMEOUT_MS);
+		];
+		const timeoutMs = this.options.indexTimeoutMs ?? DEFAULT_INDEX_TIMEOUT_MS;
+		let indexArgs: string[];
+		let indexed: FSearchRunResult;
+		if (excludeArgsExceedBudget(this.dbPath, this.options.folders, allExcludes)) {
+			// Pass the full exclusion list through --exclude-from so every path is excluded
+			// at index time without overflowing OS ARG_MAX. Paths containing newlines cannot
+			// be represented in the line-delimited file and stay covered by client-side filtering.
+			const excludeFilePath = join(this.stateDir, "excludes.txt");
+			const lineSafeExcludes = allExcludes.filter((path) => !path.includes("\n") && !path.includes("\r"));
+			writeFileSync(excludeFilePath, `${lineSafeExcludes.join("\n")}\n`, "utf8");
+			try {
+				indexArgs = buildFSearchIndexArgs(this.dbPath, this.options.folders, allExcludes, {
+					excludeFromFile: excludeFilePath,
+				});
+				indexed = await this.run(binaryPath, indexArgs, timeoutMs);
+			} finally {
+				rmSync(excludeFilePath, { force: true });
+			}
+			// Fall back to bounded --exclude-path only when talking to an older fsearch-cli
+			// binary that predates --exclude-from.
+			if (isUnknownExcludeFromOption(indexed)) {
+				indexArgs = buildFSearchIndexArgs(this.dbPath, this.options.folders, allExcludes);
+				indexed = await this.run(binaryPath, indexArgs, timeoutMs);
+			}
+		} else {
+			indexArgs = buildFSearchIndexArgs(this.dbPath, this.options.folders, allExcludes);
+			indexed = await this.run(binaryPath, indexArgs, timeoutMs);
+		}
 		if (indexed.code !== 0) return this.failure("index-failed", binaryPath, indexArgs, indexed);
 		const statsArgs = ["stats", "--db", this.dbPath, "--socket", this.socketPath()];
 		const stats = await this.run(binaryPath, statsArgs, this.options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
