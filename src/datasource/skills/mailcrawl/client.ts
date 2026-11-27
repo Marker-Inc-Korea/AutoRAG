@@ -132,6 +132,49 @@ export class MailcrawlClient implements MailcrawlSearchClient {
 		);
 	}
 
+	async grep(
+		pattern: string,
+		options?: {
+			readonly literal?: boolean;
+			readonly ignoreCase?: boolean;
+			readonly context?: number;
+			readonly limit?: number;
+			readonly signal?: AbortSignal;
+		},
+	): Promise<MailcrawlSearchResult> {
+		if (pattern.length === 0) return { ok: true, hits: [], stdout: "", stderr: "", code: 0 };
+		const args = [
+			"grep",
+			...(options?.literal ? ["--literal"] : []),
+			...(options?.ignoreCase ? ["--ignore-case"] : []),
+			...(options?.context !== undefined && options.context > 0 ? ["--context", String(options.context)] : []),
+			...(this.options.account === undefined ? [] : ["--account", this.options.account]),
+			...(this.options.mailbox === undefined ? [] : ["--mailbox", this.options.mailbox]),
+			"--limit",
+			String(options?.limit ?? 50),
+			"--json",
+			"--",
+			pattern,
+		];
+		const result = await this.run(args, options?.signal, this.options.timeoutMs ?? DEFAULT_SEARCH_TIMEOUT_MS, false);
+		if (!result.ok) return failure(result);
+		const parsed = parseJson(result.stdout);
+		if (parsed === undefined) return failure({ ...result, ok: false, reason: "invalid-output" });
+		const rows = Array.isArray(parsed) ? parsed : objectArray(parsed, ["hits", "results", "items"]);
+		if (rows === undefined) return failure({ ...result, ok: false, reason: "invalid-output" });
+		const hits = rows.map((row, index) => normalizeHit(row, "keyword", index));
+		if (hits.some((hit) => hit === undefined)) {
+			return failure({ ...result, ok: false, reason: "invalid-output" });
+		}
+		return {
+			ok: true,
+			hits: hits as MailcrawlSearchHit[],
+			stdout: result.stdout,
+			stderr: result.stderr,
+			code: result.code ?? 0,
+		};
+	}
+
 	async search(
 		mode: MailcrawlSearchMode,
 		query: string,

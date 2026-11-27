@@ -120,11 +120,16 @@ export async function runAgentAutomation(
 		await dispose().catch(() => undefined);
 	}
 
+	const recordedFiles: readonly AutomationEvent[] = events
+		.slice(0, AUTOMATION_MAX_APPEND_FILES)
+		.map((ev) => ({ type: ev.type, path: ev.path }));
+
 	const record: AutomationRunRecord = {
 		id: automation.id,
 		startedAt,
 		durationMs: Math.max(0, Date.now() - startedAtMs),
 		eventCount: events.length,
+		...(recordedFiles.length > 0 ? { files: recordedFiles } : {}),
 		filesOverflow,
 		exitCode: timedOut ? null : error === undefined ? 0 : 1,
 		signal: null,

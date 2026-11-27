@@ -29,6 +29,7 @@ afterEach(() => {
 function rule(overrides: Partial<Automation>): Automation {
 	return {
 		id: "test",
+		enabled: true,
 		paths: [watched],
 		events: ["create", "update", "delete"],
 		include: ["**"],
@@ -79,6 +80,7 @@ console.log(JSON.stringify({
 			events,
 		});
 		expect(readLastAutomationRun(home, "test")?.exitCode).toBe(0);
+		expect(readLastAutomationRun(home, "test")?.files).toEqual(events);
 		expect(readFileSync(automationLogPath(home, "test"), "utf8").trim().split("\n")).toHaveLength(1);
 	});
 

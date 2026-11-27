@@ -1,10 +1,14 @@
+import { isAbsolute, join, resolve } from "node:path";
 import { FallbackRetrievalMethod } from "../../../retrieval/fallback.ts";
 import type { RetrievalMethod } from "../../../retrieval/types.ts";
+import { grepMailcrawlArchiveSqlite } from "../../grep.ts";
 import { datasourceSourcePath } from "../../scope.ts";
 import { datasourceSearchToolName } from "../../tool-naming.ts";
 import type {
 	DatasourceDiagnostic,
 	DatasourceDiagnosticCode,
+	DatasourceGrepHit,
+	DatasourceGrepOptions,
 	DatasourceIndexOptions,
 	DatasourceIndexResult,
 	DatasourceSkill,
@@ -39,6 +43,8 @@ export class MailcrawlSkill implements DatasourceSkill {
 	private readonly tags: readonly string[];
 	private readonly account: string | undefined;
 	private readonly mailbox: string | undefined;
+	private readonly dataDir: string | undefined;
+	private readonly envDataDir: string | undefined;
 	private lastIndexedAt: number | undefined;
 	constructor(options: MailcrawlSkillOptions = {}) {
 		const connectorOptions = options.connectorOptions ?? options;
@@ -50,6 +56,8 @@ export class MailcrawlSkill implements DatasourceSkill {
 		this.tags = options.tags ?? TAGS;
 		this.account = connectorOptions.account;
 		this.mailbox = connectorOptions.mailbox;
+		this.dataDir = connectorOptions.dataDir;
+		this.envDataDir = connectorOptions.env?.MAILCRAWL_DATA_DIR;
 		this.client = options.client ?? new MailcrawlClient({ ...connectorOptions, instanceId: this.instanceId });
 	}
 	describe(): DatasourceSkillDescriptor {
@@ -120,6 +128,22 @@ export class MailcrawlSkill implements DatasourceSkill {
 		const bm25 = new MailcrawlMethod(this.client, "bm25", this.instanceId, this.tags, this.account, this.mailbox);
 		return [new FallbackRetrievalMethod(hybrid, [bm25])];
 	}
+	/** Exact substring/regex grep over mailcrawl's parsed email chunks via read-only SQLite sidecar. */
+	async grep(pattern: string, options?: DatasourceGrepOptions): Promise<readonly DatasourceGrepHit[]> {
+		if (pattern.length === 0) return [];
+		options?.signal?.throwIfAborted();
+		const dir = this.dataDir ?? this.envDataDir ?? process.env.MAILCRAWL_DATA_DIR ?? ".mailcrawl";
+		const resolvedDir = isAbsolute(dir) ? dir : resolve(dir);
+		return grepMailcrawlArchiveSqlite({
+			dbPath: join(resolvedDir, "archive.sqlite"),
+			datasourceId: "mailcrawl",
+			instanceId: this.instanceId,
+			account: this.account,
+			mailbox: this.mailbox,
+			pattern,
+			grepOptions: options,
+		});
+	}
 	describeSources(): readonly SourceDescription[] {
 		return this.instances.map((instanceId) => ({
 			source: datasourceSourcePath("mailcrawl", instanceId),
@@ -135,7 +159,7 @@ export class MailcrawlSkill implements DatasourceSkill {
 		return {
 			name: "datasource-mailcrawl",
 			description: "Search local email synchronized and indexed by mailcrawl.",
-			content: `# mailcrawl email datasource\n\nUse this skill for authorized local email retrieval. AutoRAG invokes the external \`mailcrawl\` CLI and never opens its SQLite archive directly.\n\n## Indexing\nIndexing is server-managed and incremental; do not trigger sync yourself.\n\n## Search\nCall the dedicated \`${datasourceSearchToolName("mailcrawl")}\` tool with a natural-language query. Available scopes:\n${scopes}\n\nThe selectable retrieval modes are BM25, semantic, and hybrid. Scope arguments can only narrow trusted access. Source identifiers remain opaque and hierarchical.\n\n## Native CLI\nThe external \`mailcrawl\` CLI owns the archive and index. When the dedicated tool cannot express what you need, call mailcrawl directly through \`bash\`:\n- \`mailcrawl search --mode hybrid --limit 20 --json "<query>"\` (\`bm25\` and \`semantic\` modes also available; \`--account\` / \`--mailbox\` narrow the archive)\nNever pass datasource virtual paths (\`/mailcrawl/...\`) to bash; they are not OS paths.`,
+			content: `# mailcrawl email datasource\n\nUse this skill for authorized local email retrieval. AutoRAG invokes the external \`mailcrawl\` CLI for search/sync and may read its archive read-only for exact-match \`grep\`.\n\n## Indexing\nIndexing is server-managed and incremental; do not trigger sync yourself.\n\n## Search\nCall the dedicated \`${datasourceSearchToolName("mailcrawl")}\` tool with a natural-language query, or call \`grep\` with \`path="/mailcrawl"\` for exact substring/regex matches (invoice numbers, order IDs, error codes). Available scopes:\n${scopes}\n\nThe selectable retrieval modes are BM25, semantic, and hybrid. Scope arguments can only narrow trusted access. Source identifiers remain opaque and hierarchical.\n\n## Native CLI\nThe external \`mailcrawl\` CLI owns the archive and index. When the dedicated tool cannot express what you need, call mailcrawl directly through \`bash\`:\n- \`mailcrawl search --mode hybrid --limit 20 --json "<query>"\` (\`bm25\` and \`semantic\` modes also available; \`--account\` / \`--mailbox\` narrow the archive)\n- \`mailcrawl grep --literal --ignore-case --json "<pattern>"\` (exact substring/regex match over parsed emails)\nNever pass datasource virtual paths (\`/mailcrawl/...\`) to bash; they are not OS paths.`,
 		};
 	}
 	private fail(code: DatasourceDiagnosticCode, message: string): DatasourceIndexResult {

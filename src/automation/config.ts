@@ -29,6 +29,7 @@ export interface AutomationAgent {
 /** A rule runs exactly one of `run` (a command) or `agent` (a profile session). */
 export interface Automation {
 	readonly id: string;
+	readonly enabled: boolean;
 	readonly paths: readonly string[];
 	readonly events: readonly AutomationEventType[];
 	readonly include: readonly string[];
@@ -57,6 +58,7 @@ export const DEFAULT_EXCLUDES: readonly string[] = [
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 const KNOWN_KEYS: Readonly<Record<string, true>> = {
 	id: true,
+	enabled: true,
 	paths: true,
 	events: true,
 	include: true,
@@ -215,12 +217,16 @@ export function parseAutomations(raw: unknown, env: NodeJS.ProcessEnv = process.
 				? requireStringArray(obj.run, `${obj.id}.run`, true).map((token) => expandTilde(token, userHome))
 				: undefined;
 
+		if (obj.enabled !== undefined && typeof obj.enabled !== "boolean") {
+			throw new AutomationConfigError(`Automation "${obj.id}.enabled" must be a boolean`);
+		}
 		if (obj.appendFiles !== undefined && typeof obj.appendFiles !== "boolean") {
 			throw new AutomationConfigError(`Automation "${obj.id}.appendFiles" must be a boolean`);
 		}
 
 		return {
 			id: obj.id,
+			enabled: obj.enabled !== false,
 			paths,
 			events: eventsRaw as AutomationEventType[],
 			include,

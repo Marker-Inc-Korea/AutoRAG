@@ -112,6 +112,38 @@ export interface DatasourceSkill {
 	 * Omit, or return an empty list, for a datasource that holds no files. See `attachments.ts`.
 	 */
 	attachmentRoots?(): readonly DatasourceAttachmentRoot[];
+	/**
+	 * Optional. Exact substring / regex grep over the datasource's parsed mirror or local SQLite archive
+	 * without invoking embedding or ranking models. Used when `grep` targets `/<datasourceId>[/...]` or `/datasources`.
+	 */
+	grep?(pattern: string, options?: DatasourceGrepOptions): Promise<readonly DatasourceGrepHit[]>;
+}
+
+/** Options for exact-match {@link DatasourceSkill.grep} over parsed datasource mirrors or local archives. */
+export interface DatasourceGrepOptions {
+	readonly literal?: boolean;
+	readonly ignoreCase?: boolean;
+	readonly context?: number;
+	readonly limit?: number;
+	readonly maxPerSource?: number;
+	/** Optional slash-hierarchical virtual scope prefix, e.g. `/obsidian/default/Projects`. */
+	readonly scope?: string;
+	readonly signal?: AbortSignal;
+}
+
+/** One exact-match hit returned by {@link DatasourceSkill.grep}. */
+export interface DatasourceGrepHit {
+	/** Slash-hierarchical virtual source identifier, e.g. `/wombat/default/grep:...` or `/telegram/default/tg-1`. */
+	readonly source: string;
+	/** Display snippet (single matching line or surrounding context lines). */
+	readonly content: string;
+	/** 1-based line number within the matched parsed mirror or chunk text, when applicable. */
+	readonly lineNumber?: number;
+	readonly lineEnd?: number;
+	/** Short human-readable location / header context (e.g. session key, channel, email subject). */
+	readonly label?: string;
+	/** Underlying metadata carried through to evidence ledger / channel filtering. */
+	readonly metadata?: Readonly<Record<string, unknown>>;
 }
 
 /** One folder of saved attachments belonging to a datasource connection. */

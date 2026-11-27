@@ -191,6 +191,51 @@ export class WombatClient implements WombatSyncClient {
 		return { ok: true, agents };
 	}
 
+	async grep(
+		pattern: string,
+		options?: {
+			readonly literal?: boolean;
+			readonly ignoreCase?: boolean;
+			readonly context?: number;
+			readonly limit?: number;
+			readonly agents?: readonly string[];
+			readonly project?: string;
+			readonly signal?: AbortSignal;
+		},
+	): Promise<WombatSearchResult> {
+		if (pattern.length === 0) return { ok: true, hits: [], stdout: "", stderr: "", code: 0 };
+		const topK = options?.limit ?? 50;
+		const agents = options?.agents ?? this.options.agents;
+		const wanted = agents !== undefined && agents.length > 1 ? new Set(agents) : undefined;
+		const args = [
+			"grep",
+			"--limit",
+			String(wanted === undefined ? topK : Math.min(topK * MULTI_AGENT_OVERFETCH, MAX_SEARCH_LIMIT)),
+			...(options?.literal ? ["--literal"] : []),
+			...(options?.ignoreCase ? ["--ignore-case"] : []),
+			...(options?.context !== undefined && options.context > 0 ? ["--context", String(options.context)] : []),
+			...(agents?.length === 1 ? ["--agent", agents[0] as string] : []),
+			...(options?.project !== undefined && options.project.length > 0 ? ["--project", options.project] : []),
+			"--json",
+			"--",
+			pattern,
+		];
+		const result = await this.run(args, options?.signal, this.options.timeoutMs ?? DEFAULT_SEARCH_TIMEOUT_MS);
+		if (!result.ok) return failure(result);
+		const parsed = parseJson(result.stdout);
+		if (!Array.isArray(parsed)) return failure({ ...result, ok: false, reason: "invalid-output" });
+		const hits = parsed.map((row, index) => normalizeHit(row, "keyword", index));
+		if (hits.some((hit) => hit === undefined)) return failure({ ...result, ok: false, reason: "invalid-output" });
+		const kept = (hits as WombatSearchHit[]).filter((hit) => wanted === undefined || wanted.has(hit.agent));
+		return {
+			ok: true,
+			hits: wanted === undefined ? kept : kept.slice(0, topK),
+			stdout: result.stdout,
+			stderr: result.stderr,
+			code: result.code ?? 0,
+		};
+	}
+
 	async search(mode: WombatSearchMode, query: string, options?: WombatSearchOptions): Promise<WombatSearchResult> {
 		if (query.trim().length === 0) return { ok: true, hits: [], stdout: "", stderr: "", code: 0 };
 		const topK = options?.topK ?? 20;

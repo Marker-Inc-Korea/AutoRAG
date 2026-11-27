@@ -167,6 +167,38 @@ export interface LazykatokSearchOk {
 	readonly data: { readonly hits: readonly LazykatokSearchHit[] };
 }
 
+export interface LazykatokGrepOptions {
+	readonly literal?: boolean;
+	readonly ignoreCase?: boolean;
+	readonly context?: number;
+	readonly limit?: number;
+	readonly maxPerChunk?: number;
+	readonly chat?: string;
+	readonly chatName?: string;
+	readonly sender?: string;
+	readonly since?: string;
+	readonly until?: string;
+	readonly signal?: AbortSignal;
+}
+
+export interface LazykatokGrepHit {
+	readonly chunkId: string;
+	readonly chatId: string;
+	readonly chatName: string;
+	readonly senderNickname: string;
+	readonly startedAt: string;
+	readonly endedAt: string;
+	readonly lineNumber: number;
+	readonly lineEnd: number;
+	readonly matchedLine: string;
+	readonly snippet: string;
+	readonly contextBefore: readonly string[];
+	readonly contextAfter: readonly string[];
+	readonly parentChunkIds: readonly string[];
+}
+
+export type LazykatokGrepResult = LazykatokOk<readonly LazykatokGrepHit[]> | LazykatokFailure;
+
 export type LazykatokDoctorResult = LazykatokOk<LazykatokDoctorInfo> | LazykatokFailure;
 export type LazykatokSyncResult = LazykatokOk<LazykatokSyncInfo> | LazykatokFailure;
 export type LazykatokIndexResult = LazykatokOk<LazykatokIndexInfo> | LazykatokFailure;

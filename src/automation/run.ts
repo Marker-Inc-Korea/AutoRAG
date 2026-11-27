@@ -16,6 +16,8 @@ export interface AutomationRunRecord {
 	readonly startedAt: string;
 	readonly durationMs: number;
 	readonly eventCount: number;
+	/** Changed files handled by this run, capped at AUTOMATION_MAX_APPEND_FILES. */
+	readonly files?: readonly AutomationEvent[];
 	readonly filesOverflow: boolean;
 	readonly exitCode: number | null;
 	readonly signal: NodeJS.Signals | null;
@@ -139,6 +141,10 @@ export async function runAutomation(
 	let timedOut = false;
 	let settled = false;
 
+	const recordedFiles: readonly AutomationEvent[] = events
+		.slice(0, AUTOMATION_MAX_APPEND_FILES)
+		.map((ev) => ({ type: ev.type, path: ev.path }));
+
 	const finish = (exitCode: number | null, signal: NodeJS.Signals | null, error?: string): void => {
 		if (settled) return;
 		settled = true;
@@ -148,6 +154,7 @@ export async function runAutomation(
 			startedAt,
 			durationMs: Math.max(0, Date.now() - startedAtMs),
 			eventCount: events.length,
+			...(recordedFiles.length > 0 ? { files: recordedFiles } : {}),
 			filesOverflow,
 			exitCode: timedOut ? null : exitCode,
 			signal,

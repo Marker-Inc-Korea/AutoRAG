@@ -1,6 +1,8 @@
 import type { RetrievalMethod, RetrievalOptions, RetrievalResult } from "../retrieval/types.ts";
 import { datasourceSearchToolName } from "./tool-naming.ts";
 import type {
+	DatasourceGrepHit,
+	DatasourceGrepOptions,
 	DatasourceIndexOptions,
 	DatasourceIndexResult,
 	DatasourceSkill,
@@ -27,6 +29,7 @@ export class AliasedDatasourceSkill implements DatasourceSkill {
 	private readonly originalId: string;
 	private readonly channelIds: ReadonlySet<string>;
 	private readonly channelNames: ReadonlySet<string>;
+	readonly grep?: (pattern: string, options?: DatasourceGrepOptions) => Promise<readonly DatasourceGrepHit[]>;
 
 	constructor(skill: DatasourceSkill, options: AliasDatasourceSkillOptions) {
 		this.skill = skill;
@@ -34,6 +37,22 @@ export class AliasedDatasourceSkill implements DatasourceSkill {
 		this.originalId = skill.describe().name;
 		this.channelIds = new Set(options.channelIds ?? []);
 		this.channelNames = new Set(options.channelNames ?? []);
+		if (typeof skill.grep === "function") {
+			this.grep = async (pattern, grepOptions) => {
+				const innerOptions: DatasourceGrepOptions = {
+					...grepOptions,
+					scope: rewriteScope(grepOptions?.scope, this.alias, this.originalId),
+				};
+				const hits = await this.skill.grep!(pattern, innerOptions);
+				return hits
+					.filter((hit) => this.matchesMetadataChannel(hit.metadata ?? {}))
+					.map((hit) => ({
+						...hit,
+						source: rewriteSource(hit.source, this.originalId, this.alias),
+						...(hit.metadata !== undefined ? { metadata: { ...hit.metadata, datasourceId: this.alias } } : {}),
+					}));
+			};
+		}
 	}
 
 	describe(): DatasourceSkillDescriptor {
@@ -118,8 +137,11 @@ export class AliasedDatasourceSkill implements DatasourceSkill {
 	}
 
 	private matchesChannel(result: RetrievalResult): boolean {
+		return this.matchesMetadataChannel(result.metadata);
+	}
+
+	private matchesMetadataChannel(metadata: Readonly<Record<string, unknown>>): boolean {
 		if (this.channelIds.size === 0 && this.channelNames.size === 0) return true;
-		const metadata = result.metadata;
 		const id = [metadata.channelId, metadata.chatId, metadata.roomId].find(
 			(value): value is string => typeof value === "string",
 		);

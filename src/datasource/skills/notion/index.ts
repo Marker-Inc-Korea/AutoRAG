@@ -1,3 +1,5 @@
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { CrawlerCliClient } from "../../crawler-client.ts";
 import {
 	CrawlerDatasourceSkill,
@@ -5,6 +7,8 @@ import {
 	type CrawlerSkillClient,
 } from "../../crawler-skill.ts";
 import type { CrawlerCliOptions, CrawlerHit, CrawlerProfile } from "../../crawler-types.ts";
+import { grepNotcrawlArchive } from "../../grep.ts";
+import type { DatasourceGrepHit, DatasourceGrepOptions } from "../../types.ts";
 
 export interface NotcrawlOptions extends CrawlerCliOptions {}
 
@@ -43,11 +47,31 @@ export interface NotionSkillOptions extends Omit<CrawlerDatasourceSkillOptions, 
 }
 
 export class NotionSkill extends CrawlerDatasourceSkill {
+	private readonly notcrawlDbPath: string;
+	private readonly notionDatasourceId: string;
+	private readonly notionInstanceId: string;
+
 	constructor(options: NotionSkillOptions = {}) {
 		const { client, connectorOptions, ...skillOptions } = options;
 		super(NOTION_DEFINITION, {
 			...skillOptions,
 			client: client ?? new NotcrawlClient(connectorOptions),
+		});
+		this.notcrawlDbPath = connectorOptions?.databasePath ?? join(homedir(), ".notcrawl", "notcrawl.db");
+		this.notionDatasourceId = skillOptions.datasourceId ?? NOTION_DEFINITION.datasourceId;
+		this.notionInstanceId = skillOptions.instanceId ?? "default";
+	}
+
+	/** Exact substring/regex grep over notcrawl's read-only SQLite archive (`pages` + `blocks`). */
+	override async grep(pattern: string, options?: DatasourceGrepOptions): Promise<readonly DatasourceGrepHit[]> {
+		if (pattern.length === 0) return [];
+		options?.signal?.throwIfAborted();
+		return grepNotcrawlArchive({
+			dbPath: this.notcrawlDbPath,
+			datasourceId: this.notionDatasourceId,
+			instanceId: this.notionInstanceId,
+			pattern,
+			grepOptions: options,
 		});
 	}
 }

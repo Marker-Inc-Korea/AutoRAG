@@ -14,6 +14,8 @@ import { datasourceSearchToolName } from "./tool-naming.ts";
 import type {
 	DatasourceDiagnostic,
 	DatasourceDiagnosticCode,
+	DatasourceGrepHit,
+	DatasourceGrepOptions,
 	DatasourceIndexOptions,
 	DatasourceIndexResult,
 	DatasourceSkill,
@@ -191,6 +193,47 @@ export class CrawlerDatasourceSkill implements DatasourceSkill {
 	/** Release the sidecar's database handles. Safe to call repeatedly; later use reopens them. */
 	close(): void {
 		this.sidecar?.close();
+	}
+
+	/** Exact substring/regex grep over the crawler's read-only SQLite archive via the sidecar. */
+	async grep(pattern: string, options?: DatasourceGrepOptions): Promise<readonly DatasourceGrepHit[]> {
+		const { sidecar } = this;
+		if (sidecar === undefined || pattern.length === 0) return [];
+		options?.signal?.throwIfAborted();
+		const descriptor = sidecar.descriptor;
+		const raw = sidecar.grepExact(pattern, {
+			literal: options?.literal,
+			ignoreCase: options?.ignoreCase,
+			context: options?.context,
+			limit: options?.limit,
+			maxPerMessage: options?.maxPerSource,
+		});
+		const out: DatasourceGrepHit[] = [];
+		for (const hit of raw) {
+			const chunkId = descriptor.chunkId(hit.key, hit.metadata);
+			const source = datasourceSourcePath(this.definition.datasourceId, this.instanceId, chunkId);
+			if (!matchesDatasourceScope(source, options?.scope)) continue;
+			const hierarchy = descriptor.hierarchy(hit.metadata).join("/");
+			const sender = hit.metadata.senderName ?? hit.metadata.authorName ?? hit.metadata.senderNickname;
+			const label = [hierarchy, sender]
+				.filter((v): v is string => typeof v === "string" && v.length > 0)
+				.join(" | ");
+			out.push({
+				source,
+				content: hit.content,
+				lineNumber: hit.lineNumber,
+				lineEnd: hit.lineEnd,
+				...(label.length > 0 ? { label } : {}),
+				metadata: {
+					...hit.metadata,
+					datasourceId: this.definition.datasourceId,
+					instanceId: this.instanceId,
+					hierarchy,
+					...(hit.publishedAt !== undefined ? { publishedAt: hit.publishedAt } : {}),
+				},
+			});
+		}
+		return out;
 	}
 
 	/** One method: the sidecar's hybrid search (or BM25 without an embedder), with the CLI as the last fallback. */

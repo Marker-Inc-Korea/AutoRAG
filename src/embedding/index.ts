@@ -36,6 +36,13 @@ export interface EmbedderFromConfigOptions {
 	readonly env?: NodeJS.ProcessEnv;
 	/** User home that holds im-not-llm's `inl serve` state; defaults to the real home. */
 	readonly home?: string;
+	/**
+	 * Auto-start `inl serve` (falling back to `minsync serve`) on demand when no daemon is running.
+	 * Defaults to true for local embedders so setup/refresh/search work out of the box without a manual daemon.
+	 */
+	readonly autoStart?: boolean;
+	/** Resolves the workspace-cached or auto-installed `minsync` binary when `inl` is not on PATH. */
+	readonly resolveMinSyncBinary?: () => Promise<string>;
 }
 
 /** The local model a `native:` id names; MinSync's default Qwen3 when none is configured. */
@@ -69,6 +76,8 @@ export function createEmbedderFromConfig(options: EmbedderFromConfigOptions): Ma
 		prefixes: resolveEmbeddingPrefixes(options.embedder),
 		...(options.home === undefined ? {} : { home: options.home }),
 		...(options.env === undefined ? {} : { env: options.env }),
+		...(remote === undefined ? { autoStart: options.autoStart ?? true } : {}),
+		...(options.resolveMinSyncBinary === undefined ? {} : { resolveMinSyncBinary: options.resolveMinSyncBinary }),
 	});
 	created.add(embedder);
 	return embedder;
