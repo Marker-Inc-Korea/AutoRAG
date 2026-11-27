@@ -32,6 +32,16 @@ export {
 } from "./page-render.ts";
 export { PlainTextParser } from "./plain-text.ts";
 export { ParserRegistry } from "./registry.ts";
+export {
+	createRemoteApiOcrExtractor,
+	findOfficialRemoteOcrModel,
+	isOfficialRemoteOcrProvider,
+	OFFICIAL_REMOTE_OCR_MODELS,
+	type OfficialRemoteOcrModelSpec,
+	officialRemoteOcrModelsFor,
+	type RemoteApiOcrExtractorOptions,
+	type RemoteOcrProviderId,
+} from "./remote-ocr.ts";
 export { SPREADSHEET_EXTENSIONS, SpreadsheetParser, type SpreadsheetParserOptions } from "./spreadsheet.ts";
 export {
 	type ParseDiagnostic,

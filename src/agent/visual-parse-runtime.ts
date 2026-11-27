@@ -8,6 +8,12 @@ import type { VisualMirrorSyncOptions } from "../mirror/visual-mirror.ts";
 import { tesseractCachePathFor } from "../parser/defaults.ts";
 import { createDefaultPageRenderer, type PageRenderer } from "../parser/page-render.ts";
 import {
+	createRemoteApiOcrExtractor,
+	findOfficialRemoteOcrModel,
+	isOfficialRemoteOcrProvider,
+	type RemoteOcrProviderId,
+} from "../parser/remote-ocr.ts";
+import {
 	createOcrVisualPageExtractor,
 	createVlmVisualPageExtractor,
 	type LocalOcrEngine,
@@ -51,10 +57,20 @@ export interface VisualParseExtractorAgentConfig {
 }
 
 export interface VisualParseOcrAgentConfig {
-	/** `"auto"` (PP-OCRv5 for ko/en else Tesseract), `"kordoc"` (PP-OCRv5), `"tesseract"`, or `"vlm"` (remote OCR model). */
-	readonly engine?: LocalOcrEngine | "vlm";
-	/** Remote vision/OCR model reference when `engine === "vlm"` (or when a remote model is chosen). */
-	readonly model?: VisualParseExtractorModelRef | VisualParseResolvedModel;
+	/**
+	 * `"auto"` (PP-OCRv5 for ko/en else Tesseract), `"kordoc"` (PP-OCRv5), `"tesseract"`,
+	 * `"api"` (official provider OCR/document-parsing API: Mistral OCR, NVIDIA Nemotron Parse, Upstage Document Parse, Z.AI GLM-OCR),
+	 * or `"vlm"` (generic remote vision-model OCR).
+	 */
+	readonly engine?: LocalOcrEngine | "api" | "vlm";
+	/** Official provider OCR API provider id when `engine === "api"` (e.g. `"mistral"`, `"nvidia"`, `"upstage"`, `"zai"`). */
+	readonly provider?: string;
+	/** Remote OCR model id (`engine === "api"`) or vision model reference (`engine === "vlm"`). */
+	readonly model?: string | VisualParseExtractorModelRef | VisualParseResolvedModel;
+	/** Optional base URL override for official remote OCR APIs. */
+	readonly baseUrl?: string;
+	/** Optional API key env var override for official remote OCR APIs. */
+	readonly apiKeyEnv?: string;
 	readonly languages?: readonly LanguageTag[];
 	readonly timeoutMs?: number;
 	readonly cachePath?: string;
@@ -170,6 +186,42 @@ async function resolveVlmModelRef(
 	return { model, ...(apiKey !== undefined ? { apiKey } : {}) };
 }
 
+async function resolveProviderApiKey(input: {
+	readonly provider: string;
+	readonly apiKeyEnv?: string;
+	readonly defaultApiKeyEnv?: string;
+	readonly agentDir: string;
+	readonly env?: NodeJS.ProcessEnv;
+}): Promise<string | undefined> {
+	const env = input.env ?? process.env;
+	if (input.apiKeyEnv !== undefined && env[input.apiKeyEnv]) return env[input.apiKeyEnv];
+	if (input.defaultApiKeyEnv !== undefined && env[input.defaultApiKeyEnv]) return env[input.defaultApiKeyEnv];
+	const envMap = Object.fromEntries(
+		Object.entries(env).filter((entry): entry is [string, string] => entry[1] !== undefined),
+	);
+	const fromEnv = getEnvApiKey(input.provider, envMap) ?? env[envKeyNameForProvider(input.provider)];
+	if (fromEnv) return fromEnv;
+	if (env.AUTORAG_AUTH_MODE === "environment") return undefined;
+	try {
+		const runtime = await ModelRuntime.create({
+			authPath: join(input.agentDir, "auth.json"),
+			modelsPath: join(input.agentDir, "models.json"),
+			allowModelNetwork: false,
+		});
+		const auth = await runtime.getAuth(input.provider);
+		if (auth !== undefined && "key" in auth && typeof auth.key === "string") return auth.key;
+		if (auth !== undefined && "access" in auth && typeof auth.access === "string") return auth.access;
+		if (auth !== undefined && "auth" in auth) {
+			const nested = (auth as { auth?: { apiKey?: unknown; access?: unknown } }).auth;
+			if (typeof nested?.apiKey === "string") return nested.apiKey;
+			if (typeof nested?.access === "string") return nested.access;
+		}
+	} catch {
+		// Fall through; caller reports missing API key clearly.
+	}
+	return undefined;
+}
+
 /**
  * Resolve `visualParse` agent options into concrete `VisualMirrorSyncOptions` (gate + extractor + renderer).
  * Returns `undefined` when visual parsing is disabled or unconfigured.
@@ -215,11 +267,67 @@ export async function resolveVisualParseSyncOptions(input: {
 	): Promise<VisualPageExtractor | undefined> => {
 		if (visualParse.ocrExtractor !== undefined) return visualParse.ocrExtractor;
 		if (ocrConfig === false) return undefined;
+		const inferredProvider =
+			ocrConfig?.provider ??
+			(typeof ocrConfig?.model === "object" && ocrConfig.model !== null && !isResolvedModel(ocrConfig.model)
+				? ocrConfig.model.provider
+				: undefined);
+		const inferredModelId =
+			typeof ocrConfig?.model === "string"
+				? ocrConfig.model
+				: typeof ocrConfig?.model === "object" && ocrConfig.model !== null && !isResolvedModel(ocrConfig.model)
+					? ocrConfig.model.id
+					: undefined;
+		const matchesOfficialApi =
+			inferredProvider !== undefined &&
+			inferredModelId !== undefined &&
+			findOfficialRemoteOcrModel(inferredProvider, inferredModelId) !== undefined;
 		const engine =
-			ocrConfig?.engine ?? (ocrConfig?.model !== undefined ? "vlm" : (fallbackExtractorConfig?.engine ?? "auto"));
+			ocrConfig?.engine ??
+			(ocrConfig?.provider !== undefined || matchesOfficialApi
+				? "api"
+				: ocrConfig?.model !== undefined
+					? "vlm"
+					: (fallbackExtractorConfig?.engine ?? "auto"));
+		if (engine === "api") {
+			const providerId = inferredProvider;
+			const modelId = inferredModelId;
+			if (providerId === undefined || !isOfficialRemoteOcrProvider(providerId)) {
+				throw new Error(
+					`Unsupported visualParse.ocr.provider "${providerId ?? ""}". Supported official OCR API providers: mistral, nvidia, upstage, zai.`,
+				);
+			}
+			if (modelId === undefined || modelId.trim().length === 0) {
+				throw new Error(`visualParse.ocr.model is required when visualParse.ocr.engine is "api".`);
+			}
+			const spec = findOfficialRemoteOcrModel(providerId, modelId);
+			const modelRef =
+				typeof ocrConfig?.model === "object" && ocrConfig.model !== null && !isResolvedModel(ocrConfig.model)
+					? ocrConfig.model
+					: undefined;
+			const apiKey = await resolveProviderApiKey({
+				provider: providerId,
+				apiKeyEnv: ocrConfig?.apiKeyEnv ?? modelRef?.apiKeyEnv,
+				defaultApiKeyEnv: spec?.defaultApiKeyEnv,
+				agentDir,
+				env: input.env,
+			});
+			if (apiKey === undefined || apiKey.trim().length === 0) {
+				throw new Error(
+					`Missing API key for remote OCR provider "${providerId}" (expected ${ocrConfig?.apiKeyEnv ?? spec?.defaultApiKeyEnv ?? envKeyNameForProvider(providerId)}).`,
+				);
+			}
+			return createRemoteApiOcrExtractor({
+				provider: providerId as RemoteOcrProviderId,
+				model: modelId,
+				apiKey,
+				baseUrl: ocrConfig?.baseUrl ?? modelRef?.baseUrl ?? spec?.defaultBaseUrl,
+				...(ocrConfig?.timeoutMs !== undefined ? { timeoutMs: ocrConfig.timeoutMs } : {}),
+			});
+		}
 		if (engine === "vlm") {
 			const modelSpec = ocrConfig?.model ?? fallbackExtractorConfig?.model;
-			if (modelSpec === undefined) {
+			if (modelSpec === undefined || typeof modelSpec === "string") {
 				throw new Error("visualParse.ocr.model is required when visualParse.ocr.engine is 'vlm'.");
 			}
 			const resolved = isResolvedModel(modelSpec)

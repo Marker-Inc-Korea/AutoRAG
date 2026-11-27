@@ -75,7 +75,23 @@ describe("visualParse CLI config", () => {
 		});
 	});
 
-	it("normalizes independent visualParse.ocr settings (local engines, remote VLM OCR model, and false)", () => {
+	it("normalizes independent visualParse.ocr settings (local engines, official remote OCR API, VLM OCR, and false)", () => {
+		const officialApiOcr = normalizeVisualParseConfig({
+			enabled: true,
+			ocr: {
+				engine: "api",
+				model: { provider: "nvidia", id: "nvidia/nemotron-parse", name: "NVIDIA Nemotron Parse" },
+			},
+		});
+		expect(officialApiOcr).toEqual({
+			enabled: true,
+			ocr: {
+				engine: "api",
+				model: { provider: "nvidia", id: "nvidia/nemotron-parse", name: "NVIDIA Nemotron Parse" },
+			},
+		});
+		expect(() => normalizeVisualParseConfig({ enabled: true, ocr: { engine: "api" } })).toThrow(ConfigError);
+
 		const remoteOcr = normalizeVisualParseConfig({
 			enabled: true,
 			extractor: {

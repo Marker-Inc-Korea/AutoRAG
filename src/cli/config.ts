@@ -194,9 +194,13 @@ export interface VisualParseExtractorCliConfig {
 }
 
 export interface VisualParseOcrCliConfig {
-	/** `"auto"` (PP-OCRv5 for ko/en else Tesseract), `"kordoc"` (PP-OCRv5), `"tesseract"`, or `"vlm"` (remote OCR model). */
-	engine?: "auto" | "kordoc" | "tesseract" | "vlm";
-	/** Remote vision/OCR model reference when `engine` is `"vlm"`. */
+	/**
+	 * `"auto"` (PP-OCRv5 for ko/en else Tesseract), `"kordoc"` (PP-OCRv5), `"tesseract"`,
+	 * `"api"` (official provider OCR/document-parsing API: Mistral OCR, NVIDIA Nemotron Parse, Upstage Document Parse, Z.AI GLM-OCR),
+	 * or `"vlm"` (generic remote vision model used as an OCR transcriber).
+	 */
+	engine?: "auto" | "kordoc" | "tesseract" | "api" | "vlm";
+	/** Remote OCR model reference when `engine` is `"api"` (official OCR API) or `"vlm"` (vision chat model). */
 	model?: AgentModelConfig;
 	/** Document languages for local OCR; inherits global `languages` when omitted. */
 	languages?: LanguageTag[];
@@ -1653,6 +1657,7 @@ const VISUAL_PARSE_LOCAL_OCR_ENGINES: Readonly<Record<string, true>> = {
 
 const VISUAL_PARSE_OCR_ENGINES: Readonly<Record<string, true>> = {
 	...VISUAL_PARSE_LOCAL_OCR_ENGINES,
+	api: true,
 	vlm: true,
 };
 
@@ -1779,7 +1784,7 @@ export function normalizeVisualParseConfig(raw: unknown, path = "visualParse"): 
 			const ocr: VisualParseOcrCliConfig = {};
 			if (ocrRecord.engine !== undefined) {
 				if (typeof ocrRecord.engine !== "string" || VISUAL_PARSE_OCR_ENGINES[ocrRecord.engine] !== true) {
-					throw new ConfigError(`${path}.ocr.engine must be "auto", "kordoc", "tesseract", or "vlm"`);
+					throw new ConfigError(`${path}.ocr.engine must be "auto", "kordoc", "tesseract", "api", or "vlm"`);
 				}
 				ocr.engine = ocrRecord.engine as VisualParseOcrCliConfig["engine"];
 			}
@@ -1787,8 +1792,8 @@ export function normalizeVisualParseConfig(raw: unknown, path = "visualParse"): 
 				const parsedModel = modelReference(ocrRecord.model, `${path}.ocr.model`);
 				if (parsedModel !== undefined) ocr.model = parsedModel;
 			}
-			if (ocr.engine === "vlm" && ocr.model === undefined && out.enabled !== false) {
-				throw new ConfigError(`${path}.ocr.model is required when ${path}.ocr.engine is "vlm"`);
+			if ((ocr.engine === "vlm" || ocr.engine === "api") && ocr.model === undefined && out.enabled !== false) {
+				throw new ConfigError(`${path}.ocr.model is required when ${path}.ocr.engine is "${ocr.engine}"`);
 			}
 			if (ocrRecord.languages !== undefined) {
 				ocr.languages = normalizeConfigLanguages(ocrRecord.languages);
