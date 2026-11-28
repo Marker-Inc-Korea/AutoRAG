@@ -102,6 +102,20 @@ Keep the first-run set small, usually one to three roots. Present a concrete
 proposal and require `yes`, a narrowed keep-list, a custom list, or `skip`
 before running `refresh`.
 
+### Cloud and network folders
+
+`autorag setup --format json` may list `cloudFolders`: cloud-sync and network
+folders on this machine (`kind` is `file-provider`, `cloud-files`, or
+`network`) that no `searchPaths` entry covers. Offer them as optional roots in
+the same proposal, and add one only after the user approves it.
+
+Each entry's `command` (`autorag init --search-paths <path>`) works only when
+no config exists yet. With an existing config, `init` refuses ("Config file
+already exists"), and `init --force` would replace the whole config with that
+single root. So when a config exists, never run the `command`: add the
+approved entry's `path` to the trusted config's `searchPaths` array, keep
+every existing entry, and then run `autorag refresh`.
+
 ## Initialize
 
 ```bash
