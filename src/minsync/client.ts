@@ -211,15 +211,8 @@ export class MinSyncClient {
 			if (this.embedder?.id) {
 				initArgs.push("--embedder", this.embedder.id);
 			}
-			if (this.sparse?.id) {
-				initArgs.push("--sparse", this.sparse.id);
-			}
-			if (this.bm25?.enabled === false) {
-				initArgs.push("--no-bm25");
-			}
-			if (this.bm25?.language) {
-				initArgs.push("--language", this.bm25.language);
-			}
+			// `[sparse]` and `[bm25]` are written via `rewriteEmbedderConfig` right below so
+			// `minsync init` stays compatible with both 0.7.6 and BM25-capable releases.
 			const init = await this.spawn(initArgs, spawnOptions);
 			if (!init.ok || !existsSync(minSyncConfigPath(this.workspacePath))) {
 				return {
