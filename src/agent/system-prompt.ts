@@ -24,6 +24,11 @@ export interface SystemPromptConfig {
 	jikjiIndexingEnabled?: boolean;
 	datasourceSkills?: readonly DatasourceAgentSkill[];
 	retrievedContentGuard?: boolean;
+	/**
+	 * The `## Subagents` section for host-registered subagents (see `buildSubagentsPrompt`). Built once per agent
+	 * and identical every turn; omitted (the prompt is unchanged) when the host registers none.
+	 */
+	subagentsSection?: string;
 }
 
 function toolAvailable(config: SystemPromptConfig, name: string): boolean {
@@ -72,7 +77,8 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 		]);
 		const utilGroup = pick(["web_search", "web_fetch", "calculator", "jev", "ask_user", "revise_answer"]);
 		const opsGroup = pick(["manage_automations", "manage_ltr"]);
-		const known = new Set([...searchGroup, ...perDatasource, ...fileGroup, ...utilGroup, ...opsGroup]);
+		// `subagent` gets its own section below rather than a line among the additional tools.
+		const known = new Set([...searchGroup, ...perDatasource, ...fileGroup, ...utilGroup, ...opsGroup, "subagent"]);
 		const extraTools = config.toolNames.filter((name) => !known.has(name));
 
 		const capLines: string[] = [];
@@ -147,6 +153,9 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 			`- **Prevent collisions**: before moving or renaming in bulk, verify no two targets share a name and never silently overwrite an existing file.\n` +
 			`- **Reversibility**: report every file change as \`old path → new path\` so the user can undo from the conversation alone.`,
 	);
+
+	const subagentsSection = (config.subagentsSection ?? "").trim();
+	if (subagentsSection !== "") sections.push(subagentsSection);
 
 	if (datasourceSkills.length > 0) {
 		sections.push(

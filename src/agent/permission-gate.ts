@@ -11,6 +11,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { matchesKey } from "@earendil-works/pi-tui";
 import { createReadOnlySandbox, type ReadOnlySandbox, type ReadOnlySandboxOptions } from "./readonly-sandbox.ts";
+import { SUBAGENT_TOOL_NAME, subagentNamesInCall } from "./subagents.ts";
 
 /**
  * Binary permission modes for the agent. No decision model (Jev) is consulted.
@@ -95,6 +96,8 @@ export interface PermissionGateOptions {
 	readonly sandboxOptions?: ReadOnlySandboxOptions;
 	/** Factory override for tests. Defaults to {@link createReadOnlySandbox}. */
 	readonly createSandbox?: (options?: ReadOnlySandboxOptions) => ReadOnlySandbox;
+	/** Host subagents that change files: a `subagent` call naming one is blocked in `readonly` like `write`. */
+	readonly mutatingSubagents?: ReadonlySet<string>;
 }
 
 /** Appended to the system prompt while in `readonly` mode so the model knows writes will fail. */
@@ -140,7 +143,12 @@ export function describeReadOnlyBlock(
 	cwd: string,
 	trustedPaths: ReadonlySet<string>,
 	scratchDir: string | undefined,
+	mutatingSubagents: ReadonlySet<string> = new Set(),
 ): string | undefined {
+	if (toolName === SUBAGENT_TOOL_NAME) {
+		const writers = [...new Set(subagentNamesInCall(input).filter((name) => mutatingSubagents.has(name)))];
+		return writers.length === 0 ? undefined : `subagent (${writers.join(", ")})`;
+	}
 	if (toolName === "write" || toolName === "edit") {
 		const rawPath = typeof input.path === "string" ? input.path : "";
 		if (rawPath !== "") {
@@ -194,6 +202,7 @@ function readOnlyBlockedReason(action: string): string {
  */
 export function createPermissionGate(options: PermissionGateOptions): ExtensionFactory {
 	const { controller } = options;
+	const mutatingSubagents = options.mutatingSubagents ?? new Set<string>();
 	const trustedPaths = new Set((options.trustedPaths ?? []).map((p) => resolve(p)));
 	const sandboxFactory = options.createSandbox ?? createReadOnlySandbox;
 
@@ -377,7 +386,14 @@ export function createPermissionGate(options: PermissionGateOptions): ExtensionF
 			if (!controller.isReadOnly) return undefined;
 			const input = event.input as Record<string, unknown>;
 			const scratchDir = sandbox?.scratchDir;
-			const blocked = describeReadOnlyBlock(event.toolName, input, ctx.cwd, trustedPaths, scratchDir);
+			const blocked = describeReadOnlyBlock(
+				event.toolName,
+				input,
+				ctx.cwd,
+				trustedPaths,
+				scratchDir,
+				mutatingSubagents,
+			);
 			if (blocked === undefined) return undefined;
 			return { block: true, reason: readOnlyBlockedReason(blocked) };
 		});

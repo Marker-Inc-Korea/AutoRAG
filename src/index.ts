@@ -41,6 +41,22 @@ export {
 	type SearchDocumentsStreamEvent,
 	type SearchDocumentWarning,
 } from "./agent/index.ts";
+export {
+	buildSubagentsPrompt,
+	createSubagentExtension,
+	createSubagentTool,
+	MAX_SUBAGENT_CONCURRENCY,
+	MAX_SUBAGENT_OUTPUT_CHARS,
+	MAX_SUBAGENT_PARALLEL_TASKS,
+	mutatingSubagentNames,
+	normalizeSubagents,
+	SUBAGENT_TOOL_NAME,
+	type SubagentDefinition,
+	type SubagentResult,
+	type SubagentRunContext,
+	type SubagentTask,
+	subagentNamesInCall,
+} from "./agent/subagents.ts";
 export { buildSystemPrompt, type SystemPromptConfig } from "./agent/system-prompt.ts";
 export type {
 	VisualParseAgentOptions,
