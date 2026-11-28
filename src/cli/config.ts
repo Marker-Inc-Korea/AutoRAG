@@ -40,7 +40,13 @@ import { isGlobExclusion } from "../filesystem/path-exclusions.ts";
 import { LanguageError, type LanguageTag, normalizeLanguages } from "../language.ts";
 import type { LtrSettings } from "../ltr/manager.ts";
 import { resolveMinSyncBinary } from "../minsync/binary.ts";
-import type { EnsureMinSyncBinaryOptions, MinSyncEmbedderConfig } from "../minsync/index.ts";
+import {
+	type EnsureMinSyncBinaryOptions,
+	type MinSyncBm25Config,
+	type MinSyncEmbedderConfig,
+	type MinSyncSparseConfig,
+	SUPPORTED_MINSYNC_BM25_LANGUAGES,
+} from "../minsync/index.ts";
 import { renameWithRetry } from "../mirror/atomic-write.ts";
 import { MAX_FUSION_DEPTH, MAX_PER_RECORD, type RecordCutOptions } from "../retrieval/record-cut.ts";
 import {
@@ -79,6 +85,8 @@ export interface MinSyncMethodConfig {
 	maxChunkSize?: number;
 	installer?: Omit<EnsureMinSyncBinaryOptions, "root">;
 	embedder?: MinSyncEmbedderConfig;
+	sparse?: MinSyncSparseConfig;
+	bm25?: MinSyncBm25Config;
 }
 
 const MINSYNC_REQUIRED_MESSAGE =
@@ -840,6 +848,77 @@ export function normalizeEmbedder(raw: unknown, path: string): MinSyncEmbedderCo
 	}
 	return out;
 }
+const SPARSE_ALLOWLIST = new Set<string>(["id", "baseUrl", "batchSize", "timeoutMs", "maxRetries"]);
+const SPARSE_POSITIVE_INT_FIELDS = ["batchSize", "timeoutMs", "maxRetries"] as const;
+const BM25_ALLOWLIST = new Set<string>(["enabled", "language"]);
+const BM25_LANGUAGE_SET = new Set<string>(SUPPORTED_MINSYNC_BM25_LANGUAGES);
+
+function normalizeSparse(raw: unknown, path: string): MinSyncSparseConfig {
+	if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+		throw new ConfigError(`${path} must be an object`);
+	}
+	const record = raw as Record<string, unknown>;
+	for (const key of Object.keys(record)) {
+		if (!SPARSE_ALLOWLIST.has(key)) {
+			throw new ConfigError(`${path}.${key} is not a recognized field`);
+		}
+	}
+	const out: {
+		id?: string;
+		baseUrl?: string;
+		batchSize?: number;
+		timeoutMs?: number;
+		maxRetries?: number;
+	} = {};
+	if (record.id !== undefined) {
+		if (typeof record.id !== "string" || record.id.trim() === "") {
+			throw new ConfigError(`${path}.id must be a non-empty string`);
+		}
+		out.id = record.id;
+	}
+	if (record.baseUrl !== undefined) {
+		if (typeof record.baseUrl !== "string" || record.baseUrl.trim() === "") {
+			throw new ConfigError(`${path}.baseUrl must be a non-empty string`);
+		}
+		out.baseUrl = record.baseUrl;
+	}
+	for (const field of SPARSE_POSITIVE_INT_FIELDS) {
+		const value = record[field];
+		if (value === undefined) continue;
+		if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) {
+			throw new ConfigError(`${path}.${field} must be a positive integer`);
+		}
+		out[field] = value;
+	}
+	return out;
+}
+
+function normalizeBm25(raw: unknown, path: string): MinSyncBm25Config {
+	if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+		throw new ConfigError(`${path} must be an object`);
+	}
+	const record = raw as Record<string, unknown>;
+	for (const key of Object.keys(record)) {
+		if (!BM25_ALLOWLIST.has(key)) {
+			throw new ConfigError(`${path}.${key} is not a recognized field`);
+		}
+	}
+	const out: { enabled?: boolean; language?: string } = {};
+	if (record.enabled !== undefined) {
+		if (typeof record.enabled !== "boolean") {
+			throw new ConfigError(`${path}.enabled must be a boolean`);
+		}
+		out.enabled = record.enabled;
+	}
+	if (record.language !== undefined) {
+		if (typeof record.language !== "string" || !BM25_LANGUAGE_SET.has(record.language)) {
+			throw new ConfigError(`${path}.language must be one of: ${SUPPORTED_MINSYNC_BM25_LANGUAGES.join(", ")}`);
+		}
+		out.language = record.language;
+	}
+	return out;
+}
+
 const MINSYNC_ALLOWLIST = new Set<string>([
 	"enabled",
 	"autoInstall",
@@ -847,6 +926,8 @@ const MINSYNC_ALLOWLIST = new Set<string>([
 	"maxChunkSize",
 	"installer",
 	"embedder",
+	"sparse",
+	"bm25",
 ]);
 
 /**
@@ -892,6 +973,12 @@ function normalizeMinSyncMethod(raw: MinSyncMethodConfig | false | undefined): M
 	}
 	if (record.embedder !== undefined && record.embedder !== null) {
 		out.embedder = normalizeEmbedder(record.embedder, "minSync.embedder");
+	}
+	if (record.sparse !== undefined && record.sparse !== null) {
+		out.sparse = normalizeSparse(record.sparse, "minSync.sparse");
+	}
+	if (record.bm25 !== undefined && record.bm25 !== null) {
+		out.bm25 = normalizeBm25(record.bm25, "minSync.bm25");
 	}
 	return out;
 }
@@ -1969,6 +2056,8 @@ export function buildAgentOptions(config: CliConfig, agentDir?: string): Omit<Au
 				...(config.minSync?.autoInstall === undefined ? {} : { autoInstall: config.minSync.autoInstall }),
 				...(config.minSync?.installer === undefined ? {} : { installer: config.minSync.installer }),
 				...(config.minSync?.embedder === undefined ? {} : { embedder: config.minSync.embedder }),
+				...(config.minSync?.sparse === undefined ? {} : { sparse: config.minSync.sparse }),
+				...(config.minSync?.bm25 === undefined ? {} : { bm25: config.minSync.bm25 }),
 				...(config.minSync?.maxChunkSize === undefined ? {} : { maxChunkSize: config.minSync.maxChunkSize }),
 			},
 		});

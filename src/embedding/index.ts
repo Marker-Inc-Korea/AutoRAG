@@ -1,4 +1,5 @@
 import { isSparseOnlyEmbedder } from "../minsync/embedder-config.ts";
+import { resolveMinSyncRetrieverPlan } from "../minsync/hardware.ts";
 import type { MinSyncEmbedderConfig } from "../minsync/types.ts";
 import { DEFAULT_DAEMON_MODEL } from "./daemon.ts";
 import type { ManagedEmbedder } from "./embedder.ts";
@@ -59,8 +60,11 @@ function localModel(embedder: MinSyncEmbedderConfig | undefined): string {
  * lexical path and nothing loads Qwen3.
  */
 export function createEmbedderFromConfig(options: EmbedderFromConfigOptions): ManagedEmbedder {
-	if (isSparseOnlyEmbedder(options.embedder)) {
-		const reason = 'dense embedding is off: minSync.embedder.id is "none" (sparse-only index)';
+	const resolvedEmbedder = resolveMinSyncRetrieverPlan({
+		...(options.embedder === undefined ? {} : { embedder: options.embedder }),
+	}).embedder;
+	if (isSparseOnlyEmbedder(resolvedEmbedder)) {
+		const reason = 'dense embedding is off: minSync.embedder.id is "none" (lexical-only index)';
 		return {
 			identity: () => Promise.reject(new Error(reason)),
 			embed: () => Promise.reject(new Error(reason)),
@@ -69,11 +73,11 @@ export function createEmbedderFromConfig(options: EmbedderFromConfigOptions): Ma
 			close: async () => undefined,
 		};
 	}
-	const remote = remoteEmbedderFromMinSync(options.embedder);
+	const remote = remoteEmbedderFromMinSync(resolvedEmbedder);
 	const embedder = createManagedEmbedder({
 		...(remote === undefined ? {} : { remote }),
-		model: localModel(options.embedder),
-		prefixes: resolveEmbeddingPrefixes(options.embedder),
+		model: localModel(resolvedEmbedder),
+		prefixes: resolveEmbeddingPrefixes(resolvedEmbedder),
 		...(options.home === undefined ? {} : { home: options.home }),
 		...(options.env === undefined ? {} : { env: options.env }),
 		...(remote === undefined ? { autoStart: options.autoStart ?? true } : {}),
