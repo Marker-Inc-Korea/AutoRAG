@@ -219,7 +219,7 @@ export class NogonSkill implements DatasourceSkill {
 				"",
 				"`scope` can only narrow within already-authorized scopes; it can never widen access. A scope of `<root>/pages/<domain>/**` restricts the search to one site.",
 				"",
-				'Plain words are alternatives: a hit may match any of them, so a natural question works. Nogon syntax passes through unchanged: `"exact phrase"`, `title:`, `text:`, `domain:`, `url:`, `language:`, `-term`, `secur*`, `added:<7d`, `updated:>=2026-10-01`, `visits:3..`, and `sort:date` / `sort:-date` / `sort:visits`. A query using any such operator is sent as written (plain words ANDed), so write it deliberately. Nogon has no `OR` keyword: to combine alternatives write `(a|b)`.',
+				'Plain words are alternatives: a hit may match any of them, so a natural question works. Stopwords (the, where, 의, について, que, ...) are dropped from plain-word queries in every language AutoRAG supports, so a short keyword query with the distinctive word ranks better than a full sentence. Nogon syntax passes through unchanged: `"exact phrase"`, `title:`, `text:`, `domain:`, `url:`, `language:`, `-term`, `secur*`, `added:<7d`, `updated:>=2026-10-01`, `visits:3..`, and `sort:date` / `sort:-date` / `sort:visits`. A query using any such operator is sent as written (plain words ANDed), so write it deliberately. Nogon has no `OR` keyword: to combine alternatives write `(a|b)`.',
 				"",
 				this.semantic
 					? "Semantic (meaning-based) retrieval is also registered for this datasource; Nogon embeds the query through the embedding endpoint its operator configured."

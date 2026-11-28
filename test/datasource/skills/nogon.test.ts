@@ -90,7 +90,73 @@ describe("NogonSkill lexical retrieval", () => {
 		await lexical?.retrieve("When did I read about the inverted-index AND OR NOT 인증서를?", {});
 
 		const text = String(calls[0]?.query?.text);
-		expect(text).toBe("(When|did|I|read|about|the|inverted|index|인증서를) type:web");
+		// `When`, `did`, `I`, `about` and `the` are function words: they match nearly every page and drown the rare term.
+		expect(text).toBe("(read|inverted|index|인증서를) type:web");
+	});
+
+	it("drops stopwords in every supported language before building the alternation", async () => {
+		const { baseUrl, calls } = await fakeNogon((_request, response) => json(response, { total: 0, documents: [] }));
+		const [lexical] = new NogonSkill({ baseUrl }).retrievalMethods();
+
+		await lexical?.retrieve("어디서 읽었던 인증서를 찾아줘", {});
+		await lexical?.retrieve("wo habe ich über datenbanken gelesen", {});
+		await lexical?.retrieve("где я читал про индекс", {});
+		await lexical?.retrieve("転置インデックス について 教えて", {});
+
+		expect(calls.map((call) => call.query?.text)).toEqual([
+			"(읽었던|인증서를) type:web",
+			"(datenbanken|gelesen) type:web",
+			"(читал|индекс) type:web",
+			"(転置インデックス) type:web",
+		]);
+	});
+
+	it("keeps a stopword that is an ordinary word, and a query made only of stopwords", async () => {
+		const { baseUrl, calls } = await fakeNogon((_request, response) => json(response, { total: 0, documents: [] }));
+		const [lexical] = new NogonSkill({ baseUrl }).retrievalMethods();
+
+		await lexical?.retrieve("war in ukraine", {});
+		await lexical?.retrieve("who is the", {});
+		await lexical?.retrieve("the", {});
+
+		expect(calls.map((call) => call.query?.text)).toEqual([
+			"(war|in|ukraine) type:web",
+			"(who|is|the) type:web",
+			"(the) type:web",
+		]);
+	});
+
+	it("sends a query written in Nogon syntax exactly as written, stopwords included", async () => {
+		const { baseUrl, calls } = await fakeNogon((_request, response) => json(response, { total: 0, documents: [] }));
+		const [lexical] = new NogonSkill({ baseUrl }).retrievalMethods();
+
+		await lexical?.retrieve('title:"where did" the index', {});
+		await lexical?.retrieve("the -draft index of", {});
+
+		expect(calls[0]?.query?.text).toBe('(title:"where did" the index) type:web');
+		expect(calls[1]?.query?.text).toBe("(the -draft index of) type:web");
+	});
+
+	it("applies the term limit to what is left after stopwords, so a long question keeps its content words", async () => {
+		const { baseUrl, calls } = await fakeNogon((_request, response) => json(response, { total: 0, documents: [] }));
+		const [lexical] = new NogonSkill({ baseUrl }).retrievalMethods();
+		const stop = Array.from({ length: 30 }, () => "the");
+		const content = Array.from({ length: 24 }, (_, index) => `term${index}`);
+
+		await lexical?.retrieve([...stop, ...content].join(" "), {});
+
+		expect(calls[0]?.query?.text).toBe(`(${content.join("|")}) type:web`);
+	});
+
+	it("does not strip stopwords from a semantic query: the model reads the whole question", async () => {
+		const { baseUrl, calls } = await fakeNogon((_request, response) =>
+			json(response, { total: 0, semantic_enabled: true, documents: [], semantic_hits: [] }),
+		);
+		const semantic = new NogonSkill({ baseUrl, semantic: true }).retrievalMethods()[1];
+
+		await semantic?.retrieve("where did I read about the inverted index", {});
+
+		expect(calls[0]?.query?.text).toBe("where did I read about the inverted index");
 	});
 
 	it("never sends the word OR: Nogon searches it as a literal word and matches most English pages", async () => {
@@ -316,6 +382,56 @@ describe("NogonSkill semantic retrieval", () => {
 		);
 		const semantic = new NogonSkill({ baseUrl, semantic: true }).retrievalMethods()[1];
 		await expect(semantic?.retrieve("refund", {})).rejects.toThrow(/semantic_search/);
+	});
+});
+
+describe("NogonSkill semantic query text", () => {
+	async function semanticTextSent(question: string, domain?: string): Promise<unknown[]> {
+		const { baseUrl, calls } = await fakeNogon((_request, response) =>
+			json(response, { total: 0, semantic_enabled: true, documents: [], semantic_hits: [] }),
+		);
+		const client = new NogonClient({ baseUrl });
+		await client.searchSemantic(question, domain === undefined ? {} : { domain });
+		return calls.map((call) => call.query?.text);
+	}
+
+	it("sends an ordinary question exactly as written, punctuation included", async () => {
+		expect(await semanticTextSent("what is C++? 인증서를 어디서 읽었지")).toEqual([
+			"what is C++? 인증서를 어디서 읽었지",
+		]);
+		expect(await semanticTextSent("where did I read about the inverted index")).toEqual([
+			"where did I read about the inverted index",
+		]);
+	});
+
+	it("neutralises what Nogon's query parser would reject: unclosed groups and quotes, bare operators", async () => {
+		expect(await semanticTextSent("how does (full text search work")).toEqual(["how does full text search work"]);
+		expect(await semanticTextSent('say "hello world')).toEqual(["say hello world"]);
+		expect(await semanticTextSent("AND foo")).toEqual(["foo"]);
+		expect(await semanticTextSent("foo OR")).toEqual(["foo"]);
+		expect(await semanticTextSent("a | b")).toEqual(["a b"]);
+		expect(await semanticTextSent("(a OR b) AND c")).toEqual(["a b c"]);
+	});
+
+	it("does not let a question turn into a field filter or a negation", async () => {
+		// `title:` would filter on the title and `-draft` would exclude a word; the model should just read the words.
+		expect(await semanticTextSent("title: what is x")).toEqual(["title\\: what is x"]);
+		expect(await semanticTextSent("-draft notes")).toEqual(["draft notes"]);
+		expect(await semanticTextSent("see https://example.com/a?b=1 for details")).toEqual([
+			"see https\\://example.com/a?b=1 for details",
+		]);
+	});
+
+	it("keeps a literal domain scope after the sanitised question", async () => {
+		expect(await semanticTextSent("how does (search work", "example.com")).toEqual([
+			"how does search work domain:example.com",
+		]);
+	});
+
+	it("does not call Nogon when nothing but syntax is left", async () => {
+		expect(await semanticTextSent(")")).toEqual([]);
+		expect(await semanticTextSent('" ( | )')).toEqual([]);
+		expect(await semanticTextSent("AND OR NOT")).toEqual([]);
 	});
 });
 

@@ -7,6 +7,7 @@
  */
 
 import { createHash } from "node:crypto";
+import { removeQueryStopwords } from "../../../retrieval/stopwords.ts";
 import { asArray, asNumber, asRecord, asString } from "../../http.ts";
 
 /** Nogon `document.DocType`: 0 web page, 1 watched local file, 2 remote file snapshot. */
@@ -108,9 +109,9 @@ export class NogonClient {
 	 * AutoRAG sends only the question text. `semantic_hits` carry the matched chunk and similarity.
 	 */
 	async searchSemantic(query: string, options: NogonSearchOptions = {}): Promise<NogonResult<readonly NogonHit[]>> {
-		const trimmed = query.trim();
-		if (trimmed.length === 0) return { ok: true, value: [] };
-		const text = options.domain === undefined ? trimmed : `${trimmed} domain:${options.domain}`;
+		const question = buildSemanticQuery(query);
+		if (question === undefined) return { ok: true, value: [] };
+		const text = options.domain === undefined ? question : `${question} domain:${options.domain}`;
 		const response = await this.search(
 			{ text, highlight: "HTML", limit: options.topK ?? DEFAULT_TOP_K, semantic_enabled: true },
 			options.signal,
@@ -253,7 +254,10 @@ export class NogonClient {
  *
  * Nogon ANDs bare terms, so a natural-language question would match almost nothing. Plain words become one
  * alternation group `(a|b|c)`, while uppercase `AND`/`OR`/`NOT` tokens in natural-language questions are stripped by
- * {@link normalizeTerm} so Nogon 0.21+'s boolean operator parser never rejects casual English phrasing. Nogon's own
+ * {@link normalizeTerm} so Nogon 0.21+'s boolean operator parser never rejects casual English phrasing. Stopwords
+ * (`the`, `where`, `의`, `について`, ... in every language AutoRAG supports) are dropped first, see
+ * {@link removeQueryStopwords}: nogon ranks with TF-IDF and weights a title match twelve times a body match, so a
+ * function word in a page title would otherwise outrank the rare word in the body. Nogon's own
  * syntax (quoted phrases, `field:value`, wildcards, negation) passes through untouched, and a query using any of it is
  * sent with its plain words ANDed, exactly as written. A `sort:` directive is hoisted out of the group because Nogon
  * only honours it at the top level.
@@ -268,7 +272,10 @@ export function buildWebQuery(question: string, domain?: string): string | undef
 	}
 	const terms = words.map(normalizeTerm).filter((term): term is NormalizedTerm => term !== undefined);
 	const structured = terms.some((term) => term.operator);
-	const flat = terms.flatMap((term) => term.parts).slice(0, MAX_TERMS);
+	const termWords = terms.flatMap((term) => term.parts);
+	// Function words match nearly every page and outrank the one rare term, so a plain-word question loses them first
+	// and only then hits the term limit. A query written in Nogon syntax is sent as written, stopwords included.
+	const flat = (structured ? termWords : removeQueryStopwords(termWords)).slice(0, MAX_TERMS);
 	let group: string;
 	if (structured) group = flat.join(" ");
 	else group = flat.join("|");
@@ -279,6 +286,25 @@ export function buildWebQuery(question: string, domain?: string): string | undef
 	parts.push(WEB_ONLY);
 	if (sort !== undefined) parts.push(sort);
 	return parts.join(" ");
+}
+
+/**
+ * The text of a semantic search: the question as a plain sentence.
+ *
+ * Nogon reads even a semantic query with its keyword query parser before it embeds what is left, so a question is not
+ * free text to it. An unclosed `(` or `"`, a leading `AND` or a trailing `OR` is rejected with HTTP 400, and the
+ * questions that are accepted can still change meaning: `title: what is x` becomes a filter on the title and
+ * `-draft notes` excludes a word. A model embeds words, so the syntax characters are removed (`( ) | " \\`, a leading
+ * `-`, a bare `AND`/`OR`/`NOT`) and a `field:` prefix has its colon escaped, which is also what keeps `https://...` whole.
+ * Everything else, punctuation included, reaches the model as written. Returns undefined when no words are left.
+ */
+export function buildSemanticQuery(question: string): string | undefined {
+	const words = question
+		.replace(/[()|"\\]+/gu, " ")
+		.split(/\s+/u)
+		.map((word) => word.replace(/^-+/u, "").replace(/^([A-Za-z_.]+):/u, "$1\\:"))
+		.filter((word) => word.length > 0 && !/^(?:AND|OR|NOT)$/u.test(word));
+	return words.length === 0 ? undefined : words.join(" ");
 }
 
 /**
