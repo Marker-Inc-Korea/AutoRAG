@@ -188,12 +188,11 @@ AUTORAG_CONFIG=/absolute/path/to/.autorag/config.json autorag lite refresh --jso
   silently degrading to lexical-only search.
 - AutoRAG owns no embedding model; im-not-llm provisions
   `Qwen/Qwen3-Embedding-0.6B` (1024 dimensions) in `~/.cache/im-not-llm/models`. A
-  configured remote `minSync.embedder` is used first; otherwise a running
-  `inl serve` daemon (started by `refresh`/`watch`, never by a search), and
-  failing that MinSync's in-process engine via the optional
-  `@nomadamas/minsync-native` addon. The local default needs no embedder flags
-  and no API key. Override the embedder only when intentionally using a remote
-  provider.
+  configured remote `minSync.embedder` is used first; otherwise the
+  `inl serve` daemon, which AutoRAG starts on demand (falling back to
+  `minsync serve`) unless `minSync.autoInstall` is `false`. The local default
+  needs no embedder flags and no API key. Override the embedder only when
+  intentionally using a remote provider.
 - Exact duplicate exclusion during refresh is enabled by default via the
   external `dupey` CLI. Install dupey during setup when it is missing
   (`command -v dupey || cargo install dupey --locked`) and tell the user the feature is

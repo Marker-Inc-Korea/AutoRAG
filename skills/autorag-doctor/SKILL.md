@@ -39,12 +39,14 @@ autorag setup --format json
 - `health` resolves the single search model and does one live completion probe.
   `--skip-probes` only proves config shape, never live access; do not claim a
   healthy model from it.
-- `setup --format json` reports `embedding.backend` (`remote`, `daemon`, or
-  `in-process`) and the resolved `provider`/`model`/`dimension` when a backend
-  is alive, or `embedding.reason` and a `remediation` when none is. It only
-  probes; it never starts a daemon. Semantic search needs the daemon (or a
-  remote endpoint) to be running: a backend that is absent is a real
-  `embedding-unavailable` state, not normal.
+- `setup --format json` reports `embedding.backend` (`remote` or `daemon`) and
+  the resolved `provider`/`model`/`dimension` when a backend is alive, or
+  `embedding.reason` and a `remediation` when none is. When no daemon is
+  running and no remote endpoint is configured, it starts `inl serve` first
+  (falling back to `minsync serve`) unless `minSync.autoInstall` is `false`;
+  `status` only probes. Semantic search needs the daemon (or a remote endpoint)
+  to be running: a backend that is absent is a real `embedding-unavailable`
+  state, not normal.
 
 Config lives at `--config`, `AUTORAG_CONFIG`, `$AUTORAG_HOME/config.json`, or
 `~/.autorag/config.json`. Read `searchPaths`, `workspacePath`, `minSync`,
@@ -148,12 +150,14 @@ autorag setup --format json
 
 To diagnose an embedding backend that is not alive, `setup --format json` and
 `status` say so (`embedding.reason`, and the `embedding-unavailable`
-diagnostic). AutoRAG never starts the daemon: run `inl serve
---idle-timeout 0` by hand (or as a launchd/systemd service, see
-`docs/indexing/embedding-backends.md`) and read its own error, or press Ctrl+Shift+E in the
-TUI. When no daemon answers and the in-process addon
-(`@nomadamas/minsync-native`) is missing, that is the `embedder-unavailable`
-state. The daemon stops itself after `--idle-timeout` seconds (default 300), so
+diagnostic). `autorag setup` starts the daemon when none is running, and the
+shared embedder starts one on demand, unless `minSync.autoInstall` is `false`;
+`status` only probes. To start it yourself, run `inl serve --idle-timeout 0`
+by hand (or as a launchd/systemd service, see
+`docs/indexing/embedding-backends.md`) and read its own error, or press
+Ctrl+Shift+E in the TUI. When no daemon answers and none can be started, that
+is the `embedder-unavailable` state. The daemon stops itself after
+`--idle-timeout` seconds (default 300), so
 a semantic failure after a quiet spell usually means it timed out. Stop an
 orphaned daemon by the pid from `~/.cache/im-not-llm/serve/<instance>/pid` after
 confirming no live refresh holds it.
@@ -252,7 +256,7 @@ to retry those files once without re-indexing healthy ones.
 | `jikji-unsupported-version` | Jikji older than 0.2.0 was found and not run; message names the version and path | `autorag refresh --method jikji` installs the pinned build, or upgrade it yourself |
 | `everything-index-failed` | Windows Everything instance could not start or index; message carries ES exit code and stderr | Fix the reported cause, `autorag refresh --method everything --json` |
 | `embedding-identity-mismatch` | Indexed vectors use a different embedder | `autorag index rebuild --method minsync` |
-| `embedder-unavailable` | No remote endpoint answered, no daemon could start, and the in-process addon is missing or failed | Run `inl serve` by hand to read its error, install MinSync (`cargo install minsync`) or `@nomadamas/minsync-native`, or configure a remote `minSync.embedder` |
+| `embedder-unavailable` | No remote endpoint answered and no daemon could start | Run `inl serve` by hand to read its error, install im-not-llm (`cargo install inl-server --locked`) or MinSync (`cargo install minsync`), or configure a remote `minSync.embedder` |
 | `datasource-index-failed` | Backing CLI failed to index | Run that CLI's own doctor |
 | `datasource-empty` | Store has no matching content | Re-sync with the CLI, or accept as empty |
 | `unknown-datasource-skill` | Config name is not a known template | Fix the name or add `"type"` |

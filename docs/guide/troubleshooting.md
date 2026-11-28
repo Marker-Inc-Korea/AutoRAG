@@ -23,7 +23,7 @@ autorag setup --format json    # resolves the embedding backend and reports it
 
 - `status` reports `state`, `stale`, `diagnostics`, and per-component state for `minsync`, `jikji`, and `datasources`. `stale: true` or any `stale-index` diagnostic means the corpus changed since the last successful refresh.
 - `health` resolves the single search model and does one live completion probe. `--skip-probes` proves config shape only — never claim a healthy model from it.
-- `setup --format json` reports `embedding.backend` (`remote`, `daemon`, or `in-process`) with the resolved provider/model/dimension, or `embedding.reason` plus a `remediation` when none is alive. It only probes; it never starts a daemon.
+- `setup --format json` reports `embedding.backend` (`remote` or `daemon`) with the resolved provider/model/dimension, or `embedding.reason` plus a `remediation` when none is alive. When no daemon is running and no remote endpoint is configured, it starts `inl serve` first (falling back to `minsync serve`) unless `minSync.autoInstall` is `false`; `status` only probes.
 
 Config lives at `--config`, `AUTORAG_CONFIG`, `$AUTORAG_HOME/config.json`, or `~/.autorag/config.json`. Read `searchPaths`, `workspacePath`, `minSync`, `jikji`, and `datasources` before changing anything.
 
@@ -81,9 +81,9 @@ Native stores stay owned by their CLIs — AutoRAG never rebuilds them. Fix a br
 | `minsync-sync-failed` | MinSync indexing failed; the message carries MinSync's own reason | Fix the reported cause, then `autorag refresh --method minsync` |
 | `minsync-file-skipped` | MinSync skipped one file (unreadable, unparsable, or rejected by the embedder) and kept its older chunks; retried on the next sync | Fix that file's permissions/content, then `autorag refresh --method minsync` |
 | `minsync-lock-held` | Another `minsync` run holds `.minsync/lock`, often an orphan left by a killed host; retryable | Wait for it to finish or stop that `minsync` process, then `autorag refresh --method minsync` |
-| `embedder-unavailable` | No remote endpoint answered, no `inl serve` daemon could start, and the in-process addon is missing or failed | Run `inl serve` by hand to read its error, install MinSync (`cargo install minsync`) or `@nomadamas/minsync-native`, or configure a remote `minSync.embedder` |
+| `embedder-unavailable` | No remote endpoint answered and no `inl serve` daemon could start | Run `inl serve` by hand to read its error, install im-not-llm (`cargo install inl-server --locked`) or MinSync (`cargo install minsync`), or configure a remote `minSync.embedder` |
 | `embedding-identity-mismatch` | Indexed vectors use a different embedder | `autorag index rebuild --method minsync` |
-| `embedding-unavailable` | A datasource sidecar could not embed (same cause as `embedder-unavailable`) | Start the daemon or install the addon, then re-sync that datasource |
+| `embedding-unavailable` | A datasource sidecar could not embed (same cause as `embedder-unavailable`) | Start the daemon, then re-sync that datasource |
 | `jikji-unavailable` | Jikji binary missing or install failed | Check the Rust toolchain, retry `autorag refresh --method jikji` |
 | `jikji-unsupported-version` | A `jikji` older than the pinned version was found and not run; the message names the version and path | `autorag refresh --method jikji` installs the pinned build, or upgrade it yourself |
 | `jikji-prepare-failed` | Jikji prepare of a root failed (e.g. per-root timeout); the refresh still finishes and other roots index | Bound the per-file/root budget (`jikji.timeoutMs`, `jikji.prepareTimeoutMsPerFile`), then retry |
@@ -124,7 +124,7 @@ ls ~/.cache/im-not-llm/serve/* 2>/dev/null
 autorag setup --format json
 ```
 
-AutoRAG never starts the daemon. Run `inl serve --idle-timeout 0` by hand (or as a launchd, systemd, or Windows Task Scheduler service), read its own error, or press Ctrl+Shift+E in the TUI. `inl serve` stops itself only if started with `--idle-timeout N`; inl-server 0.3.3 and older (and `minsync serve` for now) default to 300 s, so with those a semantic failure after a quiet spell usually means it timed out. Stop an orphaned daemon by the pid from `~/.cache/im-not-llm/serve/<instance>/pid` only after confirming no live refresh holds it.
+When no daemon is running, `autorag setup` starts `inl serve` (falling back to `minsync serve`) and the shared embedder starts one on demand, unless `minSync.autoInstall` is `false`; `autorag status` only probes. To start it yourself, run `inl serve --idle-timeout 0` by hand (or as a launchd, systemd, or Windows Task Scheduler service), read its own error, or press Ctrl+Shift+E in the TUI. `inl serve` stops itself only if started with `--idle-timeout N`; inl-server 0.3.3 and older (and `minsync serve` for now) default to 300 s, so with those a semantic failure after a quiet spell usually means it timed out. Stop an orphaned daemon by the pid from `~/.cache/im-not-llm/serve/<instance>/pid` only after confirming no live refresh holds it.
 
 Index locks are owned by their engines: MinSync/tantivy locks under `<workspace>/.autorag/`, per-CLI locks such as `<workspace>/.autorag/datasources/discrawl/.discrawl-sync.lock`. Delete one only after confirming no owning process is alive.
 

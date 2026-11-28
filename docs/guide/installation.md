@@ -54,7 +54,7 @@ autorag --help          # prints the command list, exit 0
 autorag setup           # probes runtime and datasources, exit 0 when everything is ready
 ```
 
-`autorag setup` probes MinSync, the embedding backend (a configured remote endpoint, a running `inl serve` daemon, or MinSync's in-process engine), and every known datasource. When no config exists yet it writes a default one first, using `--search-paths` and `--workspace`. It exits 0 when every probe is ready and 1 when something is blocked. Add `--format json` for machine-readable output.
+`autorag setup` probes MinSync, the embedding backend (a configured remote endpoint or the `inl serve` daemon), and every known datasource. When no config exists yet it writes a default one first, using `--search-paths` and `--workspace`. It exits 0 when every probe is ready and 1 when something is blocked. Add `--format json` for machine-readable output.
 
 ```text
 setup: semantic
@@ -63,7 +63,7 @@ embedding: daemon (minsync/Qwen/Qwen3-Embedding-0.6B, 1024d)
   rss: skipped (not configured)
 ```
 
-**Note:** `autorag setup` only probes; it never starts the embedding daemon. Semantic search needs a running `inl serve` daemon or a configured remote `minSync.embedder`. The write-side setup (indexing, model configuration) is covered in [Quickstart](quickstart.md).
+**Note:** Semantic search needs the `inl serve` daemon or a configured remote `minSync.embedder`. When no daemon is running and no remote endpoint is configured, `autorag setup` starts `inl serve` (falling back to `minsync serve`) unless `minSync.autoInstall` is `false`; see [Embedding backends](../indexing/embedding-backends.md). The write-side setup (indexing, model configuration) is covered in [Quickstart](quickstart.md).
 
 ## Platform notes
 

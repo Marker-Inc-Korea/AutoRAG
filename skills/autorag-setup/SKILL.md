@@ -205,15 +205,12 @@ resolves in order:
 
 1. A configured remote endpoint (`minSync.embedder`), used for everything; no
    daemon is started and no local model is loaded.
-2. A running `inl serve` daemon (loopback only).
-   AutoRAG never starts it: run `inl serve --idle-timeout 0` yourself, as
-   a launchd/systemd service (see `docs/indexing/embedding-backends.md`), or press
-   Ctrl+Shift+E in `autorag tui`. `autorag setup` only reports whether it is
-   alive.
-3. MinSync's in-process engine, through the optional Node-API addon
-   `@nomadamas/minsync-native` (same engine and weights, so bit-for-bit
-   identical vectors; not bundled). Without a daemon and without the addon,
-   embedding fails with an error naming the missing package.
+2. The `inl serve` daemon (loopback only). When none is running and
+   `minSync.autoInstall` is not `false`, `autorag setup` starts one (falling
+   back to `minsync serve`) and the shared embedder starts one on demand. You
+   can also run `inl serve --idle-timeout 0` yourself, as a launchd/systemd
+   service (see `docs/indexing/embedding-backends.md`), or press
+   Ctrl+Shift+E in `autorag tui`.
 
 Override the embedder only when intentionally using a remote provider:
 

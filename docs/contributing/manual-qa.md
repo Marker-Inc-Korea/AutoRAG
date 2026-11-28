@@ -88,7 +88,7 @@ The summary separates the core MinSync result (`commandsSummary.core`) from `dat
 
 When validating local-file retrieval changes, run a real semantic query through the shared embedder. The local MinSync backend is the default; a remote embedding service is used only when the operator explicitly configures `minSync.embedder`.
 
-The default path uses MinSync's Qwen3-Embedding-0.6B engine (1024 dimensions; queries carry Qwen3's `Instruct: …\nQuery:` header, passages are raw). Vectors come from a loopback `inl serve` daemon when one answers, otherwise from MinSync's in-process engine. AutoRAG never starts or stops the daemon; `autorag setup` and `autorag status` only report the resolved `embedding.backend` (`daemon`, `in-process`, or `remote`) with its provider, model, and dimension, or why none is alive.
+The default path uses MinSync's Qwen3-Embedding-0.6B engine (1024 dimensions; queries carry Qwen3's `Instruct: …\nQuery:` header, passages are raw). Vectors come from a loopback `inl serve` daemon. When none answers and `minSync.autoInstall` is not `false`, `autorag setup` starts one (`inl serve`, falling back to `minsync serve`) and the shared embedder starts one on demand; `autorag status` only probes. `autorag setup` and `autorag status` report the resolved `embedding.backend` (`daemon` or `remote`) with its provider, model, and dimension, or why none is alive.
 
 Run the isolated experiment. Both AutoRAG variables point inside the temp workspace, so `init --force` cannot reach the shared `~/.autorag`:
 
@@ -114,9 +114,9 @@ The QA gate is not complete until all of the following are observed:
 2. The semantic query returns a hit for the fixture document.
 3. AutoRAG maps that hit to an OS-absolute original `source` path.
 4. `fs.existsSync(source)` and reading `source` both succeed.
-5. The run used a local backend (`daemon` or `in-process`), with no remote `minSync.embedder` endpoint configured.
+5. The run used a local backend (`daemon`), with no remote `minSync.embedder` endpoint configured.
 
-If MinSync is missing, no daemon answers, the in-process engine is absent or fails (`embedder-unavailable`), or MinSync reports a semantic failure, report the exact blocking diagnostic and do not claim live MinSync verification.
+If MinSync is missing, no daemon answers and none can be started (`embedder-unavailable`), or MinSync reports a semantic failure, report the exact blocking diagnostic and do not claim live MinSync verification.
 
 ### Legacy Ollama variant
 
