@@ -137,7 +137,7 @@ Datasource skills belong in trusted config.
 
 Config keys may be builtin template names (`kakao`, `whatsapp`, `telegram`,
 `slack`, `discord`, `clawgallery`, `notion`, `github`,
-`mailcrawl`, `obsidian`, `rss`, `lark`, `hister`, `wombat`) or connection
+`mailcrawl`, `obsidian`, `rss`, `lark`, `nogon`, `wombat`) or connection
 aliases with `"type": "<template>"`. Unknown names are skipped with an
 `unknown-datasource-skill` warning; they do not fail config resolution.
 `scope` narrows a query to a sub-path as ordinary filtering. Tags are
@@ -146,23 +146,23 @@ select configured connections before retrieval; discover their IDs with
 `autorag.datasources.list`. Store only env-var names such as `tokenEnv` or
 `apiKeyEnv`, never credential values.
 
-### Browser history (Hister) and the shared embedding model
+### Browser history (Nogon) and the shared embedding model
 
-`hister` needs a separately installed, always-running Hister server (AGPL-3.0, never
-bundled by AutoRAG). Run `autorag setup --format json` and read the `hister` object
+`nogon` needs a separately installed, always-running Nogon server (AGPL-3.0, never
+bundled by AutoRAG). Run `autorag setup --format json` and read the `nogon` object
 (`installed`, `running`, `embedding`); each problem carries the exact command to run:
-`brew install hister`, `brew services start hister`, then install the Hister browser
+`brew install nogon`, `brew services start nogon`, then install the Nogon browser
 extension in the user's browser.
 
-Hister embeds with its own `semantic_search` config, so it must use the same model as
+Nogon embeds with its own `semantic_search` config, so it must use the same model as
 AutoRAG (the `inl serve` daemon, `Qwen/Qwen3-Embedding-0.6B`, 1024 dimensions) or
-its vectors stop lining up without any error. `autorag setup --sync-hister` copies the
-shared settings into Hister's `config.yml` (backup kept), restarts the service, waits
-for it, and runs `hister reindex` when needed; it is idempotent, and it refuses a
+its vectors stop lining up without any error. `autorag setup --sync-nogon` copies the
+shared settings into Nogon's `config.yml` (backup kept), restarts the service, waits
+for it, and runs `nogon reindex` when needed; it is idempotent, and it refuses a
 remote or in-process backend. Re-run it after restarting the `inl serve` daemon
-(its port changes). Verify with `hister doctor`: `server.index.embeddings` must be `ok`.
-Install a skip list in Hister's `rules.json` before importing past history, because the
-importer re-downloads URLs without the browser's cookies (docs/datasources/hister.md).
+(its port changes). Verify with `nogon doctor`: `server.index.embeddings` must be `ok`.
+Install a skip list in Nogon's `rules.json` before importing past history, because the
+importer re-downloads URLs without the browser's cookies (docs/datasources/nogon.md).
 
 ## Build and refresh indexes
 

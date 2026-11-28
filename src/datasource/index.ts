@@ -70,13 +70,6 @@ export {
 	GitHubSkill,
 	type GitHubSkillOptions,
 } from "./skills/github/index.ts";
-export {
-	HISTER_SKILL_TYPE,
-	HisterClient,
-	type HisterClientOptions,
-	HisterSkill,
-	type HisterSkillOptions,
-} from "./skills/hister/index.ts";
 export { LarkClient, type LarkClientOptions, LarkSkill, type LarkSkillOptions } from "./skills/lark/index.ts";
 export type {
 	LazykatokFailureReason,
@@ -109,6 +102,13 @@ export {
 	type MailcrawlSyncInfo,
 	type MailcrawlSyncResult,
 } from "./skills/mailcrawl/index.ts";
+export {
+	NOGON_SKILL_TYPE,
+	NogonClient,
+	type NogonClientOptions,
+	NogonSkill,
+	type NogonSkillOptions,
+} from "./skills/nogon/index.ts";
 export {
 	NotcrawlClient,
 	type NotcrawlOptions,

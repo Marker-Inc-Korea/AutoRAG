@@ -13,7 +13,7 @@ This page is the procedure for adding a built-in datasource skill to AutoRAG 2.0
 - Choose the family your backend belongs to:
   - Connector-backed (`ConnectorDatasourceSkill`, [`src/datasource/connector-skill.ts`](https://github.com/Marker-Inc-Korea/AutoRAG/blob/main/src/datasource/connector-skill.ts)): AutoRAG fetches documents and owns the chunk store — see `github` and `rss`.
   - Crawler-backed (`CrawlerDatasourceSkill`, [`src/datasource/crawler-skill.ts`](https://github.com/Marker-Inc-Korea/AutoRAG/blob/main/src/datasource/crawler-skill.ts)): an external crawler CLI owns the archive — see `notion`.
-  - A custom `DatasourceSkill` when neither base fits — see `wombat`, `hister`, `clawgallery`, and `obsidian`.
+  - A custom `DatasourceSkill` when neither base fits — see `wombat`, `nogon`, `clawgallery`, and `obsidian`.
 - Keep the skill constructible only from trusted config. Model and tool arguments must never reach it, and a query `scope` may only narrow, never widen.
 
 ## 1. Create the skill directory
@@ -57,7 +57,7 @@ Keep one module focused: the connector/client must never throw, and returns an `
 - `BUILTIN_BINARIES` maps a CLI-backed template to its binary; a missing binary reports `skipped: missing <binary> binary`.
 - `DEFAULT_CREDENTIALS` lists the environment variables a non-CLI connector requires (for example `github` → `GITHUB_TOKEN`); a CLI-backed datasource is never required to hold one.
 - `datasourceNames()` is the set of built-ins probed even when not configured; add names that should always be offered.
-- A datasource with its own health story models it on `setupHister` and surfaces it on `SetupReport`.
+- A datasource with its own health story models it on `setupNogon` and surfaces it on `SetupReport`.
 
 Verify the wiring:
 

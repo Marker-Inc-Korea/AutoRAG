@@ -480,7 +480,7 @@ describe("grep tool integration with virtual datasource paths", () => {
 			describe: () => ({
 				name: "browser",
 				id: "browser",
-				type: "hister-web-history",
+				type: "nogon-web-history",
 				description: "Browser history",
 				capabilities: ["web"],
 				tags: ["browser"],

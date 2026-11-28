@@ -1,11 +1,11 @@
 /**
- * Sharing AutoRAG's embedding backend with Hister.
+ * Sharing AutoRAG's embedding backend with Nogon.
  *
- * Hister keeps its own vector store and embeds with whatever `semantic_search` in its config.yml names, so the
+ * Nogon keeps its own vector store and embeds with whatever `semantic_search` in its config.yml names, so the
  * only way the two can use one model is to copy the shared endpoint (the `inl serve` daemon by default) into
  * that block. Mismatched models are not an error anywhere: the vectors simply do not line up and results degrade
- * silently. This module derives the block from {@link ResolvedEmbeddingEndpoint}, reads what Hister currently has,
- * and rewrites only the six keys involved. Hister itself is never modified; its config.yml is its documented
+ * silently. This module derives the block from {@link ResolvedEmbeddingEndpoint}, reads what Nogon currently has,
+ * and rewrites only the six keys involved. Nogon itself is never modified; its config.yml is its documented
  * interface.
  *
  * `yaml` is a dev dependency of this package, so the file is edited line by line. Only the `semantic_search`
@@ -16,7 +16,7 @@
 import type { ResolvedEmbeddingEndpoint } from "../../embedding-env.ts";
 
 /** The `semantic_search` keys that must agree with the shared embedding backend. */
-export interface HisterSemanticSettings {
+export interface NogonSemanticSettings {
 	readonly enable: boolean;
 	readonly embedding_endpoint: string;
 	readonly embedding_model: string;
@@ -25,9 +25,9 @@ export interface HisterSemanticSettings {
 	readonly document_prefix: string;
 }
 
-export type HisterSemanticKey = keyof HisterSemanticSettings;
+export type NogonSemanticKey = keyof NogonSemanticSettings;
 
-const KEYS: readonly HisterSemanticKey[] = [
+const KEYS: readonly NogonSemanticKey[] = [
 	"enable",
 	"embedding_endpoint",
 	"embedding_model",
@@ -37,10 +37,10 @@ const KEYS: readonly HisterSemanticKey[] = [
 ];
 
 /**
- * What Hister uses when its config does not say (v0.20.0 `config.go`): semantic search off, an Ollama endpoint, and
+ * What Nogon uses when its config does not say (v0.20.0 `config.go`): semantic search off, an Ollama endpoint, and
  * a `query: ` prefix. Used only to report a missing key; the apply step always writes every key.
  */
-export const HISTER_SEMANTIC_DEFAULTS: HisterSemanticSettings = {
+export const NOGON_SEMANTIC_DEFAULTS: NogonSemanticSettings = {
 	enable: false,
 	embedding_endpoint: "http://localhost:11434/v1/embeddings",
 	embedding_model: "qwen3-embedding:8b",
@@ -50,10 +50,10 @@ export const HISTER_SEMANTIC_DEFAULTS: HisterSemanticSettings = {
 };
 
 /**
- * Keys whose change makes Hister's stored vectors stale. Hister fingerprints the endpoint, model, dimensions and
- * document prefix (not the query prefix) and reports `Embedding settings differ ... run hister reindex`.
+ * Keys whose change makes Nogon's stored vectors stale. Nogon fingerprints the endpoint, model, dimensions and
+ * document prefix (not the query prefix) and reports `Embedding settings differ ... run nogon reindex`.
  */
-const FINGERPRINTED: readonly HisterSemanticKey[] = [
+const FINGERPRINTED: readonly NogonSemanticKey[] = [
 	"enable",
 	"embedding_endpoint",
 	"embedding_model",
@@ -62,23 +62,23 @@ const FINGERPRINTED: readonly HisterSemanticKey[] = [
 ];
 
 export type DeriveResult =
-	| { readonly ok: true; readonly settings: HisterSemanticSettings }
+	| { readonly ok: true; readonly settings: NogonSemanticSettings }
 	| { readonly ok: false; readonly reason: string };
 
 /**
- * The settings that make Hister embed exactly like AutoRAG does. Refuses what Hister cannot do faithfully:
- * - a TEI endpoint (Hister only calls the OpenAI `/v1/embeddings` route);
- * - a remote endpoint (browsing text would leave the machine, and Hister's config would have to hold the key).
+ * The settings that make Nogon embed exactly like AutoRAG does. Refuses what Nogon cannot do faithfully:
+ * - a TEI endpoint (Nogon only calls the OpenAI `/v1/embeddings` route);
+ * - a remote endpoint (browsing text would leave the machine, and Nogon's config would have to hold the key).
  */
-export function deriveHisterSemanticSettings(endpoint: ResolvedEmbeddingEndpoint): DeriveResult {
+export function deriveNogonSemanticSettings(endpoint: ResolvedEmbeddingEndpoint): DeriveResult {
 	if (endpoint.protocol !== "openai") {
-		return { ok: false, reason: "Hister only speaks the OpenAI embeddings route; this embedding backend uses TEI" };
+		return { ok: false, reason: "Nogon only speaks the OpenAI embeddings route; this embedding backend uses TEI" };
 	}
 	if (endpoint.backend !== "daemon") {
 		return {
 			ok: false,
 			reason:
-				"the shared embedding backend is a remote endpoint: browsing text would leave this machine, and Hister's config would have to hold the API key. Run `inl serve` to share a local model",
+				"the shared embedding backend is a remote endpoint: browsing text would leave this machine, and Nogon's config would have to hold the API key. Run `inl serve` to share a local model",
 		};
 	}
 	const root = endpoint.baseUrl.replace(/\/+$/u, "").replace(/\/v1$/u, "");
@@ -96,13 +96,13 @@ export function deriveHisterSemanticSettings(endpoint: ResolvedEmbeddingEndpoint
 }
 
 export function differingSemanticKeys(
-	current: HisterSemanticSettings,
-	wanted: HisterSemanticSettings,
-): readonly HisterSemanticKey[] {
+	current: NogonSemanticSettings,
+	wanted: NogonSemanticSettings,
+): readonly NogonSemanticKey[] {
 	return KEYS.filter((key) => current[key] !== wanted[key]).sort();
 }
 
-export function reindexRequired(changed: readonly HisterSemanticKey[]): boolean {
+export function reindexRequired(changed: readonly NogonSemanticKey[]): boolean {
 	return changed.some((key) => FINGERPRINTED.includes(key));
 }
 
@@ -187,7 +187,7 @@ function locate(lines: readonly string[]): Locate {
 		};
 	}
 	// A top-level key ends the block. A column-0 line while a quoted scalar is still open is that scalar's
-	// continuation, which Hister's YAML parser folds (a hand edit produced exactly this shape).
+	// continuation, which Nogon's YAML parser folds (a hand edit produced exactly this shape).
 	let end = header + 1;
 	let indent: string | undefined;
 	let open: "'" | '"' | undefined;
@@ -272,18 +272,18 @@ function unescapeDouble(text: string): string {
 export type ReadResult =
 	| {
 			readonly ok: true;
-			readonly settings: HisterSemanticSettings;
-			/** Keys the file sets itself; the rest are Hister's defaults. */
-			readonly explicit: readonly HisterSemanticKey[];
+			readonly settings: NogonSemanticSettings;
+			/** Keys the file sets itself; the rest are Nogon's defaults. */
+			readonly explicit: readonly NogonSemanticKey[];
 	  }
 	| { readonly ok: false; readonly reason: string };
 
-export function readHisterSemanticSettings(text: string): ReadResult {
+export function readNogonSemanticSettings(text: string): ReadResult {
 	const lines = text.split(/\r?\n/u);
 	const located = locate(lines);
 	if (!located.ok) return located;
-	const settings: { -readonly [K in HisterSemanticKey]: HisterSemanticSettings[K] } = { ...HISTER_SEMANTIC_DEFAULTS };
-	const explicit: HisterSemanticKey[] = [];
+	const settings: { -readonly [K in NogonSemanticKey]: NogonSemanticSettings[K] } = { ...NOGON_SEMANTIC_DEFAULTS };
+	const explicit: NogonSemanticKey[] = [];
 	if (located.found === undefined) return { ok: true, settings, explicit };
 	for (const key of KEYS) {
 		const entry = located.found.entries.get(key);
@@ -297,12 +297,12 @@ export function readHisterSemanticSettings(text: string): ReadResult {
 	return { ok: true, settings, explicit };
 }
 
-/** A YAML double-quoted scalar: always valid for any text, including a newline, which Hister's prefix needs. */
+/** A YAML double-quoted scalar: always valid for any text, including a newline, which Nogon's prefix needs. */
 function doubleQuoted(value: string): string {
 	return JSON.stringify(value);
 }
 
-function renderValue(key: HisterSemanticKey, settings: HisterSemanticSettings): string {
+function renderValue(key: NogonSemanticKey, settings: NogonSemanticSettings): string {
 	if (key === "enable") return settings.enable ? "true" : "false";
 	if (key === "dimensions") return String(settings.dimensions);
 	return doubleQuoted(settings[key]);
@@ -313,7 +313,7 @@ export type ApplyResult =
 	| { readonly ok: false; readonly reason: string };
 
 /** Set every {@link KEYS} entry inside `semantic_search`, creating the block when it is absent. */
-export function applyHisterSemanticSettings(text: string, settings: HisterSemanticSettings): ApplyResult {
+export function applyNogonSemanticSettings(text: string, settings: NogonSemanticSettings): ApplyResult {
 	const newline = text.includes("\r\n") ? "\r\n" : "\n";
 	const lines = text.split(/\r?\n/u);
 	const trailing = lines.length > 0 && lines[lines.length - 1] === "";

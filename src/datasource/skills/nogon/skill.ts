@@ -1,14 +1,14 @@
 /**
- * Browser web-history datasource backed by a running Hister server.
+ * Browser web-history datasource backed by a running Nogon server.
  *
- * Hister (https://github.com/asciimoo/hister, AGPL-3.0-or-later) is a separate program. It captures the pages a
+ * Nogon (https://github.com/asciimoo/nogon, AGPL-3.0-or-later) is a separate program. It captures the pages a
  * Chromium or Firefox browser visits (through its own extension), keeps the full text, and owns the lexical and
  * semantic indexes, incremental updates, and credentials. AutoRAG only sends search requests to its public HTTP
- * API and maps the answers. It does not link, embed, bundle, copy, or modify Hister, and never hides that Hister
+ * API and maps the answers. It does not link, embed, bundle, copy, or modify Nogon, and never hides that Nogon
  * is the backend: the manifest names it, its license, and its source.
  *
- * Web pages only: every query is confined to `type:web`, and any document Hister reports with another type
- * (watched local files, remote file snapshots) is dropped. Local directory indexing in Hister is never used.
+ * Web pages only: every query is confined to `type:web`, and any document Nogon reports with another type
+ * (watched local files, remote file snapshots) is dropped. Local directory indexing in Nogon is never used.
  */
 
 import type {
@@ -31,43 +31,43 @@ import type {
 	PollingMetadata,
 	SourceDescription,
 } from "../../types.ts";
-import { HisterClient, type HisterClientOptions, type HisterFailure, type HisterHit, pageId } from "./client.ts";
+import { NogonClient, type NogonClientOptions, type NogonFailure, type NogonHit, pageId } from "./client.ts";
 
-export const HISTER_SKILL_TYPE = "hister-web-history";
-const DEFAULT_ID = "hister";
+export const NOGON_SKILL_TYPE = "nogon-web-history";
+const DEFAULT_ID = "nogon";
 const DEFAULT_INSTANCE = "default";
-const DEFAULT_TAGS = ["hister", "browser", "web-history", "pii"] as const;
+const DEFAULT_TAGS = ["nogon", "browser", "web-history", "pii"] as const;
 const SAFE_DOMAIN = /^[a-z0-9][a-z0-9.-]*$/u;
 const SAFE_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._-]*$/u;
 
-export interface HisterSkillOptions extends HisterClientOptions {
-	readonly client?: HisterClient;
+export interface NogonSkillOptions extends NogonClientOptions {
+	readonly client?: NogonClient;
 	readonly datasourceId?: string;
 	readonly instanceId?: string;
 	readonly instances?: readonly string[];
 	readonly tags?: readonly string[];
 	/**
-	 * Also register Hister's semantic search. Requires `semantic_search.enable` and an embedding endpoint in the
-	 * Hister server config; Hister embeds the query text through the endpoint the operator chose there.
+	 * Also register Nogon's semantic search. Requires `semantic_search.enable` and an embedding endpoint in the
+	 * Nogon server config; Nogon embeds the query text through the endpoint the operator chose there.
 	 */
 	readonly semantic?: boolean;
 }
 
 type Mode = "lexical" | "semantic";
 
-export class HisterSkill implements DatasourceSkill {
+export class NogonSkill implements DatasourceSkill {
 	private readonly datasourceId: string;
 	private readonly instanceId: string;
 	private readonly instances: readonly string[];
 	private readonly tags: readonly string[];
 	private readonly semantic: boolean;
-	private readonly client: HisterClient | undefined;
+	private readonly client: NogonClient | undefined;
 	/** A bad `baseUrl` or token setup is reported through `index()`/search, never thrown out of config loading. */
 	private readonly configError: string | undefined;
 	private lastIndexedAt: number | undefined;
 	private lastError: string | undefined;
 
-	constructor(options: HisterSkillOptions = {}) {
+	constructor(options: NogonSkillOptions = {}) {
 		this.datasourceId = options.datasourceId ?? DEFAULT_ID;
 		this.instanceId = SAFE_SEGMENT.test(options.instanceId ?? DEFAULT_INSTANCE)
 			? (options.instanceId ?? DEFAULT_INSTANCE)
@@ -80,7 +80,7 @@ export class HisterSkill implements DatasourceSkill {
 		let configError: string | undefined;
 		if (client === undefined) {
 			try {
-				client = new HisterClient(options);
+				client = new NogonClient(options);
 			} catch (error) {
 				configError = error instanceof Error ? error.message : String(error);
 			}
@@ -93,8 +93,8 @@ export class HisterSkill implements DatasourceSkill {
 		return {
 			name: this.datasourceId,
 			id: this.datasourceId,
-			type: HISTER_SKILL_TYPE,
-			description: "Browser web history (pages you visited) via a Hister server",
+			type: NOGON_SKILL_TYPE,
+			description: "Browser web history (pages you visited) via a Nogon server",
 			capabilities: [
 				"external-cli",
 				"remote-search",
@@ -121,19 +121,19 @@ export class HisterSkill implements DatasourceSkill {
 	}
 
 	/**
-	 * Hister indexes pages itself the moment the browser extension sends them, so there is nothing to copy.
+	 * Nogon indexes pages itself the moment the browser extension sends them, so there is nothing to copy.
 	 * `index()` is a read-only probe: reachability, authentication, how many web pages are searchable, and whether
-	 * Hister also holds non-web documents that this datasource will never return.
+	 * Nogon also holds non-web documents that this datasource will never return.
 	 */
 	async index(options?: DatasourceIndexOptions): Promise<DatasourceIndexResult> {
 		if (this.client === undefined)
-			return this.fail("datasource-unavailable", this.configError ?? "hister is not configured");
+			return this.fail("datasource-unavailable", this.configError ?? "nogon is not configured");
 		const config = await this.client.config(options?.signal);
 		if (!config.ok) return this.failFrom(config);
 		if (config.value.authenticated === false) {
 			return this.fail(
 				"datasource-auth-error",
-				`hister requires an access token (authMode ${String(config.value.authMode)}): set connector.tokenEnv to the name of the environment variable that holds Hister's app.access_token`,
+				`nogon requires an access token (authMode ${String(config.value.authMode)}): set connector.tokenEnv to the name of the environment variable that holds Nogon's app.access_token`,
 			);
 		}
 		const web = await this.client.count("type:web", options?.signal);
@@ -146,7 +146,7 @@ export class HisterSkill implements DatasourceSkill {
 		if (web.value === 0) {
 			diagnostics.push(
 				this.note(
-					"hister holds no web pages yet: install its Chrome/Firefox extension and browse, or run `hister import browser history`",
+					"nogon holds no web pages yet: install its Chrome/Firefox extension and browse, or run `nogon import browser history`",
 					"datasource-empty",
 					"info",
 				),
@@ -155,7 +155,7 @@ export class HisterSkill implements DatasourceSkill {
 		if (other.value > 0) {
 			diagnostics.push(
 				this.note(
-					`hister also holds ${other.value} non-web document(s) (watched files or file snapshots); they are excluded from this datasource and never searched`,
+					`nogon also holds ${other.value} non-web document(s) (watched files or file snapshots); they are excluded from this datasource and never searched`,
 					"datasource-index-partial",
 					"warning",
 				),
@@ -164,7 +164,7 @@ export class HisterSkill implements DatasourceSkill {
 		if (this.semantic && config.value.semanticEnabled === false) {
 			diagnostics.push(
 				this.note(
-					"connector.semantic is true but the Hister server has semantic search disabled; set semantic_search.enable in the Hister config and restart `hister listen`",
+					"connector.semantic is true but the Nogon server has semantic search disabled; set semantic_search.enable in the Nogon config and restart `nogon listen`",
 					"datasource-unavailable",
 					"warning",
 				),
@@ -182,8 +182,8 @@ export class HisterSkill implements DatasourceSkill {
 
 	retrievalMethods(): readonly RetrievalMethod[] {
 		return this.semantic
-			? [new HisterMethod(this, "lexical"), new HisterMethod(this, "semantic")]
-			: [new HisterMethod(this, "lexical")];
+			? [new NogonMethod(this, "lexical"), new NogonMethod(this, "semantic")]
+			: [new NogonMethod(this, "lexical")];
 	}
 
 	describeSources(): readonly SourceDescription[] {
@@ -204,14 +204,14 @@ export class HisterSkill implements DatasourceSkill {
 		return {
 			name: `datasource-${this.datasourceId}`,
 			description:
-				"Search the web pages visited in the user's browser (Chrome/Chromium/Firefox history with full page text) through their Hister server. Use for questions like 'what was that page I read about X' or 'when did I look at Y'.",
+				"Search the web pages visited in the user's browser (Chrome/Chromium/Firefox history with full page text) through their Nogon server. Use for questions like 'what was that page I read about X' or 'when did I look at Y'.",
 			content: [
-				"# Browser web history (Hister)",
+				"# Browser web history (Nogon)",
 				"",
-				"Search the pages the user visited in their browser, with the page text Hister captured at visit time. [Hister](https://github.com/asciimoo/hister) is a separate program (AGPL-3.0-or-later). It keeps its own index and credentials. AutoRAG only sends it search requests over HTTP: it does not bundle, link, copy, or modify Hister, and never hides that Hister is the backend.",
+				"Search the pages the user visited in their browser, with the page text Nogon captured at visit time. [Nogon](https://github.com/asciimoo/nogon) is a separate program (AGPL-3.0-or-later). It keeps its own index and credentials. AutoRAG only sends it search requests over HTTP: it does not bundle, link, copy, or modify Nogon, and never hides that Nogon is the backend.",
 				"",
 				"## When to use",
-				"Questions about pages, articles, docs, or sites the user read or opened in a browser; recalling a page by topic, domain, or time. Not for the user's own files: Hister's local-directory indexing is never searched here, only web pages.",
+				"Questions about pages, articles, docs, or sites the user read or opened in a browser; recalling a page by topic, domain, or time. Not for the user's own files: Nogon's local-directory indexing is never searched here, only web pages.",
 				"",
 				"## How to search",
 				`Call the dedicated \`${datasourceSearchToolName(this.datasourceId)}\` tool with a query and optional narrowing scope. Available authorized scopes:`,
@@ -219,10 +219,10 @@ export class HisterSkill implements DatasourceSkill {
 				"",
 				"`scope` can only narrow within already-authorized scopes; it can never widen access. A scope of `<root>/pages/<domain>/**` restricts the search to one site.",
 				"",
-				'Plain words are alternatives: a hit may match any of them, so a natural question works. Hister syntax passes through unchanged: `"exact phrase"`, `title:`, `text:`, `domain:`, `url:`, `language:`, `-term`, `secur*`, `added:<7d`, `updated:>=2026-10-01`, `visits:3..`, and `sort:date` / `sort:-date` / `sort:visits`. A query using any such operator is sent as written (plain words ANDed), so write it deliberately. Hister has no `OR` keyword: to combine alternatives write `(a|b)`.',
+				'Plain words are alternatives: a hit may match any of them, so a natural question works. Nogon syntax passes through unchanged: `"exact phrase"`, `title:`, `text:`, `domain:`, `url:`, `language:`, `-term`, `secur*`, `added:<7d`, `updated:>=2026-10-01`, `visits:3..`, and `sort:date` / `sort:-date` / `sort:visits`. A query using any such operator is sent as written (plain words ANDed), so write it deliberately. Nogon has no `OR` keyword: to combine alternatives write `(a|b)`.',
 				"",
 				this.semantic
-					? "Semantic (meaning-based) retrieval is also registered for this datasource; Hister embeds the query through the embedding endpoint its operator configured."
+					? "Semantic (meaning-based) retrieval is also registered for this datasource; Nogon embeds the query through the embedding endpoint its operator configured."
 					: "Only keyword (lexical) retrieval is registered for this datasource.",
 				"",
 				"## Reading a hit",
@@ -230,14 +230,14 @@ export class HisterSkill implements DatasourceSkill {
 					`${this.datasourceId}/...\` source identity is opaque. To read the page as it is today use \`web_fetch\` on its URL. Visit time is \`metadata.visitedAt\`.`,
 				"",
 				"## Native CLI",
-				"The `hister` program owns the index, the browser extension, and the data. When the dedicated tool cannot express what you need, call it directly through `bash`:",
-				"- `hister search 'domain:example.com sort:date' --format json --fields title,url,updated --limit 20`",
-				"- `hister doctor` (server, authentication, index health)",
-				"- `hister list-urls` (every indexed URL)",
+				"The `nogon` program owns the index, the browser extension, and the data. When the dedicated tool cannot express what you need, call it directly through `bash`:",
+				"- `nogon search 'domain:example.com sort:date' --format json --fields title,url,updated --limit 20`",
+				"- `nogon doctor` (server, authentication, index health)",
+				"- `nogon list-urls` (every indexed URL)",
 				`Never pass datasource virtual paths (\`/${this.datasourceId}/...\`) to bash; they are not OS paths.`,
 				"",
 				"## Privacy",
-				"Browsing history is sensitive. Results are not redacted, so use a local model when that matters. If Hister's semantic search is enabled, page text is sent to the embedding endpoint its operator configured.",
+				"Browsing history is sensitive. Results are not redacted, so use a local model when that matters. If Nogon's semantic search is enabled, page text is sent to the embedding endpoint its operator configured.",
 			].join("\n"),
 		};
 	}
@@ -248,7 +248,7 @@ export class HisterSkill implements DatasourceSkill {
 		if (this.client === undefined) {
 			throw datasourceCliError(this.datasourceId, "search", {
 				reason: "unavailable",
-				stderr: this.configError ?? "hister is not configured",
+				stderr: this.configError ?? "nogon is not configured",
 			});
 		}
 		const target = this.scopeTarget(options.scope);
@@ -274,12 +274,12 @@ export class HisterSkill implements DatasourceSkill {
 	}
 
 	/** Opaque, stable identity: `/<id>/<instance>/pages/<domain>/<hash of the URL>`. */
-	private sourceFor(hit: HisterHit): string {
+	private sourceFor(hit: NogonHit): string {
 		const domain = hit.domain.toLowerCase().replace(/[^a-z0-9.-]+/gu, "_");
 		return normalizeVirtualPath(`/${this.datasourceId}/${this.instanceId}/pages/${domain}/${pageId(hit.url)}`);
 	}
 
-	private toResult(mode: Mode, source: string, hit: HisterHit): RetrievalResult {
+	private toResult(mode: Mode, source: string, hit: NogonHit): RetrievalResult {
 		const body = [hit.title, hit.url, hit.snippet.length > 0 ? hit.snippet : (hit.description ?? "")]
 			.filter((part) => part.length > 0)
 			.join("\n");
@@ -292,7 +292,7 @@ export class HisterSkill implements DatasourceSkill {
 				method: `${this.datasourceId}-${mode}`,
 				datasourceId: this.datasourceId,
 				instanceId: this.instanceId,
-				backend: "hister",
+				backend: "nogon",
 				url: hit.url,
 				domain: hit.domain,
 				title: hit.title,
@@ -305,7 +305,7 @@ export class HisterSkill implements DatasourceSkill {
 		};
 	}
 
-	/** Does the scope reach this datasource at all, and can it be pushed down to Hister as `domain:`? */
+	/** Does the scope reach this datasource at all, and can it be pushed down to Nogon as `domain:`? */
 	private scopeTarget(scope: string | undefined): { readonly applies: boolean; readonly domain?: string } {
 		if (scope === undefined || scope.trim().length === 0) return { applies: true };
 		const normalized = normalizeVirtualPath(scope);
@@ -323,7 +323,7 @@ export class HisterSkill implements DatasourceSkill {
 		return SAFE_DOMAIN.test(segment) ? { applies: true, domain: segment } : { applies: true };
 	}
 
-	private failFrom(failure: HisterFailure): DatasourceIndexResult {
+	private failFrom(failure: NogonFailure): DatasourceIndexResult {
 		const code: DatasourceDiagnosticCode =
 			failure.kind === "auth"
 				? "datasource-auth-error"
@@ -356,11 +356,11 @@ export class HisterSkill implements DatasourceSkill {
 	}
 }
 
-class HisterMethod implements RetrievalMethod {
-	private readonly skill: HisterSkill;
+class NogonMethod implements RetrievalMethod {
+	private readonly skill: NogonSkill;
 	private readonly mode: Mode;
 
-	constructor(skill: HisterSkill, mode: Mode) {
+	constructor(skill: NogonSkill, mode: Mode) {
 		this.skill = skill;
 		this.mode = mode;
 	}
@@ -372,7 +372,7 @@ class HisterMethod implements RetrievalMethod {
 			? {
 					name: `${id}-lexical`,
 					type: "remote",
-					description: "Full-text search over visited web pages via the Hister server",
+					description: "Full-text search over visited web pages via the Nogon server",
 					status: "active",
 					capabilities: ["remote-search", "lexical", "scoped", "external-cli", "path-opaque-sources"],
 					datasourceId: id,
@@ -381,7 +381,7 @@ class HisterMethod implements RetrievalMethod {
 			: {
 					name: `${id}-semantic`,
 					type: "vector",
-					description: "Meaning-based search over visited web pages via the Hister server's embeddings",
+					description: "Meaning-based search over visited web pages via the Nogon server's embeddings",
 					status: "active",
 					capabilities: ["remote-search", "semantic", "scoped", "external-cli", "path-opaque-sources"],
 					datasourceId: id,

@@ -156,7 +156,7 @@ variable names, never values.
   chunks a search returns are read by your Hermes model, so they go wherever
   that model runs (a cloud provider unless you use a local model). Remote
   embedders or rerankers are used only if you configure them in `config.json`.
-  Network-backed connectors (Notion, GitHub, RSS, Hister) and crawler CLIs you
+  Network-backed connectors (Notion, GitHub, RSS, Nogon) and crawler CLIs you
   sync yourself talk to their own services under their own login.
 - **No telemetry, no self-update.** The package contains no analytics. The
   server never replaces its own files; the version is pinned in `mcp.json` and

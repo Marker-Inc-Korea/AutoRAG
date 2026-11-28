@@ -31,7 +31,7 @@ Every name below is a builtin template accepted under `datasources`. `kakao` is 
 | `clawgallery` | `clawgallery` CLI | all | `clawgallery` | [ClawGallery](./clawgallery.md) |
 | `notion` | `notcrawl` CLI | all | `notcrawl` | [Notion](./notion.md) |
 | `lark` | `lark-cli` (official) | all | `lark-cli` keychain | [Lark / Feishu](./lark.md) |
-| `hister` | Hister server (HTTP) | all | Hister (`tokenEnv`) | [Browser history (Hister)](./hister.md) |
+| `nogon` | Nogon server (HTTP) | all | Nogon (`tokenEnv`) | [Browser history (Nogon)](./nogon.md) |
 | `kakao` | `lazykatok` CLI | macOS only | `lazykatok` | [KakaoTalk](./kakao.md) |
 | `github` | GitHub REST API | all | AutoRAG (`GITHUB_TOKEN`) | [GitHub](./github.md) |
 | `github-gist` | GitHub REST API | all | AutoRAG (`tokenEnv`, `gh` fallback) | [GitHub Gists](./github-gist.md) |

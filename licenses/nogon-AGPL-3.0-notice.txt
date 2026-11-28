@@ -1,0 +1,47 @@
+Nogon — license notice for AutoRAG's `nogon` datasource
+==========================================================
+
+Program:      Nogon ("Your own search engine"), formerly named Hister (renamed in v0.22.0)
+Source:       https://github.com/asciimoo/nogon
+Copyright:    asciimoo and Nogon contributors (see the repository history)
+License:      GNU Affero General Public License, version 3 or (at your option)
+              any later version (AGPL-3.0-or-later)
+License text: https://www.gnu.org/licenses/agpl-3.0.txt
+              (also the LICENSE file in the Nogon repository)
+
+How AutoRAG relates to Nogon
+-----------------------------
+* AutoRAG does NOT contain, bundle, link, vendor, or redistribute any Nogon
+  source code or binary. Nothing from the Nogon repository is copied into
+  this package.
+* Users install Nogon themselves, unmodified, from its own releases
+  (https://github.com/asciimoo/nogon/releases, `brew install nogon`, Docker,
+  or Nix), and run it as a separate process (`nogon listen`).
+* AutoRAG talks to that process only over HTTP, using Nogon's public JSON API
+  (`GET /search`, `GET /api/config`), the same API Nogon's own `nogon search`
+  command uses. Nogon owns its index, its browser extension, its credentials,
+  and its optional embedding calls.
+* AutoRAG does not modify Nogon, and it never hides that Nogon is the backend:
+  the datasource manifest shown to the agent names Nogon, its license, and its
+  source URL.
+* The `nogon` datasource only reads web-page documents (`type:web`). It never
+  enables or uses Nogon's local-directory indexing.
+
+Combining separate programs that communicate over a network is "mere
+aggregation" in the sense of the GNU licenses FAQ
+(https://www.gnu.org/licenses/gpl-faq.html#MereAggregation); AutoRAG therefore
+stays under its own license (Apache-2.0).
+
+If you run Nogon as a network service for other people, AGPL-3.0 section 13
+applies to YOU as the operator of that Nogon instance: you must offer those
+users the Corresponding Source of the Nogon version you run (and of any
+modifications you made). Running an unmodified upstream release satisfies this
+by pointing users at https://github.com/asciimoo/nogon.
+
+Obtaining the Nogon source for a release you run
+-------------------------------------------------
+    git clone https://github.com/asciimoo/nogon
+    git checkout <the version printed by `nogon --version`>
+
+This file is a notice, not the license. The authoritative license terms are in
+the Nogon repository and at the AGPL URL above.

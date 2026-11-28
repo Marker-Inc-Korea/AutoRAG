@@ -42,7 +42,7 @@ No store filters by time on its own, so the pipeline over-fetches when a window 
 | KakaoTalk (`lazykatok` methods) | `publishedAt` from `startedAt` of the chat chunk | post-filter over over-fetch |
 | Mailcrawl | `publishedAt` from the message `date` | post-filter over over-fetch |
 | Wombat | `publishedAt` from the session's `startedAt` | post-filter over over-fetch |
-| Hister (browser history) | `publishedAt` from the page's last visit | post-filter over over-fetch |
+| Nogon (browser history) | `publishedAt` from the page's last visit | post-filter over over-fetch |
 | Lark / Feishu | `publishedAt` from `create_time` / `update_time` | post-filter over over-fetch |
 | Obsidian | `sourceMtimeMs` of the staged note | post-filter over over-fetch |
 | ClawGallery | none (no timestamp in results) | unsupported: every result is excluded and the method is reported |

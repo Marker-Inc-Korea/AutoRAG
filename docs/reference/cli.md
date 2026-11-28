@@ -100,7 +100,7 @@ Probes MinSync, the embedding backend, and every known datasource, and reports w
 |---|---|---|---|
 | `--search-paths <csv>` | string | `.` | Folders for the config written when none exists |
 | `--workspace <dir>` | string | current directory | Workspace for the config written when none exists |
-| `--sync-hister` | boolean | off | Rewrite Hister's `semantic_search` keys to AutoRAG's shared model (backup kept), restart Hister, and re-embed when needed. Without it, setup only reports differences and never writes Hister's config |
+| `--sync-nogon` | boolean | off | Rewrite Nogon's `semantic_search` keys to AutoRAG's shared model (backup kept), restart Nogon, and re-embed when needed. Without it, setup only reports differences and never writes Nogon's config |
 | `--format json` | string | — | Same as `--json` |
 
 Exit codes: `0` when every probe is ready, `1` when something is blocked, `2` on config error.

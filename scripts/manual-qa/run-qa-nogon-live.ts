@@ -1,18 +1,18 @@
 /**
- * Live manual QA for the Hister browser-history datasource.
+ * Live manual QA for the Nogon browser-history datasource.
  *
- * Runs the full agent path against a REAL Hister server that a REAL browser extension has been feeding:
+ * Runs the full agent path against a REAL Nogon server that a REAL browser extension has been feeding:
  * refresh (probe), retrieval through `AutoRAGAgent.searchSingleDatasourceDocuments` (the method behind the
  * generated `search_datasource_<id>` tool), scope push-down, the web-only guarantee, and error transparency.
- * Nothing is faked: the server, its index, and the captured pages come from `hister listen` plus the Hister
+ * Nothing is faked: the server, its index, and the captured pages come from `nogon listen` plus the Nogon
  * Chrome/Firefox extension.
  *
- * Prerequisites (see docs/datasources/hister.md):
- *   1. `hister listen` is running (default http://127.0.0.1:4433).
- *   2. The Hister extension captured the pages named in HISTER_QA_EXPECT (comma-separated `url|token`).
+ * Prerequisites (see docs/datasources/nogon.md):
+ *   1. `nogon listen` is running (default http://127.0.0.1:4433).
+ *   2. The Nogon extension captured the pages named in NOGON_QA_EXPECT (comma-separated `url|token`).
  *
- * Run: HISTER_QA_EXPECT='http://host/a.html|tokenA,http://host/b.html|tokenB' \
- *      HISTER_QA_FORBIDDEN_TOKEN=tokenOfAnExcludedPage bun scripts/manual-qa/run-qa-hister-live.ts
+ * Run: NOGON_QA_EXPECT='http://host/a.html|tokenA,http://host/b.html|tokenB' \
+ *      NOGON_QA_FORBIDDEN_TOKEN=tokenOfAnExcludedPage bun scripts/manual-qa/run-qa-nogon-live.ts
  *
  * State isolation: the workspace lives in a temp dir; the real ~/.autorag is never read or written.
  */
@@ -29,8 +29,8 @@ function check(name: string, pass: boolean, note?: string): void {
 	console.log(`${pass ? "PASS" : "FAIL"}  ${name}${note ? ` — ${note}` : ""}`);
 }
 
-const baseUrl = process.env.HISTER_QA_URL ?? "http://127.0.0.1:4433";
-const expected = (process.env.HISTER_QA_EXPECT ?? "")
+const baseUrl = process.env.NOGON_QA_URL ?? "http://127.0.0.1:4433";
+const expected = (process.env.NOGON_QA_EXPECT ?? "")
 	.split(",")
 	.map((entry) => entry.trim())
 	.filter((entry) => entry.length > 0)
@@ -39,16 +39,16 @@ const expected = (process.env.HISTER_QA_EXPECT ?? "")
 		return { url, token };
 	});
 if (expected.length === 0) {
-	console.error("HISTER_QA_EXPECT is required: comma-separated `url|token` pairs the browser extension captured.");
+	console.error("NOGON_QA_EXPECT is required: comma-separated `url|token` pairs the browser extension captured.");
 	process.exit(2);
 }
-const forbidden = process.env.HISTER_QA_FORBIDDEN_TOKEN;
+const forbidden = process.env.NOGON_QA_FORBIDDEN_TOKEN;
 const OPAQUE_SOURCE = /^\/browser\/browser\/pages\/[^/]+\/[0-9a-f]{16}$/;
 
-const tmpRoot = mkdtempSync(join(tmpdir(), "autorag-hister-live-"));
+const tmpRoot = mkdtempSync(join(tmpdir(), "autorag-nogon-live-"));
 try {
-	const { skills, unknown } = buildDatasourceSkills({ browser: { type: "hister", connector: { baseUrl } } }, tmpRoot);
-	check("factory builds the hister skill", skills.length === 1 && unknown.length === 0);
+	const { skills, unknown } = buildDatasourceSkills({ browser: { type: "nogon", connector: { baseUrl } } }, tmpRoot);
+	check("factory builds the nogon skill", skills.length === 1 && unknown.length === 0);
 
 	const agent = new AutoRAGAgent({
 		searchPaths: [tmpRoot],
@@ -60,7 +60,7 @@ try {
 	const refresh = await agent.refresh(true, { methods: ["datasources"] });
 	const probe = (refresh.datasources ?? []).find((result) => result.skill === "browser");
 	check(
-		"live refresh: hister probe reports the captured web pages",
+		"live refresh: nogon probe reports the captured web pages",
 		probe?.ok === true && probe.chunkCount >= expected.length,
 		probe?.ok ? `${probe.chunkCount} web page(s)` : `${probe?.code}: ${probe?.message}`,
 	);
@@ -84,6 +84,24 @@ try {
 		);
 	}
 
+	// A config written before the Hister -> Nogon rename (`type: "hister"`, connection id `hister`) must keep answering.
+	const legacy = buildDatasourceSkills({ hister: { type: "hister", connector: { baseUrl } } }, tmpRoot);
+	check("legacy `type: hister` still builds a skill", legacy.skills.length === 1 && legacy.unknown.length === 0);
+	if (legacy.skills[0] !== undefined && expected[0] !== undefined) {
+		const legacyAgent = new AutoRAGAgent({
+			searchPaths: [tmpRoot],
+			workspacePath: tmpRoot,
+			minSync: { autoInstall: false },
+			datasourceSkills: legacy.skills,
+		});
+		const old = await legacyAgent.searchSingleDatasourceDocuments("hister", expected[0].token, { topK: 5 });
+		check(
+			"legacy `type: hister` finds the same live page under its own `/hister/...` identity",
+			old.results[0]?.metadata.url === expected[0].url && old.results.every((hit) => hit.source.startsWith("/hister/")),
+			old.results[0]?.source,
+		);
+	}
+
 	const first = expected[0];
 	if (first !== undefined) {
 		const host = new URL(first.url).hostname;
@@ -104,7 +122,7 @@ try {
 
 	if (forbidden !== undefined && forbidden.length > 0) {
 		const leak = await agent.searchSingleDatasourceDocuments("browser", forbidden, { topK: 5 });
-		check("a page the Hister allow/skip rules excluded is not searchable", leak.results.length === 0);
+		check("a page the Nogon allow/skip rules excluded is not searchable", leak.results.length === 0);
 	}
 
 	const miss = await agent.searchSingleDatasourceDocuments("browser", "zzqqxxnomatchtoken", { topK: 5 });
@@ -120,7 +138,7 @@ try {
 		`${lexicalTop?.metadata.url}`,
 	);
 
-	const down = buildDatasourceSkills({ browser: { type: "hister", connector: { baseUrl: "http://127.0.0.1:1" } } }, tmpRoot)
+	const down = buildDatasourceSkills({ browser: { type: "nogon", connector: { baseUrl: "http://127.0.0.1:1" } } }, tmpRoot)
 		.skills[0];
 	let message = "";
 	try {
@@ -129,20 +147,20 @@ try {
 		message = error instanceof Error ? error.message : String(error);
 	}
 	check(
-		"unreachable Hister fails loudly with the real connection error",
-		/hister/i.test(message) && /hister listen/.test(message),
+		"unreachable Nogon fails loudly with the real connection error",
+		/nogon/i.test(message) && /nogon listen/.test(message),
 		message.slice(0, 160),
 	);
 
 	const manifest = skills[0]?.skillManifest().content ?? "";
 	check(
-		"manifest names Hister, its AGPL license and source, and the separate-program relationship",
+		"manifest names Nogon, its AGPL license and source, and the separate-program relationship",
 		manifest.includes("AGPL-3.0") &&
-			manifest.includes("asciimoo/hister") &&
+			manifest.includes("asciimoo/nogon") &&
 			manifest.includes("separate program"),
 	);
 
-	console.log(failures === 0 ? "\nHISTER LIVE QA PASSED" : `\nHISTER LIVE QA: ${failures} failure(s)`);
+	console.log(failures === 0 ? "\nNOGON LIVE QA PASSED" : `\nNOGON LIVE QA: ${failures} failure(s)`);
 	if (failures > 0) process.exitCode = 1;
 } finally {
 	rmSync(tmpRoot, { recursive: true, force: true });

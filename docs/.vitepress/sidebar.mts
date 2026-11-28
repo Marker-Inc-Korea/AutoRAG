@@ -129,7 +129,7 @@ export const SECTIONS: readonly Section[] = [
 					{ text: "Notion", link: "/datasources/notion" },
 					{ text: "Obsidian", link: "/datasources/obsidian" },
 					{ text: "RSS", link: "/datasources/rss" },
-					{ text: "Browser history (Hister)", link: "/datasources/hister" },
+					{ text: "Browser history (Nogon)", link: "/datasources/nogon" },
 					{ text: "Coding-agent sessions (wombat)", link: "/datasources/wombat" },
 					{ text: "ClawGallery", link: "/datasources/clawgallery" },
 					{ text: "Apple Calendar and Reminders", link: "/datasources/apple-calendar" },

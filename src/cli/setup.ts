@@ -2,14 +2,14 @@ import { accessSync, constants, existsSync } from "node:fs";
 import { delimiter, isAbsolute, join, resolve } from "node:path";
 import { resolveAutoRAGHome, resolveUserHome } from "../config/home.ts";
 import { type ResolvedFileeBinary, type ResolveFileeBinaryOptions, resolveFileeBinary } from "../convert/index.ts";
-import { datasourceSkillSupported } from "../datasource/skills/factory.ts";
+import { canonicalDatasourceTemplate, datasourceSkillSupported } from "../datasource/skills/factory.ts";
 import {
-	findHisterEntries,
-	type HisterServiceDeps,
-	type HisterSetupReport,
-	setupHister,
-	systemHisterDeps,
-} from "../datasource/skills/hister/setup.ts";
+	findNogonEntries,
+	type NogonServiceDeps,
+	type NogonSetupReport,
+	setupNogon,
+	systemNogonDeps,
+} from "../datasource/skills/nogon/setup.ts";
 import { findWombatBinary } from "../datasource/skills/wombat/index.ts";
 import {
 	createEmbedderFromConfig,
@@ -79,10 +79,10 @@ export interface SetupReport {
 	readonly embedding: SetupEmbeddingReport;
 	readonly datasources: readonly SetupDatasourceReport[];
 	readonly remediation?: string;
-	/** One entry per configured `hister` datasource; absent when none is configured. */
-	readonly hister?: HisterSetupReport;
-	/** Every configured `hister` datasource, when there is more than one. */
-	readonly histers?: readonly HisterSetupReport[];
+	/** One entry per configured `nogon` datasource; absent when none is configured. */
+	readonly nogon?: NogonSetupReport;
+	/** Every configured `nogon` datasource, when there is more than one. */
+	readonly nogons?: readonly NogonSetupReport[];
 	/** Present on every run; `skipped` when `filee.enabled` or `filee.autoInstall` is false. */
 	readonly filee?: SetupFileeReport;
 	/**
@@ -103,8 +103,8 @@ export interface SetupDeps {
 	/** Host platform; defaults to `process.platform`. Decides which platform-bound datasources setup offers. */
 	readonly platform?: NodeJS.Platform;
 	readonly acquireLock?: (path: string) => FileLockHandle;
-	/** Hister's config path, health, restart and reindex; defaults to the real programs. */
-	readonly hister?: HisterServiceDeps;
+	/** Nogon's config path, health, restart and reindex; defaults to the real programs. */
+	readonly nogon?: NogonServiceDeps;
 	/** Finds or installs filee-cli; defaults to the pinned release download. */
 	readonly filee?: (
 		options: Pick<ResolveFileeBinaryOptions, "executable" | "autoInstall">,
@@ -130,7 +130,7 @@ const BUILTIN_BINARIES: Readonly<Record<string, string>> = {
 	discord: "discrawl",
 	notion: "notcrawl",
 	mailcrawl: "mailcrawl",
-	hister: "hister",
+	nogon: "nogon",
 	wombat: "wombat",
 };
 /**
@@ -287,8 +287,8 @@ async function detectCloudFolders(
 export async function runSetup(options: {
 	configPath: string;
 	workspacePath: string;
-	/** Write Hister's `semantic_search` to the shared embedding model (and restart/reindex it). Off by default. */
-	syncHister?: boolean;
+	/** Write Nogon's `semantic_search` to the shared embedding model (and restart/reindex it). Off by default. */
+	syncNogon?: boolean;
 	deps?: SetupDeps;
 }): Promise<SetupReport> {
 	const env = options.deps?.env ?? process.env;
@@ -378,7 +378,11 @@ export async function runSetup(options: {
 		const datasources: SetupDatasourceReport[] = [];
 		const source = (raw.datasources ?? {}) as Record<string, unknown>;
 		const exists = options.deps?.pathExists ?? existsSync;
-		const executable = options.deps?.executable ?? ((name: string) => executableInPath(name, env));
+		const resolveExecutable = options.deps?.executable ?? ((name: string) => executableInPath(name, env));
+		// Nogon was `hister` before v0.22.0 and Homebrew keeps the old program until it relinks, so an install that
+		// has not been upgraded yet still answers to the old name.
+		const executable = (name: string): string | undefined =>
+			resolveExecutable(name) ?? (name === "nogon" ? resolveExecutable("hister") : undefined);
 		const platform = options.deps?.platform ?? process.platform;
 		for (const name of datasourceNames(raw, platform)) {
 			const value = source[name];
@@ -387,7 +391,7 @@ export async function runSetup(options: {
 				continue;
 			}
 			const entry = value && typeof value === "object" ? (value as Record<string, unknown>) : undefined;
-			const type = typeof entry?.type === "string" ? entry.type : name;
+			const type = canonicalDatasourceTemplate(typeof entry?.type === "string" ? entry.type : name);
 			if (!datasourceSkillSupported(type, platform)) {
 				datasources.push({ name, state: "skipped", reason: `not supported on ${platform}` });
 				continue;
@@ -473,20 +477,20 @@ export async function runSetup(options: {
 			writeConfigObject(options.configPath, next);
 			changed = true;
 		}
-		const histerEntries = findHisterEntries(raw);
-		let histerReports: readonly HisterSetupReport[] = [];
-		if (histerEntries.length > 0) {
-			const histerDeps = options.deps?.hister ?? systemHisterDeps(env, executable("hister"));
-			const histerResult = await setupHister({
-				entries: histerEntries,
+		const nogonEntries = findNogonEntries(raw);
+		let nogonReports: readonly NogonSetupReport[] = [];
+		if (nogonEntries.length > 0) {
+			const nogonDeps = options.deps?.nogon ?? systemNogonDeps(env, executable("nogon"));
+			const nogonResult = await setupNogon({
+				entries: nogonEntries,
 				embedder,
 				executable,
-				deps: histerDeps,
-				sync: options.syncHister === true,
+				deps: nogonDeps,
+				sync: options.syncNogon === true,
 				assertLockOwned: () => lock.assertOwned(),
 			});
-			histerReports = histerResult.reports;
-			changed ||= histerResult.changed;
+			nogonReports = nogonResult.reports;
+			changed ||= nogonResult.changed;
 		}
 		const fileeReport = await setupFilee(
 			raw.filee,
@@ -508,8 +512,8 @@ export async function runSetup(options: {
 			filee: fileeReport,
 			...(cloudFolders.length === 0 ? {} : { cloudFolders }),
 			...(semantic || sparseOnly ? {} : { remediation: REMEDIATION }),
-			...(histerReports[0] === undefined ? {} : { hister: histerReports[0] }),
-			...(histerReports.length > 1 ? { histers: histerReports } : {}),
+			...(nogonReports[0] === undefined ? {} : { nogon: nogonReports[0] }),
+			...(nogonReports.length > 1 ? { nogons: nogonReports } : {}),
 			changed,
 		};
 	} finally {

@@ -3,7 +3,7 @@ import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
 import { filterDatasourceScope } from "../../../src/datasource/scope.ts";
 import { buildDatasourceSkills } from "../../../src/datasource/skills/factory.ts";
-import { HisterClient, HisterSkill } from "../../../src/datasource/skills/hister/index.ts";
+import { NogonClient, NogonSkill } from "../../../src/datasource/skills/nogon/index.ts";
 
 interface Recorded {
 	readonly method: string;
@@ -20,8 +20,8 @@ afterEach(async () => {
 	await Promise.all(servers.splice(0).map((server) => new Promise<void>((done) => server.close(() => done()))));
 });
 
-/** A real loopback HTTP server standing in for `hister listen`: the HTTP boundary is genuine. */
-async function fakeHister(handler: Handler): Promise<{ baseUrl: string; calls: Recorded[] }> {
+/** A real loopback HTTP server standing in for `nogon listen`: the HTTP boundary is genuine. */
+async function fakeNogon(handler: Handler): Promise<{ baseUrl: string; calls: Recorded[] }> {
 	const calls: Recorded[] = [];
 	const server = createServer((request, response) => {
 		const url = new URL(request.url ?? "/", "http://127.0.0.1");
@@ -65,10 +65,10 @@ function doc(url: string, overrides: Record<string, unknown> = {}): Record<strin
 
 const WEB_PAGE = "https://example.com/policy/refund";
 
-describe("HisterSkill lexical retrieval", () => {
-	it("asks Hister for web documents only, as JSON, with highlighted snippets", async () => {
-		const { baseUrl, calls } = await fakeHister((_request, response) => json(response, { total: 0, documents: [] }));
-		const skill = new HisterSkill({ baseUrl });
+describe("NogonSkill lexical retrieval", () => {
+	it("asks Nogon for web documents only, as JSON, with highlighted snippets", async () => {
+		const { baseUrl, calls } = await fakeNogon((_request, response) => json(response, { total: 0, documents: [] }));
+		const skill = new NogonSkill({ baseUrl });
 		const [lexical] = skill.retrievalMethods();
 
 		await lexical?.retrieve("refund policy", { topK: 7 });
@@ -77,15 +77,15 @@ describe("HisterSkill lexical retrieval", () => {
 		const call = calls[0];
 		expect(call?.method).toBe("GET");
 		expect(call?.path).toBe("/search");
-		// Hister answers 500 to a request without this header.
+		// Nogon answers 500 to a request without this header.
 		expect(call?.headers.accept).toContain("application/json");
 		expect(call?.query).toMatchObject({ highlight: "HTML", limit: 7, semantic_enabled: false });
 		expect(call?.query?.text).toBe("(refund|policy) type:web");
 	});
 
 	it("turns a natural-language question into an alternation of its terms so long questions still match", async () => {
-		const { baseUrl, calls } = await fakeHister((_request, response) => json(response, { total: 0, documents: [] }));
-		const [lexical] = new HisterSkill({ baseUrl }).retrievalMethods();
+		const { baseUrl, calls } = await fakeNogon((_request, response) => json(response, { total: 0, documents: [] }));
+		const [lexical] = new NogonSkill({ baseUrl }).retrievalMethods();
 
 		await lexical?.retrieve("When did I read about the inverted-index AND OR NOT 인증서를?", {});
 
@@ -93,9 +93,9 @@ describe("HisterSkill lexical retrieval", () => {
 		expect(text).toBe("(When|did|I|read|about|the|inverted|index|인증서를) type:web");
 	});
 
-	it("never sends the word OR: Hister searches it as a literal word and matches most English pages", async () => {
-		const { baseUrl, calls } = await fakeHister((_request, response) => json(response, { total: 0, documents: [] }));
-		const [lexical] = new HisterSkill({ baseUrl }).retrievalMethods();
+	it("never sends the word OR: Nogon searches it as a literal word and matches most English pages", async () => {
+		const { baseUrl, calls } = await fakeNogon((_request, response) => json(response, { total: 0, documents: [] }));
+		const [lexical] = new NogonSkill({ baseUrl }).retrievalMethods();
 
 		await lexical?.retrieve("refund or policy OR approval", {});
 		await lexical?.retrieve("맥 파인더를 대체하는 앱", {});
@@ -106,25 +106,25 @@ describe("HisterSkill lexical retrieval", () => {
 		expect(calls[1]?.query?.text).toBe("(맥|파인더를|대체하는|앱) type:web");
 	});
 
-	it("passes Hister query syntax through, still confined to web documents", async () => {
-		const { baseUrl, calls } = await fakeHister((_request, response) => json(response, { total: 0, documents: [] }));
-		const [lexical] = new HisterSkill({ baseUrl }).retrievalMethods();
+	it("passes Nogon query syntax through, still confined to web documents", async () => {
+		const { baseUrl, calls } = await fakeNogon((_request, response) => json(response, { total: 0, documents: [] }));
+		const [lexical] = new NogonSkill({ baseUrl }).retrievalMethods();
 
 		await lexical?.retrieve('"inverted index" domain:wikipedia.org added:<7d', {});
 		await lexical?.retrieve("sort:date title:refund", {});
 		await lexical?.retrieve("sort:-date", {});
 
 		expect(calls[0]?.query?.text).toBe('("inverted index" domain:wikipedia.org added:<7d) type:web');
-		// Hister only honours a sort directive outside the parenthesised group.
+		// Nogon only honours a sort directive outside the parenthesised group.
 		expect(calls[1]?.query?.text).toBe("(title:refund) type:web sort:date");
 		expect(calls[2]?.query?.text).toBe("type:web sort:-date");
 	});
 
 	it("maps hits to opaque domain-scoped sources with readable content and traceable metadata", async () => {
-		const { baseUrl } = await fakeHister((_request, response) =>
+		const { baseUrl } = await fakeNogon((_request, response) =>
 			json(response, { total: 1, documents: [doc(WEB_PAGE)] }),
 		);
-		const skill = new HisterSkill({ baseUrl, datasourceId: "browser", instanceId: "chrome" });
+		const skill = new NogonSkill({ baseUrl, datasourceId: "browser", instanceId: "chrome" });
 		const [lexical] = skill.retrievalMethods();
 
 		const [hit] = (await lexical?.retrieve("refund", {})) ?? [];
@@ -151,7 +151,7 @@ describe("HisterSkill lexical retrieval", () => {
 	});
 
 	it("never returns a local-file document, even if the server hands one back", async () => {
-		const { baseUrl } = await fakeHister((_request, response) =>
+		const { baseUrl } = await fakeNogon((_request, response) =>
 			json(response, {
 				total: 3,
 				documents: [
@@ -161,7 +161,7 @@ describe("HisterSkill lexical retrieval", () => {
 				],
 			}),
 		);
-		const [lexical] = new HisterSkill({ baseUrl }).retrievalMethods();
+		const [lexical] = new NogonSkill({ baseUrl }).retrievalMethods();
 
 		const hits = (await lexical?.retrieve("secret", {})) ?? [];
 
@@ -169,103 +169,103 @@ describe("HisterSkill lexical retrieval", () => {
 	});
 
 	it("sends the access token from the named environment variable, never from argv or config", async () => {
-		const { baseUrl, calls } = await fakeHister((_request, response) => json(response, { total: 0, documents: [] }));
-		process.env.HISTER_TEST_TOKEN = "s3cret";
+		const { baseUrl, calls } = await fakeNogon((_request, response) => json(response, { total: 0, documents: [] }));
+		process.env.NOGON_TEST_TOKEN = "s3cret";
 		try {
-			const skill = new HisterSkill({ baseUrl, tokenEnv: "HISTER_TEST_TOKEN" });
+			const skill = new NogonSkill({ baseUrl, tokenEnv: "NOGON_TEST_TOKEN" });
 			await skill.retrievalMethods()[0]?.retrieve("x", {});
 		} finally {
-			delete process.env.HISTER_TEST_TOKEN;
+			delete process.env.NOGON_TEST_TOKEN;
 		}
 		expect(calls[0]?.headers["x-access-token"]).toBe("s3cret");
 	});
 
-	it("answers an empty question without calling Hister", async () => {
-		const { baseUrl, calls } = await fakeHister((_request, response) => json(response, { total: 0, documents: [] }));
-		const [lexical] = new HisterSkill({ baseUrl }).retrievalMethods();
+	it("answers an empty question without calling Nogon", async () => {
+		const { baseUrl, calls } = await fakeNogon((_request, response) => json(response, { total: 0, documents: [] }));
+		const [lexical] = new NogonSkill({ baseUrl }).retrievalMethods();
 		expect(await lexical?.retrieve("   ", {})).toEqual([]);
 		expect(await lexical?.retrieve("?!", {})).toEqual([]);
 		expect(calls).toHaveLength(0);
 	});
 });
 
-describe("HisterSkill scope", () => {
-	it("does not call Hister for a scope outside this datasource", async () => {
-		const { baseUrl, calls } = await fakeHister((_request, response) => json(response, { total: 0, documents: [] }));
-		const [lexical] = new HisterSkill({ baseUrl }).retrievalMethods();
+describe("NogonSkill scope", () => {
+	it("does not call Nogon for a scope outside this datasource", async () => {
+		const { baseUrl, calls } = await fakeNogon((_request, response) => json(response, { total: 0, documents: [] }));
+		const [lexical] = new NogonSkill({ baseUrl }).retrievalMethods();
 		expect(await lexical?.retrieve("refund", { scope: "/kakao/**" })).toEqual([]);
 		expect(calls).toHaveLength(0);
 	});
 
-	it("pushes a literal domain scope down to Hister as domain: and keeps only matching hits", async () => {
-		const { baseUrl, calls } = await fakeHister((_request, response) =>
+	it("pushes a literal domain scope down to Nogon as domain: and keeps only matching hits", async () => {
+		const { baseUrl, calls } = await fakeNogon((_request, response) =>
 			json(response, {
 				total: 2,
 				documents: [doc(WEB_PAGE), doc("https://other.org/refund")],
 			}),
 		);
-		const skill = new HisterSkill({ baseUrl });
+		const skill = new NogonSkill({ baseUrl });
 		const [lexical] = skill.retrievalMethods();
 
-		const hits = (await lexical?.retrieve("refund", { scope: "/hister/default/pages/example.com/**" })) ?? [];
+		const hits = (await lexical?.retrieve("refund", { scope: "/nogon/default/pages/example.com/**" })) ?? [];
 
 		expect(calls[0]?.query?.text).toBe("(refund) domain:example.com type:web");
 		expect(hits.map((hit) => hit.metadata.domain)).toEqual(["example.com"]);
 	});
 
 	it("filters through the shared scope helper like every datasource", async () => {
-		const { baseUrl } = await fakeHister((_request, response) =>
+		const { baseUrl } = await fakeNogon((_request, response) =>
 			json(response, { total: 1, documents: [doc(WEB_PAGE)] }),
 		);
-		const skill = new HisterSkill({ baseUrl });
+		const skill = new NogonSkill({ baseUrl });
 		const methods = skill.retrievalMethods();
 		const byMethod = new Map([[methods[0]?.describe().name ?? "", (await methods[0]?.retrieve("refund", {})) ?? []]]);
-		const kept = filterDatasourceScope(byMethod, methods, "/hister/default/pages/**");
+		const kept = filterDatasourceScope(byMethod, methods, "/nogon/default/pages/**");
 		expect([...kept.values()].flat()).toHaveLength(1);
 		expect(
-			[...filterDatasourceScope(byMethod, methods, "/hister/default/pages/other.org/**").values()].flat(),
+			[...filterDatasourceScope(byMethod, methods, "/nogon/default/pages/other.org/**").values()].flat(),
 		).toHaveLength(0);
 	});
 });
 
-describe("HisterSkill failures are reported verbatim", () => {
+describe("NogonSkill failures are reported verbatim", () => {
 	it("throws the server's own status and body", async () => {
-		const { baseUrl } = await fakeHister((_request, response) => {
+		const { baseUrl } = await fakeNogon((_request, response) => {
 			response.writeHead(401, { "Content-Type": "text/plain" });
 			response.end("invalid token\n");
 		});
-		const [lexical] = new HisterSkill({ baseUrl }).retrievalMethods();
+		const [lexical] = new NogonSkill({ baseUrl }).retrievalMethods();
 		await expect(lexical?.retrieve("x", {})).rejects.toThrow(/401.*invalid token/s);
 	});
 
-	it("throws with the connection error when Hister is not running", async () => {
-		const { baseUrl } = await fakeHister((_request, response) => json(response, {}));
-		const dead = new HisterSkill({ baseUrl: baseUrl.replace(/:\d+$/, ":1") });
-		await expect(dead.retrievalMethods()[0]?.retrieve("x", {})).rejects.toThrow(/hister/i);
+	it("throws with the connection error when Nogon is not running", async () => {
+		const { baseUrl } = await fakeNogon((_request, response) => json(response, {}));
+		const dead = new NogonSkill({ baseUrl: baseUrl.replace(/:\d+$/, ":1") });
+		await expect(dead.retrievalMethods()[0]?.retrieve("x", {})).rejects.toThrow(/nogon/i);
 	});
 
-	it("throws when the response is not a Hister search result", async () => {
-		const { baseUrl } = await fakeHister((_request, response) => {
+	it("throws when the response is not a Nogon search result", async () => {
+		const { baseUrl } = await fakeNogon((_request, response) => {
 			response.writeHead(200, { "Content-Type": "text/html" });
 			response.end("<html>not json</html>");
 		});
-		const [lexical] = new HisterSkill({ baseUrl }).retrievalMethods();
+		const [lexical] = new NogonSkill({ baseUrl }).retrievalMethods();
 		await expect(lexical?.retrieve("x", {})).rejects.toThrow(/not.*JSON|unexpected/i);
 	});
 });
 
-describe("HisterSkill semantic retrieval", () => {
+describe("NogonSkill semantic retrieval", () => {
 	it("registers no semantic method unless the operator enabled it", () => {
-		const types = new HisterSkill({ baseUrl: "http://127.0.0.1:1" }).retrievalMethods().map((m) => m.describe().type);
+		const types = new NogonSkill({ baseUrl: "http://127.0.0.1:1" }).retrievalMethods().map((m) => m.describe().type);
 		expect(types).toEqual(["remote"]);
-		const both = new HisterSkill({ baseUrl: "http://127.0.0.1:1", semantic: true })
+		const both = new NogonSkill({ baseUrl: "http://127.0.0.1:1", semantic: true })
 			.retrievalMethods()
 			.map((m) => m.describe().type);
 		expect(both).toEqual(["remote", "vector"]);
 	});
 
 	it("reads semantic_hits, keeps web pages only, and scores by similarity", async () => {
-		const { baseUrl, calls } = await fakeHister((_request, response) =>
+		const { baseUrl, calls } = await fakeNogon((_request, response) =>
 			json(response, {
 				total: 0,
 				semantic_enabled: true,
@@ -281,7 +281,7 @@ describe("HisterSkill semantic retrieval", () => {
 				],
 			}),
 		);
-		const skill = new HisterSkill({ baseUrl, semantic: true });
+		const skill = new NogonSkill({ baseUrl, semantic: true });
 		const semantic = skill.retrievalMethods()[1];
 
 		const hits = (await semantic?.retrieve("how do refunds get approved", { topK: 5 })) ?? [];
@@ -294,7 +294,7 @@ describe("HisterSkill semantic retrieval", () => {
 	});
 
 	it("resolves a semantic hit that overlaps a keyword hit from the keyword document, and drops unverifiable ones", async () => {
-		const { baseUrl } = await fakeHister((_request, response) =>
+		const { baseUrl } = await fakeNogon((_request, response) =>
 			json(response, {
 				total: 1,
 				semantic_enabled: true,
@@ -305,25 +305,25 @@ describe("HisterSkill semantic retrieval", () => {
 				],
 			}),
 		);
-		const semantic = new HisterSkill({ baseUrl, semantic: true }).retrievalMethods()[1];
+		const semantic = new NogonSkill({ baseUrl, semantic: true }).retrievalMethods()[1];
 		const hits = (await semantic?.retrieve("refund", {})) ?? [];
 		expect(hits.map((hit) => hit.metadata.url)).toEqual([WEB_PAGE]);
 	});
 
-	it("fails loudly when semantic is configured but the Hister server has it disabled", async () => {
-		const { baseUrl } = await fakeHister((_request, response) =>
+	it("fails loudly when semantic is configured but the Nogon server has it disabled", async () => {
+		const { baseUrl } = await fakeNogon((_request, response) =>
 			json(response, { total: 0, semantic_enabled: false, documents: [] }),
 		);
-		const semantic = new HisterSkill({ baseUrl, semantic: true }).retrievalMethods()[1];
+		const semantic = new NogonSkill({ baseUrl, semantic: true }).retrievalMethods()[1];
 		await expect(semantic?.retrieve("refund", {})).rejects.toThrow(/semantic_search/);
 	});
 });
 
-describe("HisterSkill index probe", () => {
+describe("NogonSkill index probe", () => {
 	function probeServer(
 		overrides: { nonWeb?: number; configStatus?: number } = {},
 	): Promise<{ baseUrl: string; calls: Recorded[] }> {
-		return fakeHister((request, response) => {
+		return fakeNogon((request, response) => {
 			if (request.path === "/api/config") {
 				if (overrides.configStatus !== undefined) {
 					response.writeHead(overrides.configStatus, { "Content-Type": "text/plain" });
@@ -341,14 +341,14 @@ describe("HisterSkill index probe", () => {
 
 	it("reports the web-page count and says nothing about local files when there are none", async () => {
 		const { baseUrl } = await probeServer();
-		const result = await new HisterSkill({ baseUrl }).index();
+		const result = await new NogonSkill({ baseUrl }).index();
 		expect(result).toMatchObject({ ok: true, chunkCount: 42 });
 		expect(result.diagnostics.map((d) => d.message).join("\n")).not.toMatch(/local/i);
 	});
 
 	it("tells the operator, verbatim, that non-web documents exist and are excluded", async () => {
 		const { baseUrl } = await probeServer({ nonWeb: 5 });
-		const result = await new HisterSkill({ baseUrl }).index();
+		const result = await new NogonSkill({ baseUrl }).index();
 		expect(result.ok).toBe(true);
 		expect(result.diagnostics).toContainEqual(
 			expect.objectContaining({ severity: "warning", message: expect.stringMatching(/5 non-web.*excluded/s) }),
@@ -357,56 +357,54 @@ describe("HisterSkill index probe", () => {
 
 	it("fails with an auth diagnostic and the server's own words on 401", async () => {
 		const { baseUrl } = await probeServer({ configStatus: 401 });
-		const result = await new HisterSkill({ baseUrl }).index();
+		const result = await new NogonSkill({ baseUrl }).index();
 		expect(result).toMatchObject({ ok: false, code: "datasource-auth-error" });
 		expect(result.ok === false && result.message).toMatch(/invalid token/);
 	});
 
-	it("fails as unavailable, naming how to start Hister, when nothing listens", async () => {
-		const result = await new HisterSkill({ baseUrl: "http://127.0.0.1:1" }).index();
+	it("fails as unavailable, naming how to start Nogon, when nothing listens", async () => {
+		const result = await new NogonSkill({ baseUrl: "http://127.0.0.1:1" }).index();
 		expect(result).toMatchObject({ ok: false, code: "datasource-unavailable" });
-		expect(result.ok === false && result.message).toMatch(/hister listen/);
+		expect(result.ok === false && result.message).toMatch(/nogon listen/);
 	});
 });
 
-describe("HisterClient construction guards", () => {
+describe("NogonClient construction guards", () => {
 	it("refuses to send an access token over plain http to a non-loopback host", () => {
-		process.env.HISTER_TEST_TOKEN = "s3cret";
+		process.env.NOGON_TEST_TOKEN = "s3cret";
 		try {
 			expect(
-				() => new HisterClient({ baseUrl: "http://hister.example.com:4433", tokenEnv: "HISTER_TEST_TOKEN" }),
+				() => new NogonClient({ baseUrl: "http://nogon.example.com:4433", tokenEnv: "NOGON_TEST_TOKEN" }),
 			).toThrow(/https/);
 			expect(
-				() => new HisterClient({ baseUrl: "https://hister.example.com", tokenEnv: "HISTER_TEST_TOKEN" }),
+				() => new NogonClient({ baseUrl: "https://nogon.example.com", tokenEnv: "NOGON_TEST_TOKEN" }),
 			).not.toThrow();
 			expect(
-				() => new HisterClient({ baseUrl: "http://127.0.0.1:4433", tokenEnv: "HISTER_TEST_TOKEN" }),
+				() => new NogonClient({ baseUrl: "http://127.0.0.1:4433", tokenEnv: "NOGON_TEST_TOKEN" }),
 			).not.toThrow();
 		} finally {
-			delete process.env.HISTER_TEST_TOKEN;
+			delete process.env.NOGON_TEST_TOKEN;
 		}
 	});
 
 	it("rejects a base URL that is not http(s)", () => {
-		expect(() => new HisterClient({ baseUrl: "file:///etc/passwd" })).toThrow(/http/);
+		expect(() => new NogonClient({ baseUrl: "file:///etc/passwd" })).toThrow(/http/);
 	});
 });
 
-describe("HisterClient input handling", () => {
+describe("NogonClient input handling", () => {
 	it("trims trailing slashes from the base URL in linear time, whatever the input", () => {
 		const hostile = `http://127.0.0.1:4433${"/".repeat(200_000)}`;
 		const started = performance.now();
-		const client = new HisterClient({ baseUrl: hostile });
+		const client = new NogonClient({ baseUrl: hostile });
 		expect(performance.now() - started).toBeLessThan(200);
 		expect(client.baseUrl).toBe("http://127.0.0.1:4433");
-		expect(new HisterClient({ baseUrl: "http://127.0.0.1:4433/hister/" }).baseUrl).toBe(
-			"http://127.0.0.1:4433/hister",
-		);
+		expect(new NogonClient({ baseUrl: "http://127.0.0.1:4433/nogon/" }).baseUrl).toBe("http://127.0.0.1:4433/nogon");
 	});
 
 	it("tokenizes a question with a long run of dots or colons in linear time, keeping phrases whole", async () => {
-		const { baseUrl, calls } = await fakeHister((_request, response) => json(response, { total: 0, documents: [] }));
-		const [lexical] = new HisterSkill({ baseUrl }).retrievalMethods();
+		const { baseUrl, calls } = await fakeNogon((_request, response) => json(response, { total: 0, documents: [] }));
+		const [lexical] = new NogonSkill({ baseUrl }).retrievalMethods();
 		const started = performance.now();
 		await lexical?.retrieve(`${"a.".repeat(50_000)} ${"x:".repeat(50_000)}`, {});
 		expect(performance.now() - started).toBeLessThan(1_000);
@@ -416,32 +414,32 @@ describe("HisterClient input handling", () => {
 	});
 });
 
-describe("hister through the datasource factory", () => {
+describe("nogon through the datasource factory", () => {
 	it("builds from config and exposes a path-opaque, license-honest manifest", () => {
 		const { skills, unknown } = buildDatasourceSkills({
-			browser: { type: "hister", connector: { baseUrl: "http://127.0.0.1:4433", semantic: true } },
+			browser: { type: "nogon", connector: { baseUrl: "http://127.0.0.1:4433", semantic: true } },
 		});
 		expect(unknown).toEqual([]);
 		const skill = skills[0];
 		expect(skill?.describe()).toMatchObject({
 			name: "browser",
-			type: "hister-web-history",
+			type: "nogon-web-history",
 			requiresExternalCli: true,
 		});
 		expect(skill?.retrievalMethods().map((m) => m.describe().name)).toEqual(["browser-lexical", "browser-semantic"]);
 		const manifest = skill?.skillManifest();
 		expect(manifest?.name).toBe("datasource-browser");
 		const content = manifest?.content ?? "";
-		// The tool the agent must call, and the licence notice that keeps Hister's use visible.
+		// The tool the agent must call, and the licence notice that keeps Nogon's use visible.
 		expect(content).toContain("search_datasource_browser");
-		expect(content).toContain("Hister");
+		expect(content).toContain("Nogon");
 		expect(content).toContain("AGPL-3.0");
-		expect(content).toContain("https://github.com/asciimoo/hister");
+		expect(content).toContain("https://github.com/asciimoo/nogon");
 	});
 
-	it("defaults to the plain `hister` identity and a single lexical method", () => {
-		const { skills } = buildDatasourceSkills({ hister: true });
-		expect(skills[0]?.describe().name).toBe("hister");
-		expect(skills[0]?.retrievalMethods().map((m) => m.describe().name)).toEqual(["hister-lexical"]);
+	it("defaults to the plain `nogon` identity and a single lexical method", () => {
+		const { skills } = buildDatasourceSkills({ nogon: true });
+		expect(skills[0]?.describe().name).toBe("nogon");
+		expect(skills[0]?.retrievalMethods().map((m) => m.describe().name)).toEqual(["nogon-lexical"]);
 	});
 });

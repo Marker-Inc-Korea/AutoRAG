@@ -34,9 +34,9 @@ function embedder(endpoint: EmbedderEndpoint | null = DAEMON): ManagedEmbedder {
 	};
 }
 
-const HISTER_YAML = [
+const NOGON_YAML = [
 	"app:",
-	"    title: Hister",
+	"    title: Nogon",
 	"semantic_search:",
 	"    enable: false",
 	"    embedding_endpoint: http://localhost:11434/v1/embeddings",
@@ -50,12 +50,12 @@ const HISTER_YAML = [
 interface Fixture {
 	readonly root: string;
 	readonly configPath: string;
-	readonly histerConfig: string;
+	readonly nogonConfig: string;
 	readonly calls: string[];
 }
 
-function fixture(options: { config?: unknown; hister?: string | null } = {}): Fixture {
-	const root = mkdtempSync(join(tmpdir(), "autorag-setup-hister-"));
+function fixture(options: { config?: unknown; nogon?: string | null } = {}): Fixture {
+	const root = mkdtempSync(join(tmpdir(), "autorag-setup-nogon-"));
 	roots.push(root);
 	const configPath = join(root, "config.json");
 	writeFileSync(
@@ -65,26 +65,26 @@ function fixture(options: { config?: unknown; hister?: string | null } = {}): Fi
 				searchPaths: [join(root, "docs")],
 				workspacePath: root,
 				datasources: {
-					browser: { type: "hister", connector: { baseUrl: "http://127.0.0.1:4433", semantic: true } },
+					browser: { type: "nogon", connector: { baseUrl: "http://127.0.0.1:4433", semantic: true } },
 				},
 			},
 		),
 	);
-	mkdirSync(join(root, "hister"), { recursive: true });
-	const hisSterConfig = join(root, "hister", "config.yml");
-	if (options.hister !== null) writeFileSync(hisSterConfig, options.hister ?? HISTER_YAML);
-	return { root, configPath, hisSterConfig, calls: [] } as unknown as Fixture;
+	mkdirSync(join(root, "nogon"), { recursive: true });
+	const nogonConfig = join(root, "nogon", "config.yml");
+	if (options.nogon !== null) writeFileSync(nogonConfig, options.nogon ?? NOGON_YAML);
+	return { root, configPath, nogonConfig, calls: [] } as unknown as Fixture;
 }
 
 function deps(f: Fixture, extra: Partial<SetupDeps> = {}): SetupDeps {
 	return {
 		env: { PATH: "/bin", HOME: f.root },
-		executable: (name) => (name === "hister" ? "/opt/homebrew/bin/hister" : undefined),
+		executable: (name) => (name === "nogon" ? "/opt/homebrew/bin/nogon" : undefined),
 		pathExists: () => true,
 		acquireLock: fakeLock,
 		embedder: embedder(),
-		hister: {
-			configPath: () => (f as unknown as { hisSterConfig: string }).hisSterConfig,
+		nogon: {
+			configPath: () => (f as unknown as { nogonConfig: string }).nogonConfig,
 			health: async () => ({ reachable: true, semanticEnabled: true }),
 			restart: async () => {
 				f.calls.push("restart");
@@ -94,31 +94,31 @@ function deps(f: Fixture, extra: Partial<SetupDeps> = {}): SetupDeps {
 				f.calls.push("reindex");
 				return { ok: true };
 			},
-			...("hister" in extra ? {} : {}),
+			...("nogon" in extra ? {} : {}),
 		},
 		...extra,
 	};
 }
 
-const hisSterOf = (f: Fixture): string => (f as unknown as { hisSterConfig: string }).hisSterConfig;
+const hisSterOf = (f: Fixture): string => (f as unknown as { nogonConfig: string }).nogonConfig;
 const read = (f: Fixture) => parse(readFileSync(hisSterOf(f), "utf8")).semantic_search as Record<string, unknown>;
 
-describe("setup: Hister detection", () => {
-	it("does nothing and reports nothing about Hister when no hister datasource is configured", async () => {
+describe("setup: Nogon detection", () => {
+	it("does nothing and reports nothing about Nogon when no nogon datasource is configured", async () => {
 		const f = fixture({ config: { searchPaths: ["/d"], workspacePath: "/w", datasources: {} } });
 		const report = await runSetup({ configPath: f.configPath, workspacePath: f.root, deps: deps(f) });
-		expect(report.hister).toBeUndefined();
+		expect(report.nogon).toBeUndefined();
 	});
 
-	it("reports a missing hister binary with the install command, and is not blocked on it", async () => {
+	it("reports a missing nogon binary with the install command, and is not blocked on it", async () => {
 		const f = fixture();
 		const report = await runSetup({
 			configPath: f.configPath,
 			workspacePath: f.root,
 			deps: deps(f, { executable: () => undefined }),
 		});
-		expect(report.hister).toMatchObject({ installed: false });
-		expect(report.hister?.remediation).toContain("brew install hister");
+		expect(report.nogon).toMatchObject({ installed: false });
+		expect(report.nogon?.remediation).toContain("brew install nogon");
 		expect(report.datasources.find((d) => d.name === "browser")).toMatchObject({ state: "skipped" });
 	});
 
@@ -128,28 +128,28 @@ describe("setup: Hister detection", () => {
 			configPath: f.configPath,
 			workspacePath: f.root,
 			deps: deps(f, {
-				hister: {
-					...deps(f).hister,
+				nogon: {
+					...deps(f).nogon,
 					health: async () => ({ reachable: false, reason: "connect ECONNREFUSED 127.0.0.1:4433" }),
 				},
 			}),
 		});
-		expect(report.hister).toMatchObject({ installed: true, running: false });
-		expect(report.hister?.reason).toContain("ECONNREFUSED");
-		expect(report.hister?.remediation).toContain("brew services start hister");
+		expect(report.nogon).toMatchObject({ installed: true, running: false });
+		expect(report.nogon?.reason).toContain("ECONNREFUSED");
+		expect(report.nogon?.remediation).toContain("brew services start nogon");
 	});
 
 	it("waits for the restarted server to answer before it reindexes (brew returns before it listens)", async () => {
 		const f = fixture();
 		let polls = 0;
 		const order: string[] = [];
-		const base = deps(f).hister ?? {};
+		const base = deps(f).nogon ?? {};
 		await runSetup({
 			configPath: f.configPath,
 			workspacePath: f.root,
-			syncHister: true,
+			syncNogon: true,
 			deps: deps(f, {
-				hister: {
+				nogon: {
 					...base,
 					restart: async () => {
 						order.push("restart");
@@ -177,14 +177,14 @@ describe("setup: Hister detection", () => {
 
 	it("says the restart worked but the server never came back, instead of reindexing into a dead port", async () => {
 		const f = fixture();
-		const base = deps(f).hister ?? {};
+		const base = deps(f).nogon ?? {};
 		let restarted = false;
 		const report = await runSetup({
 			configPath: f.configPath,
 			workspacePath: f.root,
-			syncHister: true,
+			syncNogon: true,
 			deps: deps(f, {
-				hister: {
+				nogon: {
 					...base,
 					restart: async () => {
 						restarted = true;
@@ -201,34 +201,34 @@ describe("setup: Hister detection", () => {
 			}),
 		});
 		expect(f.calls).not.toContain("reindex");
-		expect(report.hister?.embedding).toMatchObject({ applied: true, reindexRequired: true });
-		expect(report.hister?.embedding?.reason).toMatch(/did not answer/);
-		expect(report.hister?.remediation).toContain("hister reindex");
+		expect(report.nogon?.embedding).toMatchObject({ applied: true, reindexRequired: true });
+		expect(report.nogon?.embedding?.reason).toMatch(/did not answer/);
+		expect(report.nogon?.remediation).toContain("nogon reindex");
 	});
 });
 
-describe("setup: Hister shares the global embedding model", () => {
+describe("setup: Nogon shares the global embedding model", () => {
 	it("reports the exact keys that disagree with the shared embedder, without writing anything by default", async () => {
 		const f = fixture();
 		const before = readFileSync(hisSterOf(f), "utf8");
 		const report = await runSetup({ configPath: f.configPath, workspacePath: f.root, deps: deps(f) });
-		expect(report.hister?.embedding).toMatchObject({
+		expect(report.nogon?.embedding).toMatchObject({
 			inSync: false,
 			differs: ["dimensions", "embedding_endpoint", "embedding_model", "enable", "query_prefix"],
 			applied: false,
 		});
 		expect(readFileSync(hisSterOf(f), "utf8")).toBe(before);
-		expect(report.hister?.remediation).toContain("--sync-hister");
+		expect(report.nogon?.remediation).toContain("--sync-nogon");
 		expect(f.calls).toEqual([]);
 	});
 
-	it("writes Hister's config to the shared model with --sync-hister, and says a restart and reindex are needed", async () => {
+	it("writes Nogon's config to the shared model with --sync-nogon, and says a restart and reindex are needed", async () => {
 		const f = fixture();
 		const report = await runSetup({
 			configPath: f.configPath,
 			workspacePath: f.root,
-			syncHister: true,
-			deps: deps(f, { hister: { ...deps(f).hister, restart: undefined, reindex: undefined } }),
+			syncNogon: true,
+			deps: deps(f, { nogon: { ...deps(f).nogon, restart: undefined, reindex: undefined } }),
 		});
 		expect(read(f)).toMatchObject({
 			enable: true,
@@ -239,7 +239,7 @@ describe("setup: Hister shares the global embedding model", () => {
 			document_prefix: "",
 			similarity_threshold: 0.1,
 		});
-		expect(report.hister?.embedding).toMatchObject({
+		expect(report.nogon?.embedding).toMatchObject({
 			inSync: true,
 			applied: true,
 			restartRequired: true,
@@ -248,14 +248,14 @@ describe("setup: Hister shares the global embedding model", () => {
 		expect(report.changed).toBe(true);
 	});
 
-	it("keeps a backup of Hister's config before changing it", async () => {
+	it("keeps a backup of Nogon's config before changing it", async () => {
 		const f = fixture();
-		await runSetup({ configPath: f.configPath, workspacePath: f.root, syncHister: true, deps: deps(f) });
+		await runSetup({ configPath: f.configPath, workspacePath: f.root, syncNogon: true, deps: deps(f) });
 		const backups = require("node:fs")
-			.readdirSync(join(f.root, "hister"))
+			.readdirSync(join(f.root, "nogon"))
 			.filter((n: string) => n.startsWith("config.yml.bak."));
 		expect(backups.length).toBe(1);
-		expect(readFileSync(join(f.root, "hister", backups[0]), "utf8")).toBe(HISTER_YAML);
+		expect(readFileSync(join(f.root, "nogon", backups[0]), "utf8")).toBe(NOGON_YAML);
 	});
 
 	it("restarts the service and reindexes when it can, in that order, only after the file is written", async () => {
@@ -263,23 +263,23 @@ describe("setup: Hister shares the global embedding model", () => {
 		const report = await runSetup({
 			configPath: f.configPath,
 			workspacePath: f.root,
-			syncHister: true,
+			syncNogon: true,
 			deps: deps(f),
 		});
 		expect(f.calls).toEqual(["restart", "reindex"]);
-		expect(report.hister?.embedding).toMatchObject({ applied: true, restartRequired: false, reindexRequired: false });
+		expect(report.nogon?.embedding).toMatchObject({ applied: true, restartRequired: false, reindexRequired: false });
 	});
 
-	it("prefers live `hister reload` on Hister 0.21+ without restarting the service, falling back to restart only if reload fails", async () => {
+	it("prefers live `nogon reload` on Nogon 0.21+ without restarting the service, falling back to restart only if reload fails", async () => {
 		const f = fixture();
 		const order: string[] = [];
 		const report = await runSetup({
 			configPath: f.configPath,
 			workspacePath: f.root,
-			syncHister: true,
+			syncNogon: true,
 			deps: deps(f, {
-				hister: {
-					...deps(f).hister,
+				nogon: {
+					...deps(f).nogon,
 					reload: async (url: string) => {
 						order.push(`reload:${url}`);
 						return { ok: true };
@@ -296,49 +296,49 @@ describe("setup: Hister shares the global embedding model", () => {
 			}),
 		});
 		expect(order).toEqual(["reload:http://127.0.0.1:4433", "reindex"]);
-		expect(report.hister?.embedding).toMatchObject({ applied: true, restartRequired: false, reindexRequired: false });
+		expect(report.nogon?.embedding).toMatchObject({ applied: true, restartRequired: false, reindexRequired: false });
 	});
 
-	it("does not reindex for a query-prefix-only change, which Hister does not fingerprint", async () => {
+	it("does not reindex for a query-prefix-only change, which Nogon does not fingerprint", async () => {
 		const f = fixture({
-			hister: HISTER_YAML.replace("enable: false", "enable: true")
+			nogon: NOGON_YAML.replace("enable: false", "enable: true")
 				.replace("http://localhost:11434/v1/embeddings", "http://127.0.0.1:64917/v1/embeddings")
 				.replace("qwen3-embedding:8b", "Qwen/Qwen3-Embedding-0.6B")
 				.replace("dimensions: 2000", "dimensions: 1024"),
 		});
-		await runSetup({ configPath: f.configPath, workspacePath: f.root, syncHister: true, deps: deps(f) });
+		await runSetup({ configPath: f.configPath, workspacePath: f.root, syncNogon: true, deps: deps(f) });
 		expect(f.calls).toEqual(["restart"]);
 	});
 
 	it("reports in sync, and does not touch the file or restart anything, when the settings already match", async () => {
 		const f = fixture();
-		await runSetup({ configPath: f.configPath, workspacePath: f.root, syncHister: true, deps: deps(f) });
+		await runSetup({ configPath: f.configPath, workspacePath: f.root, syncNogon: true, deps: deps(f) });
 		f.calls.length = 0;
 		const once = readFileSync(hisSterOf(f), "utf8");
 		const report = await runSetup({
 			configPath: f.configPath,
 			workspacePath: f.root,
-			syncHister: true,
+			syncNogon: true,
 			deps: deps(f),
 		});
-		expect(report.hister?.embedding).toMatchObject({ inSync: true, applied: false, differs: [] });
+		expect(report.nogon?.embedding).toMatchObject({ inSync: true, applied: false, differs: [] });
 		expect(readFileSync(hisSterOf(f), "utf8")).toBe(once);
 		expect(f.calls).toEqual([]);
 	});
 
-	it("refuses to write a remote shared endpoint into Hister's config and says why", async () => {
+	it("refuses to write a remote shared endpoint into Nogon's config and says why", async () => {
 		const f = fixture();
 		const before = readFileSync(hisSterOf(f), "utf8");
 		const report = await runSetup({
 			configPath: f.configPath,
 			workspacePath: f.root,
-			syncHister: true,
+			syncNogon: true,
 			deps: deps(f, {
 				embedder: embedder({ ...DAEMON, backend: "remote", baseUrl: "https://api.example.com", apiKeyEnv: "K" }),
 			}),
 		});
-		expect(report.hister?.embedding).toMatchObject({ inSync: false, applied: false });
-		expect(report.hister?.embedding?.reason).toMatch(/leave this machine/);
+		expect(report.nogon?.embedding).toMatchObject({ inSync: false, applied: false });
+		expect(report.nogon?.embedding?.reason).toMatch(/leave this machine/);
 		expect(readFileSync(hisSterOf(f), "utf8")).toBe(before);
 	});
 
@@ -347,12 +347,12 @@ describe("setup: Hister shares the global embedding model", () => {
 		const report = await runSetup({
 			configPath: f.configPath,
 			workspacePath: f.root,
-			syncHister: true,
+			syncNogon: true,
 			deps: deps(f, { embedder: embedder(null) }),
 		});
-		expect(report.hister?.embedding).toMatchObject({ inSync: false, applied: false });
-		expect(report.hister?.embedding?.reason).toContain("inl serve");
-		expect(report.hister?.remediation).toContain("inl serve --idle-timeout 0");
+		expect(report.nogon?.embedding).toMatchObject({ inSync: false, applied: false });
+		expect(report.nogon?.embedding?.reason).toContain("inl serve");
+		expect(report.nogon?.remediation).toContain("inl serve --idle-timeout 0");
 	});
 
 	it("does not sync when the datasource has semantic switched off", async () => {
@@ -360,32 +360,32 @@ describe("setup: Hister shares the global embedding model", () => {
 			config: {
 				searchPaths: ["/d"],
 				workspacePath: "/w",
-				datasources: { browser: { type: "hister", connector: { semantic: false } } },
+				datasources: { browser: { type: "nogon", connector: { semantic: false } } },
 			},
 		});
 		const report = await runSetup({
 			configPath: f.configPath,
 			workspacePath: f.root,
-			syncHister: true,
+			syncNogon: true,
 			deps: deps(f),
 		});
-		expect(report.hister?.embedding).toBeUndefined();
-		expect(readFileSync(hisSterOf(f), "utf8")).toBe(HISTER_YAML);
+		expect(report.nogon?.embedding).toBeUndefined();
+		expect(readFileSync(hisSterOf(f), "utf8")).toBe(NOGON_YAML);
 	});
 
-	it("reports an unreadable or missing Hister config file with its path, not a crash", async () => {
-		const f = fixture({ hister: null });
+	it("reports an unreadable or missing Nogon config file with its path, not a crash", async () => {
+		const f = fixture({ nogon: null });
 		const report = await runSetup({
 			configPath: f.configPath,
 			workspacePath: f.root,
-			syncHister: true,
+			syncNogon: true,
 			deps: deps(f),
 		});
-		expect(report.hister?.embedding).toMatchObject({ applied: false });
-		expect(report.hister?.embedding?.reason).toContain(hisSterOf(f));
+		expect(report.nogon?.embedding).toMatchObject({ applied: false });
+		expect(report.nogon?.embedding?.reason).toContain(hisSterOf(f));
 	});
 
-	it("never writes the Hister config as a side effect of an ordinary setup run", async () => {
+	it("never writes the Nogon config as a side effect of an ordinary setup run", async () => {
 		const f = fixture();
 		const before = readFileSync(hisSterOf(f), "utf8");
 		await runSetup({ configPath: f.configPath, workspacePath: f.root, deps: deps(f) });

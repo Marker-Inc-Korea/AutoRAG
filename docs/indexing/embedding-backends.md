@@ -57,14 +57,14 @@ Qwen3-Embedding is instruction-aware: a search query is embedded as `Instruct: G
 - MinSync's own index and search get it through `[embedder].query_prefix` in MinSync's config file, which MinSync prepends to the query only.
 - AutoRAG-owned stores (chat sidecars, GitHub Gist) embed through the shared embedder: the embedder prepends the prefix itself, so neither the daemon nor a remote server is asked to.
 - mailcrawl receives the prefix through `MAILCRAWL_QUERY_PREFIX`.
-- Hister keeps its own vector store and is pointed at the shared daemon through its own `config.yml` `semantic_search` block; `autorag setup --sync-hister` writes those keys from the resolved shared endpoint, byte for byte.
+- Nogon keeps its own vector store and is pointed at the shared daemon through its own `config.yml` `semantic_search` block; `autorag setup --sync-nogon` writes those keys from the resolved shared endpoint, byte for byte.
 - Similar-past-question lookup compares a question with questions, so both sides are embedded the same way, without the instruction.
 
 The default applies only to MinSync's local Qwen3 (no `id`, or `native:Qwen/Qwen3-Embedding-0.6B`, and no `baseUrl`). An operator-set `minSync.embedder.queryPrefix` or `passagePrefix`, including `""`, always wins, and a remote endpoint or another model gets no default prefix.
 
 ## Running the embedding daemon
 
-Semantic search over everything except the MinSync datasource needs an embedding backend that is alive: a remote endpoint, a running `inl serve`, or the optional in-process addon. Without one, memory, the chat-sidecar semantic search, gist, discrawl, mailcrawl, lazykatok, and Hister fall back to keyword search or report `embedding-unavailable`; the MinSync datasource keeps working because `minsync` embeds in-process by itself.
+Semantic search over everything except the MinSync datasource needs an embedding backend that is alive: a remote endpoint, a running `inl serve`, or the optional in-process addon. Without one, memory, the chat-sidecar semantic search, gist, discrawl, mailcrawl, lazykatok, and Nogon fall back to keyword search or report `embedding-unavailable`; the MinSync datasource keeps working because `minsync` embeds in-process by itself.
 
 Without a remote endpoint, keep the daemon running. From inl-server 0.3.4 `inl serve` serves until stopped by default, and a restarted instance comes back on the port it used before. Older versions (and `minsync serve` before the MinSync release that takes 0.3.4) exit after 300 s without a request, which frees the ~2.8 GB model but makes the next semantic call fail until the daemon is started again, and choose a new port on every start; pass `--idle-timeout 0` there. Do not pass `--state-dir`: only the default state directory is discovered.
 
