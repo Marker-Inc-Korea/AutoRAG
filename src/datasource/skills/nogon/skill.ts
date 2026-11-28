@@ -94,7 +94,7 @@ export class NogonSkill implements DatasourceSkill {
 			name: this.datasourceId,
 			id: this.datasourceId,
 			type: NOGON_SKILL_TYPE,
-			description: "Browser web history (pages you visited) via a Nogon server",
+			description: "Browser history: the web pages you visited",
 			capabilities: [
 				"external-cli",
 				"remote-search",
@@ -206,9 +206,9 @@ export class NogonSkill implements DatasourceSkill {
 			description:
 				"Search the web pages visited in the user's browser (Chrome/Chromium/Firefox history with full page text) through their Nogon server. Use for questions like 'what was that page I read about X' or 'when did I look at Y'.",
 			content: [
-				"# Browser web history (Nogon)",
+				"# Browser history",
 				"",
-				"Search the pages the user visited in their browser, with the page text Nogon captured at visit time. [Nogon](https://github.com/asciimoo/nogon) is a separate program (AGPL-3.0-or-later). It keeps its own index and credentials. AutoRAG only sends it search requests over HTTP: it does not bundle, link, copy, or modify Nogon, and never hides that Nogon is the backend.",
+				"Search the pages the user visited in their browser, with the page text Nogon captured at visit time. Call it the user's browser history when you talk to them, never by the program name (the person may know it as Hister, Nogon, or just their browser history); name the program only in install or troubleshooting steps. [Nogon](https://github.com/asciimoo/nogon) is a separate program (AGPL-3.0-or-later). It keeps its own index and credentials. AutoRAG only sends it search requests over HTTP: it does not bundle, link, copy, or modify Nogon, and never hides that Nogon is the backend.",
 				"",
 				"## When to use",
 				"Questions about pages, articles, docs, or sites the user read or opened in a browser; recalling a page by topic, domain, or time. Not for the user's own files: Nogon's local-directory indexing is never searched here, only web pages.",

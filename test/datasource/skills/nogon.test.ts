@@ -553,6 +553,23 @@ describe("nogon through the datasource factory", () => {
 		expect(content).toContain("https://github.com/asciimoo/nogon");
 	});
 
+	it("is called browser history wherever a person can read it, and the program name stays in the notice", () => {
+		const skill = buildDatasourceSkills({ browser: { type: "nogon" } }).skills[0];
+		// The app shows this line as the connection's description.
+		const description = skill?.describe().description ?? "";
+		// (A connection alias such as `(browser)` is appended when the skill is registered under one.)
+		expect(description).toMatch(/^Browser history: the web pages you visited/);
+		expect(description).not.toMatch(/nogon|hister/i);
+		const manifest = skill?.skillManifest();
+		expect(manifest?.content.split("\n")[0]).toBe("# Browser history");
+		// The agent is told how to name it, so an answer says "your browser history" and not the program.
+		expect(manifest?.content).toMatch(/call it the user's browser history/i);
+		expect(manifest?.content).toMatch(/never by the program name|not by the program name/i);
+		// The licence notice is kept: Nogon is named, with its licence and source, as a separate program.
+		expect(manifest?.content).toContain("AGPL-3.0");
+		expect(manifest?.content).toContain("separate program");
+	});
+
 	it("defaults to the plain `nogon` identity and a single lexical method", () => {
 		const { skills } = buildDatasourceSkills({ nogon: true });
 		expect(skills[0]?.describe().name).toBe("nogon");
