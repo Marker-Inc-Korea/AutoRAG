@@ -78,6 +78,30 @@ describe("renderHealth", () => {
 });
 
 describe("renderRefresh", () => {
+	it("shows current Jikji index problems in ordinary successful refresh output", () => {
+		const error = "missing required artifact row: wiki_index";
+		const result: AutoRAGRefreshResult = {
+			scanned: 1,
+			written: 1,
+			deleted: 0,
+			skipped: 0,
+			indexPath: "/workspace/.autorag/parsed",
+			diagnostics: [
+				{ code: "jikji-index-unhealthy", severity: "warning", source: "/docs", message: error },
+				{
+					code: "jikji-documents-failed",
+					severity: "warning",
+					source: "/docs",
+					message: "Jikji manifest reports docs_failed=2.",
+				},
+			],
+		};
+		const output = renderRefresh(result, { json: false });
+		expect(JSON.parse(renderRefresh(result, { json: true })).ok).toBe(true);
+		expect(output.split("\n").find((line) => line.includes(error))).toContain("/docs");
+		expect(output).toContain("docs_failed=2");
+	});
+
 	it("includes minsync result in the JSON envelope and human output on success", () => {
 		const result: AutoRAGRefreshResult = {
 			scanned: 3,
@@ -234,6 +258,30 @@ describe("renderRefresh", () => {
 });
 
 describe("renderStatus", () => {
+	it("renders per-root Jikji health, failed-document counts and native errors", () => {
+		const error = "missing required artifact row: wiki_index in /data/jikji/index.sqlite3";
+		const status: AutoRAGRefreshStatus = {
+			state: "success",
+			inFlight: false,
+			stale: false,
+			components: { jikji: "degraded" },
+			jikji: [
+				{ source: "/docs", state: "needs-reprepare", docsFailed: 2, errors: [error], warnings: [] },
+				{ source: "/other", state: "not-prepared", errors: [], warnings: [] },
+			],
+			diagnostics: [{ code: "jikji-index-unhealthy", severity: "warning", source: "/docs", message: error }],
+		};
+
+		const json = JSON.parse(renderStatus(status, { json: true }));
+		expect(json.jikji).toEqual(status.jikji);
+		expect(json.components.jikji).toBe("degraded");
+		const output = renderStatus(status, { json: false });
+		expect(output).toContain("/docs needs-reprepare docs_failed=2");
+		expect(output).toContain("/other not-prepared");
+		expect(output).toContain(error);
+		expect(output.split("\n").find((line) => line.includes(error))).toContain("/docs");
+	});
+
 	it("shows MinSync skipped-file counts without exposing file paths", () => {
 		const status: AutoRAGRefreshStatus = {
 			state: "indexing",

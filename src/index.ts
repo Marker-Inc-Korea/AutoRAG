@@ -1,6 +1,7 @@
 export {
 	AutoRAGAgent,
 	type AutoRAGAgentOptions,
+	type AutoRAGJikjiIndexStatus,
 	type AutoRAGRefreshComponentStatus,
 	type AutoRAGRefreshOptions,
 	type AutoRAGRefreshProgress,

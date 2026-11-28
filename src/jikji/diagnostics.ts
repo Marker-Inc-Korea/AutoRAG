@@ -1,10 +1,9 @@
-import type { JikjiFailureReason, JikjiFindResult, JikjiPrepareResult } from "./types.ts";
+import type { JikjiDoctorResult, JikjiFailureReason, JikjiFindResult, JikjiPrepareResult } from "./types.ts";
 
 /**
  * Diagnostic codes for the optional Jikji indexing/preparation layer. These are
- * a subset of the search-level diagnostic code union and are intentionally
- * path-free so they can be surfaced through public search/refresh diagnostics
- * without leaking filesystem or binary paths.
+ * a subset of the search-level diagnostic code union. Index-health diagnostics
+ * retain native doctor details, including paths, so users can identify repairs.
  */
 export type JikjiDiagnosticCode =
 	| "jikji-unavailable"
@@ -12,7 +11,52 @@ export type JikjiDiagnosticCode =
 	| "jikji-cloud-root-skipped"
 	| "jikji-find-failed"
 	| "jikji-discover-failed"
+	| "jikji-not-prepared"
+	| "jikji-index-unhealthy"
+	| "jikji-documents-failed"
+	| "jikji-doctor-failed"
 	| "jikji-unsupported-version";
+
+/** Index-health diagnostics retain native doctor errors and warnings verbatim. */
+export function jikjiDoctorDiagnostics(result: JikjiDoctorResult): JikjiDiagnostic[] {
+	const diagnostics: JikjiDiagnostic[] = [];
+	if (result.state === "not-prepared") {
+		diagnostics.push({
+			code: "jikji-not-prepared",
+			severity: "info",
+			message: "Jikji index is not prepared.",
+			source: "jikji",
+		});
+	}
+	for (const message of result.errors) {
+		diagnostics.push({
+			code: result.state === "unavailable" ? "jikji-doctor-failed" : "jikji-index-unhealthy",
+			severity: "warning",
+			message,
+			source: "jikji",
+		});
+	}
+	for (const message of result.warnings) {
+		diagnostics.push({ code: "jikji-index-unhealthy", severity: "warning", message, source: "jikji" });
+	}
+	if (result.state === "needs-reprepare" && result.errors.length === 0) {
+		diagnostics.push({
+			code: "jikji-index-unhealthy",
+			severity: "warning",
+			message: "Jikji index needs re-prepare.",
+			source: "jikji",
+		});
+	}
+	if (result.docsFailed !== undefined && result.docsFailed > 0) {
+		diagnostics.push({
+			code: "jikji-documents-failed",
+			severity: "warning",
+			message: `Jikji manifest reports docs_failed=${result.docsFailed}.`,
+			source: "jikji",
+		});
+	}
+	return diagnostics;
+}
 
 export interface JikjiDiagnostic {
 	readonly code: JikjiDiagnosticCode;
