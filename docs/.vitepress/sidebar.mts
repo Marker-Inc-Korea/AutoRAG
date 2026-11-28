@@ -60,6 +60,7 @@ export const SECTIONS: readonly Section[] = [
 					{ text: "Terminal UI and search", link: "/agents/librarian" },
 					{ text: "Permission modes", link: "/agents/permissions" },
 					{ text: "Asking you questions", link: "/agents/ask-user" },
+					{ text: "Host subagents", link: "/agents/subagents" },
 				],
 			},
 			{

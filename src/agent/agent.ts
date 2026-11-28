@@ -280,6 +280,14 @@ import {
 } from "./search-single-datasource-tool.ts";
 import { buildSelfConfigPrompt, rollbackIfBroken, type SelfConfigOptions, snapshotConfigFile } from "./self-config.ts";
 import { formatSkillInvocation } from "./skill-invocation.ts";
+import {
+	buildSubagentsPrompt,
+	createSubagentExtension,
+	mutatingSubagentNames,
+	normalizeSubagents,
+	SUBAGENT_TOOL_NAME,
+	type SubagentDefinition,
+} from "./subagents.ts";
 import { buildSystemPrompt, type SystemPromptConfig } from "./system-prompt.ts";
 import { ToolBurstGuard, type ToolBurstGuardOptions } from "./tool-burst-guard.ts";
 import { createUserRequestPersistence, UserRequestLog } from "./user-requests.ts";
@@ -967,6 +975,13 @@ export interface AutoRAGAgentOptions {
 	/** Share one controller (mode) with a host that switches modes itself. Wins over `permissionMode`. */
 	permissionController?: PermissionController;
 	/**
+	 * Specialists the host runs in its own process (a PDF editor, a spreadsheet builder, …). They are offered to
+	 * the model through one `subagent` tool (pi's subagent contract: single / parallel `tasks` / `chain`) and a
+	 * `## Subagents` prompt section, both stable across turns. Subagents with `mutatesFiles` are blocked in
+	 * `readonly` mode. None by default: the prompt and tools stay as they are. See {@link SubagentDefinition}.
+	 */
+	subagents?: readonly SubagentDefinition[];
+	/**
 	 * Initial route mode for the agent: `auto` (default, Jev chooses the route) or an explicit
 	 * branch (`local`, `organize`, `extra`, `config`) that skips Jev's Turn-1 branch classification.
 	 * In interactive TUI sessions, `Ctrl+P` and `/mode` switch this live.
@@ -1208,6 +1223,9 @@ export class AutoRAGAgent {
 	/** Mode and grants of the file-change approval gate; shared by every pi session this agent creates. */
 	private readonly permissions: PermissionController;
 	private readonly permissionGate: ExtensionFactory;
+	/** Host subagents, sorted by name; empty when the host registers none. */
+	private readonly subagents: readonly SubagentDefinition[];
+	private readonly subagentExtension: ExtensionFactory;
 	/** Route mode (`auto` or explicit branch); shared by interactive TUI controls and queries. */
 	private readonly routeModes: RouteModeController;
 	private readonly routeModeControls: ExtensionFactory;
@@ -1513,8 +1531,11 @@ export class AutoRAGAgent {
 		this.selfConfig = options.selfConfig;
 		this.organizeSkillPath = options.organizeSkillPath;
 		this.permissions = options.permissionController ?? new PermissionController(options.permissionMode ?? "full");
+		this.subagents = normalizeSubagents(options.subagents);
+		this.subagentExtension = createSubagentExtension(this.subagents);
 		this.permissionGate = createPermissionGate({
 			controller: this.permissions,
+			mutatingSubagents: mutatingSubagentNames(this.subagents),
 			// The self-configuration turn edits AutoRAG's own config at the user's request.
 			...(this.selfConfig === undefined ? {} : { trustedPaths: [resolve(this.selfConfig.configPath)] }),
 		});
@@ -1594,6 +1615,7 @@ export class AutoRAGAgent {
 			JEV_TOOL_NAME,
 			WEB_SEARCH_TOOL_NAME,
 			WEB_FETCH_TOOL_NAME,
+			SUBAGENT_TOOL_NAME,
 		]);
 		const droppedCallerToolNames: string[] = [];
 		const callerTools = (options.tools ?? []).filter((tool) => {
@@ -1635,8 +1657,14 @@ export class AutoRAGAgent {
 		this.tools = tools;
 		// pi registers the jev tool from its extension; AutoRAG still lists the
 		// name so the prompt advertises it and reserved-name checks cover it.
-		const toolNames = [...PI_BUILTIN_TOOL_NAMES, ...tools.map((tool) => tool.name), JEV_TOOL_NAME];
+		const toolNames = [
+			...PI_BUILTIN_TOOL_NAMES,
+			...tools.map((tool) => tool.name),
+			JEV_TOOL_NAME,
+			...(this.subagents.length > 0 ? [SUBAGENT_TOOL_NAME] : []),
+		];
 		this.baseSystemPromptConfig = {
+			...(this.subagents.length > 0 ? { subagentsSection: buildSubagentsPrompt(this.subagents) } : {}),
 			toolNames,
 			modelId: options.model?.id,
 			datasourceSkills: this.datasourceAgentSkills,
@@ -2065,8 +2093,9 @@ export class AutoRAGAgent {
 				this.fastPhaseParallelExtension,
 				this.jevExtension,
 				this.cloudRelease,
+				this.subagentExtension,
 			],
-			extensionToolNames: [JEV_TOOL_NAME],
+			extensionToolNames: [JEV_TOOL_NAME, ...this.subagentToolNames()],
 		});
 		const agent = piSession.session.agent;
 		return {
@@ -2141,6 +2170,16 @@ export class AutoRAGAgent {
 				details?.results ?? [],
 			);
 		}
+	}
+
+	/** `subagent` when the host registered subagents, else nothing (pi's allow-list then keeps it out). */
+	private subagentToolNames(): readonly string[] {
+		return this.subagents.length > 0 ? [SUBAGENT_TOOL_NAME] : [];
+	}
+
+	/** The host subagents this agent offers, sorted by name. */
+	get registeredSubagents(): readonly SubagentDefinition[] {
+		return this.subagents;
 	}
 
 	private currentSystemPromptConfig(models: Partial<SystemPromptConfig> = {}): SystemPromptConfig {
@@ -2229,11 +2268,13 @@ export class AutoRAGAgent {
 						}),
 				}),
 				this.jevExtension,
+				this.subagentExtension,
 				...(telegramBridge !== undefined ? [telegramBridge] : []),
 				...(this.discordRemote ? [this.discordRemoteExtension()] : []),
 			],
 			extensionToolNames: [
 				JEV_TOOL_NAME,
+				...this.subagentToolNames(),
 				...(this.discordRemote ? DISCORD_REMOTE_TOOL_NAMES : []),
 				...(askUser ? [ASK_USER_TOOL_NAME] : []),
 			],
