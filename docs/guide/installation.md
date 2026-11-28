@@ -18,7 +18,7 @@ The fastest path is to hand a prompt to your coding agent: see [Agent skills](..
 | Bun | `>=1.2` | Optional; Bun can install and run the CLI instead of Node. |
 | Rust toolchain | optional | Only needed to auto-install Jikji from crates.io; without it, `jikji-unavailable` and Jikji discovery is skipped. |
 
-No Java is required: document parsing for HWP/HWPX/HWPML, PDF, DOCX, and XLSX/XLS runs in-process through [kordoc](https://github.com/chrisryugj/kordoc).
+No Java is required: HWP/HWPX/HWPML, PDF, and DOCX are parsed in-process by [kordoc](https://github.com/chrisryugj/kordoc), and spreadsheets (XLSX/XLS/ODS) by the built-in SheetJS reader.
 
 Check the runtime before installing:
 
