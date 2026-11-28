@@ -42,7 +42,7 @@ export async function runWatch(ctx: CommandContext): Promise<number> {
 	const stop: SignalAbort | undefined = ctx.flags.once === true ? abortOnSignal() : undefined;
 	try {
 		const config = resolveConfig({ flags: ctx.flags, cwd: ctx.cwd });
-		const agent = new AutoRAGAgent(buildAgentOptions(config));
+		const agent = new AutoRAGAgent({ ...buildAgentOptions(config), loadIdentity: false });
 		const force = ctx.flags.force === true;
 		const once = ctx.flags.once === true;
 		const flagSchedule = scheduleFromFlags(ctx);

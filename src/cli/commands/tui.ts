@@ -74,6 +74,8 @@ export async function createTuiAgent(ctx: CommandContext): Promise<AutoRAGAgent>
 	// Opt-in: the bridge opens an outbound Telegram poller once `/telegram-connect` runs.
 	if (ctx.flags.telegram === true) options.telegram = true;
 	if (ctx.flags.discord === true) options.discordRemote = true;
+	// Unlike the other bridges, WhatsApp is a Pi extension and has no dedicated Agent option.
+	if (ctx.flags.whatsapp === true) options.loadIdentity = false;
 	const thinking = parseThinkingFlags(ctx.flags);
 	if (thinking !== undefined) options.thinking = thinking;
 	const routeMode = parseRouteModeFlag(ctx.flags);

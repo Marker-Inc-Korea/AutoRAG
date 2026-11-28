@@ -24,6 +24,7 @@ export interface SystemPromptConfig {
 	jikjiIndexingEnabled?: boolean;
 	datasourceSkills?: readonly DatasourceAgentSkill[];
 	retrievedContentGuard?: boolean;
+	identityText?: string;
 }
 
 function toolAvailable(config: SystemPromptConfig, name: string): boolean {
@@ -45,6 +46,12 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 			`Your goal is to deliver accurate, source-grounded answers from the user's records and to safely carry out user-requested file, conversion, automation, or configuration tasks. Each turn's prompt specifies the immediate objective and any turn-specific constraints. Follow-up messages continue the same conversation: reuse earlier findings and evidence ids when they settle the question, and search again when they do not.\n\n` +
 			`End every turn with your final response as plain text and no tool call (progress is surfaced automatically from each tool call's \`i\` parameter, so do not write separate progress notes before calling tools).`,
 	);
+
+	if (config.identityText) {
+		sections.push(
+			`## User Identity\n\nUser-maintained background from IDENTITY.md, for interpreting the user's context and preferences:\n\n${config.identityText}`,
+		);
+	}
 
 	if (config.toolNames.length === 0) {
 		sections.push(

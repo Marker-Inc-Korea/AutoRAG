@@ -21,7 +21,7 @@ export async function runRefresh(ctx: CommandContext): Promise<number> {
 	const stop = abortOnSignal();
 	try {
 		const config = resolveConfig({ flags: ctx.flags, cwd: ctx.cwd });
-		const agent = new AutoRAGAgent(buildAgentOptions(config));
+		const agent = new AutoRAGAgent({ ...buildAgentOptions(config), loadIdentity: false });
 		const methods = parseMethodFlag(ctx.flags.method);
 		const options = {
 			...(methods ? { methods } : {}),

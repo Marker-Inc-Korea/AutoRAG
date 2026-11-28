@@ -102,7 +102,7 @@ export async function runIndex(ctx: CommandContext): Promise<number> {
 	const stop = abortOnSignal();
 	let rebuilt: AutoRAGRefreshResult;
 	try {
-		const agent = new AutoRAGAgent(buildAgentOptions(config));
+		const agent = new AutoRAGAgent({ ...buildAgentOptions(config), loadIdentity: false });
 		rebuilt = await agent.refresh(true, {
 			...(refreshMethods ? { methods: refreshMethods } : {}),
 			signal: stop.signal,

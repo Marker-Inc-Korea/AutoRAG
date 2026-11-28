@@ -35,6 +35,7 @@ export const SECTIONS: readonly Section[] = [
 					{ text: "Installation", link: "/guide/installation" },
 					{ text: "Quickstart", link: "/guide/quickstart" },
 					{ text: "Models and providers", link: "/guide/models" },
+					{ text: "Personal context with IDENTITY.md", link: "/guide/identity" },
 					{ text: "Troubleshooting", link: "/guide/troubleshooting" },
 				],
 			},
