@@ -155,6 +155,26 @@ The repository root includes a `Makefile` for AutoRAG 2.0 validation:
 - `make lint`, `make typecheck`, `make build` — run individual checks.
 - `make ci` — run the normal local lint, typecheck, complete test, and build sequence.
 
+## Test rules (binding)
+
+Assert only what a machine consumes. Never assert that a sentence exists. This binds authors and
+reviewers alike: a pull request that adds a prose assertion is sent back, not merged.
+
+| Allowed (machine-consumed) | Forbidden (prose) |
+|---|---|
+| A routing decision the code branches on | Any sentence, phrase, or paragraph of a prompt, skill, README, or doc |
+| A dispatcher token: tool name, tag (`<agent-identity>`), section marker, CLI command or flag, diagnostic code | A snapshot of rendered prompt, skill, or README prose |
+| Parsed frontmatter fields (`name:`, `description:`) and other YAML/JSON structure, including a routing-bearing fragment of a `description` that a skill router dispatches on | `toContain` / `toMatch` checks of documentation wording |
+| Conditional behavior the code enforces (skill loaded → tool present; `verbose=false` → directive absent) | A `not.toContain("<old wording>")` guard against a sentence that no longer exists |
+| Values that flow through a pipeline: fixture content a retrieval method returns, scope paths, config defaults | Asserting how a doc explains a feature instead of asserting the feature |
+
+- **No machine consumer, no test.** If nothing parses, routes on, or executes the text, write no test
+  for it and say so in the pull request.
+- **A pure prose change ships with no new test** and needs no test change: rewording a prompt, skill,
+  README, or doc must not break a test.
+- **Guard the behavior, not its description.** To keep a documented default honest, assert the code
+  (the constant, the normalized config, the CLI's JSON output), not the sentence that describes it.
+
 ## Fixed live-E2E environment (the supported procedure)
 
 Use the latest checkout's explicit, clone-local environment. Each clone owns its
