@@ -14,16 +14,18 @@ import { normalizeVirtualPath } from "../filesystem/source-paths.ts";
 import { renameWithRetry } from "../mirror/atomic-write.ts";
 import { loadMirrorIndex } from "../mirror/index-store.ts";
 import { parsedVisualOutputPath } from "../mirror/paths.ts";
+import { isStandaloneImagePath } from "../parser/image-metadata.ts";
 import {
 	MINSYNC_VISUAL_SUFFIX,
 	minSyncDocumentPath,
+	minSyncImageDocumentPath,
 	minSyncVisualDocumentPath,
 	minSyncWorkspaceRoot,
 } from "./paths.ts";
 
 const NS_PER_MS = 1_000_000;
 
-export type MinSyncMirrorKind = "text" | "visual";
+export type MinSyncMirrorKind = "text" | "visual" | "image";
 
 export interface MinSyncWorkspaceEntry {
 	readonly virtualPath: string;
@@ -59,6 +61,8 @@ interface MinSyncStagingEntry {
 	readonly updatedAt: string;
 	readonly visualOutputPath?: string;
 	readonly visualStamp?: string;
+	readonly imageSourcePath?: string;
+	readonly imageStamp?: string;
 }
 
 interface MinSyncStagingState {
@@ -74,7 +78,15 @@ function fileStamp(path: string): string | undefined {
 
 export function syncMinSyncWorkspace(
 	root: string,
-	options: { readonly workspacePath?: string; readonly minSyncBinaryPath?: string } = {},
+	options: {
+		readonly workspacePath?: string;
+		readonly minSyncBinaryPath?: string;
+		/**
+		 * When true (e.g., `native-multimodal:google/embeddinggemma-2`), stage raw standalone image files
+		 * alongside their parsed mirrors so MinSync embeds image pixels directly into the dense vector space.
+		 */
+		readonly stageRawImages?: boolean;
+	} = {},
 ): MinSyncWorkspaceSyncResult {
 	const workspacePath = options.workspacePath ?? minSyncWorkspaceRoot(root);
 	const filesRoot = join(workspacePath, "files");
@@ -107,32 +119,45 @@ export function syncMinSyncWorkspace(
 		const mirrorEntry = index.entries[entry.virtualPath];
 		if (mirrorEntry === undefined) continue;
 		const previousEntry = previousState?.entries[entry.virtualPath];
-		let unchanged: boolean;
-		try {
-			unchanged =
-				previousEntry?.outputPath === mirrorEntry.outputPath &&
-				previousEntry.updatedAt === mirrorEntry.updatedAt &&
-				isRegularFile(entry.minSyncPath);
-		} catch (error) {
-			if (!isPerDocumentStagingError(error)) throw error;
-			stagingFailed.push(entry.virtualPath);
-			continue;
-		}
-		if (!unchanged) {
+
+		const visualOutputPath = parsedVisualOutputPath(root, entry.virtualPath);
+		const visualStamp = fileStamp(visualOutputPath);
+		const imageStamp =
+			options.stageRawImages === true && isStandaloneImagePath(entry.virtualPath)
+				? fileStamp(entry.sourcePath)
+				: undefined;
+		// When a standalone image is tracked via ImageMetadataParser and has either direct multimodal pixel
+		// staging (`imageStamp`) or a Stage-2 OCR/VLM mirror (`visualStamp`), omit the boilerplate metadata `.md`
+		// stub from MinSync so boilerplate tokens ("Format: PNG, Dimensions: ...") never pollute dense or SPLADE RRF.
+		const skipMetadataStub =
+			mirrorEntry.parserName === "image-metadata" && (imageStamp !== undefined || visualStamp !== undefined);
+
+		if (!skipMetadataStub) {
+			let unchanged: boolean;
 			try {
-				ensureManagedDirectory(filesRoot, dirname(entry.minSyncPath));
-				copyFileAtomically(entry.parsedOutputPath, entry.minSyncPath);
+				unchanged =
+					previousEntry?.outputPath === mirrorEntry.outputPath &&
+					previousEntry.updatedAt === mirrorEntry.updatedAt &&
+					isRegularFile(entry.minSyncPath);
 			} catch (error) {
 				if (!isPerDocumentStagingError(error)) throw error;
 				stagingFailed.push(entry.virtualPath);
 				continue;
 			}
+			if (!unchanged) {
+				try {
+					ensureManagedDirectory(filesRoot, dirname(entry.minSyncPath));
+					copyFileAtomically(entry.parsedOutputPath, entry.minSyncPath);
+				} catch (error) {
+					if (!isPerDocumentStagingError(error)) throw error;
+					stagingFailed.push(entry.virtualPath);
+					continue;
+				}
+			}
+			stagedEntries.push(entry);
+			desiredPaths.add(entry.minSyncPath);
 		}
-		stagedEntries.push(entry);
-		desiredPaths.add(entry.minSyncPath);
 
-		const visualOutputPath = parsedVisualOutputPath(root, entry.virtualPath);
-		const visualStamp = fileStamp(visualOutputPath);
 		let visualStaged = false;
 		if (visualStamp !== undefined) {
 			const visualMinSyncPath = minSyncVisualDocumentPath(workspacePath, entry.virtualPath);
@@ -161,10 +186,39 @@ export function syncMinSyncWorkspace(
 			}
 		}
 
+		let imageStaged = false;
+		if (imageStamp !== undefined) {
+			const imageMinSyncPath = minSyncImageDocumentPath(workspacePath, entry.virtualPath);
+			try {
+				const imageUnchanged =
+					previousEntry?.imageSourcePath === entry.sourcePath &&
+					previousEntry.imageStamp === imageStamp &&
+					isRegularFile(imageMinSyncPath);
+				if (!imageUnchanged) {
+					ensureManagedDirectory(filesRoot, dirname(imageMinSyncPath));
+					copyFileAtomically(entry.sourcePath, imageMinSyncPath);
+				}
+				stagedEntries.push({
+					virtualPath: entry.virtualPath,
+					sourcePath: entry.sourcePath,
+					parsedOutputPath: entry.parsedOutputPath,
+					minSyncPath: imageMinSyncPath,
+					sourceMtimeMs: entry.sourceMtimeMs,
+					mirrorKind: "image",
+				});
+				desiredPaths.add(imageMinSyncPath);
+				imageStaged = true;
+			} catch (error) {
+				if (!isPerDocumentStagingError(error)) throw error;
+				stagingFailed.push(entry.virtualPath);
+			}
+		}
+
 		currentState[entry.virtualPath] = {
 			outputPath: mirrorEntry.outputPath,
 			updatedAt: mirrorEntry.updatedAt,
 			...(visualStaged && visualStamp !== undefined ? { visualOutputPath, visualStamp } : {}),
+			...(imageStaged && imageStamp !== undefined ? { imageSourcePath: entry.sourcePath, imageStamp } : {}),
 		};
 	}
 
@@ -311,6 +365,20 @@ export function buildMinSyncPathMap(
 			byPath.set(visualOutputPath, mappedVisual);
 			byPath.set(visualMinSyncPath, mappedVisual);
 			byPath.set(`files/${entry.virtualPath.replace(/^\/+/, "")}${MINSYNC_VISUAL_SUFFIX}`, mappedVisual);
+		}
+
+		if (isStandaloneImagePath(entry.virtualPath)) {
+			const imageMinSyncPath = minSyncImageDocumentPath(workspacePath, entry.virtualPath);
+			const mappedImage: MinSyncWorkspaceEntry = {
+				virtualPath: entry.virtualPath,
+				sourcePath: entry.sourcePath,
+				parsedOutputPath: entry.outputPath,
+				minSyncPath: imageMinSyncPath,
+				sourceMtimeMs: mapped.sourceMtimeMs,
+				mirrorKind: "image",
+			};
+			byPath.set(imageMinSyncPath, mappedImage);
+			byPath.set(`files/${entry.virtualPath.replace(/^\/+/, "")}`, mappedImage);
 		}
 	}
 	return byPath;

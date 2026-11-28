@@ -20,6 +20,7 @@ export const ISOLATED_PARSER_NAMES: ReadonlySet<string> = new Set(["kordoc", "sp
 export interface WorkerParserOptions {
 	readonly languages?: DefaultParserRegistryOptions["languages"];
 	readonly ocr?: DefaultParserRegistryOptions["ocr"];
+	readonly images?: DefaultParserRegistryOptions["images"];
 	readonly kordoc?: { readonly ocr?: boolean | "force" };
 }
 
@@ -60,6 +61,7 @@ export function workerParserOptions(options: DefaultParserRegistryOptions): Work
 	return {
 		...(options.languages === undefined ? {} : { languages: options.languages }),
 		...(options.ocr === undefined ? {} : { ocr: options.ocr }),
+		...(options.images === undefined ? {} : { images: options.images }),
 		...(kordoc?.ocr === undefined ? {} : { kordoc: { ocr: kordoc.ocr } }),
 	};
 }

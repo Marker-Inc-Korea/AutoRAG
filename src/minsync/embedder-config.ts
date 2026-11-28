@@ -22,6 +22,10 @@ export const DEFAULT_MINSYNC_EMBEDDER_CONFIG: MinSyncEmbedderConfig = {
 	dimension: DEFAULT_MINSYNC_EMBEDDER_DIMENSION,
 };
 
+/** Local multimodal (text + image) EmbeddingGemma 2 id (768 dimensions). */
+export const MULTIMODAL_EMBEDDINGGEMMA2_ID = "native-multimodal:google/embeddinggemma-2";
+export const MULTIMODAL_EMBEDDINGGEMMA2_DIMENSION = 768;
+
 /**
  * `minSync.embedder.id` for a workspace without dense vectors (SPLADE + BM25, or BM25-only when
  * `minSync.sparse.id` is also `"none"`).
@@ -45,6 +49,30 @@ export const SUPPORTED_MINSYNC_BM25_LANGUAGES = ["multilingual", "simple", "ko",
 /** True when the configured embedder disables dense vectors (`embedder.id === "none"`). */
 export function isSparseOnlyEmbedder(embedder: MinSyncEmbedderConfig | undefined): boolean {
 	return embedder?.id === SPARSE_ONLY_EMBEDDER_ID;
+}
+
+/** True when the configured embedder runs natively via im-not-llm (`native:` or `native-multimodal:`). */
+export function isNativeEmbedderId(id: string | undefined): boolean {
+	return id !== undefined && (id.startsWith("native:") || id.startsWith("native-multimodal:"));
+}
+
+/** True when the configured embedder supports direct multimodal image embeddings (`native-multimodal:`). */
+export function isMultimodalEmbedder(embedder: MinSyncEmbedderConfig | undefined): boolean {
+	return embedder?.baseUrl === undefined && embedder?.id?.startsWith("native-multimodal:") === true;
+}
+
+/** Strip `native:` / `native-multimodal:` from a native embedder id. */
+export function stripNativeEmbedderPrefix(id: string): string {
+	if (id.startsWith("native-multimodal:")) return id.slice("native-multimodal:".length);
+	if (id.startsWith("native:")) return id.slice("native:".length);
+	return id;
+}
+
+/** Default output dimension for well-known native embedder ids. */
+export function defaultNativeEmbedderDimension(id: string): number {
+	const model = stripNativeEmbedderPrefix(id).toLowerCase();
+	if (model === "google/embeddinggemma-2") return MULTIMODAL_EMBEDDINGGEMMA2_DIMENSION;
+	return DEFAULT_MINSYNC_EMBEDDER_DIMENSION;
 }
 
 /** True when SPLADE sparse encoding is explicitly disabled (`sparse.id === "none"`). */
@@ -210,7 +238,7 @@ export function rewriteEmbedderConfig(
 			: {};
 	chunker.options = chunkerOptions;
 
-	if (embedder.id?.startsWith("native:")) {
+	if (isNativeEmbedderId(embedder.id)) {
 		delete embedderSection.base_url;
 		delete embedderSection.query_prefix;
 		delete embedderSection.passage_prefix;

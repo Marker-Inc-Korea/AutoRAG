@@ -1224,6 +1224,32 @@ export function createParsedMirrorToolsExtension(options: ParsedMirrorToolsExten
 						}
 						return mirrorResult;
 					}
+					// Local standalone image with a Stage-2 visual/OCR mirror: read the real image pixels via pi's native
+					// reader AND append the OCR/VLM mirror excerpt with an [eN] citation id so both vision and text reasoning work.
+					if (mapping.visualMirrorPath !== undefined && isRegularFile(mapping.visualMirrorPath)) {
+						const imageResult = await baseRead.execute(toolCallId, params, signal, onUpdate, ctx);
+						try {
+							const visualText = readFileSync(mapping.visualMirrorPath, "utf8").trim();
+							if (visualText.length > 0) {
+								const excerpt = visualText.slice(0, 8_000);
+								const evidenceId = options.ledger?.register({
+									method: "read",
+									source: mapping.sourcePath,
+									content: excerpt,
+									lineNumber: 1,
+									lineEnd: excerpt.split("\n").length,
+								});
+								const header = `[${evidenceId !== undefined ? `${evidenceId} | ` : ""}Visual/OCR extraction of ${mapping.sourcePath}]`;
+								return {
+									...imageResult,
+									content: [...imageResult.content, { type: "text" as const, text: `${header}\n${excerpt}` }],
+								};
+							}
+						} catch {
+							// Keep native image read result when visual mirror cannot be read.
+						}
+						return imageResult;
+					}
 				}
 				return baseRead.execute(toolCallId, params, signal, onUpdate, ctx);
 			},

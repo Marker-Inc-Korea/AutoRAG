@@ -18,3 +18,9 @@ export function minSyncVisualDocumentPath(workspacePath: string, virtualPath: st
 	const safePath = virtualPath.replace(/^\/+/, "");
 	return join(workspacePath, MINSYNC_FILES_SUBDIR, `${safePath}${MINSYNC_VISUAL_SUFFIX}`);
 }
+
+/** Staged path of a raw standalone image file inside MinSync's `files/` tree (for direct multimodal embedding). */
+export function minSyncImageDocumentPath(workspacePath: string, virtualPath: string): string {
+	const safePath = virtualPath.replace(/^\/+/, "");
+	return join(workspacePath, MINSYNC_FILES_SUBDIR, safePath);
+}

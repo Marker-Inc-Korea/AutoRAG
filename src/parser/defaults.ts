@@ -2,6 +2,7 @@ import { join } from "node:path";
 import { DEFAULT_LANGUAGES, type LanguageTag } from "../language.ts";
 import { CsvParser } from "./csv.ts";
 import { EmlParser } from "./eml.ts";
+import { ImageMetadataParser } from "./image-metadata.ts";
 import { KordocParser, type KordocParserOptions } from "./kordoc.ts";
 import { BUILTIN_OCR_LANGUAGES, createTesseractOcrProvider, type OcrOptions } from "./ocr-engines.ts";
 import { PptxParser } from "./office.ts";
@@ -12,6 +13,12 @@ import { SpreadsheetParser } from "./spreadsheet.ts";
 export interface DefaultParserRegistryOptions {
 	readonly ocr?: OcrOptions;
 	readonly kordoc?: KordocParserOptions;
+	/**
+	 * Opt-in standalone image indexing (`.png`, `.jpg`, `.jpeg`, `.webp`) without eager Stage-1 OCR.
+	 * When true (and `ocr.enabled` is not true), {@link ImageMetadataParser} claims standalone images so
+	 * they enter the parsed mirror for multimodal pixel embedding and/or Stage-2 VLM/OCR enrichment.
+	 */
+	readonly images?: boolean;
 	/** Global document languages; selects the OCR engine when OCR is enabled. */
 	readonly languages?: readonly LanguageTag[];
 	/**
@@ -78,12 +85,14 @@ export function createDefaultParserRegistry(options: DefaultParserRegistryOption
 			: {}),
 	};
 
-	return new ParserRegistry([
+	const parsers = [
 		new PlainTextParser(),
 		new KordocParser(kordocOptions),
 		new SpreadsheetParser(),
 		new CsvParser(),
 		new PptxParser(),
 		new EmlParser(),
-	]);
+		...(!ocrEnabled && options.images === true ? [new ImageMetadataParser()] : []),
+	];
+	return new ParserRegistry(parsers);
 }

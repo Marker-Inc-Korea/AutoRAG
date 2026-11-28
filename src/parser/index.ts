@@ -7,6 +7,12 @@ export {
 export { EmlParser } from "./eml.ts";
 export { ParseError } from "./errors.ts";
 export {
+	ImageMetadataParser,
+	isStandaloneImagePath,
+	readImageDimensions,
+	STANDALONE_IMAGE_EXTENSIONS,
+} from "./image-metadata.ts";
+export {
 	KORDOC_EXTENSIONS,
 	type KordocOcrProvider,
 	type KordocParseFn,

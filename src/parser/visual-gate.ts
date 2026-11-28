@@ -11,13 +11,14 @@ import {
 } from "../agent/decision-backends.ts";
 import { isDazziSignedIn } from "../cloud/credential.ts";
 import { DazziJevBackend, type DazziJevBackendOptions } from "../cloud/jev-backend.ts";
+import { isStandaloneImagePath } from "./image-metadata.ts";
 import type { VisualImageMimeType } from "./page-render.ts";
 
 /** Default calibrated probability cutoff for escalating a page to `vlm` or `ocr` extraction. */
 export const DEFAULT_VISUAL_GATE_THRESHOLD = 0.6;
 
 /** Prompt revision baked into the gate fingerprint so prompt updates invalidate stale decisions. */
-const VISUAL_GATE_PROMPT_VERSION = "v2-3way";
+const VISUAL_GATE_PROMPT_VERSION = "v3-3way-images";
 
 /** Route chosen by the vision decision gate for one page. */
 export type VisualPageRoute = "vlm" | "ocr" | "plain";
@@ -113,6 +114,14 @@ const VISUAL_ROUTE_OPTIONS: Readonly<Record<VisualPageRoute, string>> = {
 	vlm: "Page contains genuinely visually rich data that OCR or plain text cannot accurately capture: charts, graphs, plots, data diagrams, flowcharts, org charts, infographics, maps, complex multi-header/merged tables or calendar grids, or meaningful color-coded/red-marked annotations. Do NOT choose vlm for decorative stock photos or illustrations without data.",
 	ocr: "Page contains primarily text (scanned document, fax, handwriting, screenshot/image of text, or form) where readable text is visibly present on the page image but is missing, empty, or severely garbled in the base parser's extracted text.",
 	plain: "Base parser's extracted text already captures the page's substantive content accurately (ordinary prose, headings, simple lists/tables, cover pages, or pages with only decorative photos/logos/headers).",
+};
+
+const IMAGE_ROUTE_INSTRUCTIONS =
+	"Choose the single best indexing route for this standalone image file so users can search it later.";
+const IMAGE_ROUTE_OPTIONS: Readonly<Record<VisualPageRoute, string>> = {
+	vlm: "Standalone image is visually rich and needs a VLM visual description for search: real-world photographs (people, places, scenes, objects, products, animals, food, events), charts, graphs, diagrams, flowcharts, infographics, architecture sketches, maps, artwork, illustrations, or UI designs where visual appearance matters beyond plain text.",
+	ocr: "Standalone image is primarily text-bearing where verbatim OCR text extraction is sufficient: desktop/mobile screenshots of text, chat/terminal/code/browser captures, scanned documents, receipts, invoices, business cards, forms, slides with plain text, or handwritten notes.",
+	plain: "Image is blank, corrupted, a tiny generic spacer/divider, or carries no meaningful visual or textual content worth indexing.",
 };
 
 /** Resolve a 3-way choice answer into a calibrated {@link VisualGateVerdict}. */
@@ -229,6 +238,12 @@ export function resolveVisualGateBackend(options: {
 }
 
 function buildStateText(input: VisualGateInput): string {
+	if (isStandaloneImagePath(input.virtualPath)) {
+		return [
+			`Standalone image file: ${basename(input.virtualPath)}`,
+			"Decide whether this image should be OCR'd (screenshots, receipts, scanned text, forms) or described by a VLM (photos, charts, diagrams, illustrations, visually rich scenes).",
+		].join("\n");
+	}
 	const text = input.extractedText?.trim() ?? "";
 	const snippet = text.length > MAX_STATE_TEXT_CHARS ? `${text.slice(0, MAX_STATE_TEXT_CHARS)}\n…(truncated)` : text;
 	return [
@@ -272,6 +287,9 @@ export function createVisualPageGate(options: VisualGateOptions = {}): VisualPag
 	return {
 		fingerprint,
 		async judge(input: VisualGateInput): Promise<VisualGateVerdict> {
+			const standaloneImage = isStandaloneImagePath(input.virtualPath);
+			const instructions = standaloneImage ? IMAGE_ROUTE_INSTRUCTIONS : VISUAL_ROUTE_INSTRUCTIONS;
+			const routeOptions = standaloneImage ? IMAGE_ROUTE_OPTIONS : VISUAL_ROUTE_OPTIONS;
 			const stateText = buildStateText(input);
 			const base64 = toBase64(input.image.data);
 
@@ -291,8 +309,8 @@ export function createVisualPageGate(options: VisualGateOptions = {}): VisualPag
 						{
 							id: VISUAL_ROUTE_QUESTION_ID,
 							type: "choice",
-							question: VISUAL_ROUTE_INSTRUCTIONS,
-							options: { ...VISUAL_ROUTE_OPTIONS },
+							question: instructions,
+							options: { ...routeOptions },
 						},
 					],
 				});
@@ -336,8 +354,8 @@ export function createVisualPageGate(options: VisualGateOptions = {}): VisualPag
 					questions: {
 						[VISUAL_ROUTE_QUESTION_ID]: {
 							type: "choice",
-							instructions: VISUAL_ROUTE_INSTRUCTIONS,
-							criteria: { ...VISUAL_ROUTE_OPTIONS },
+							instructions,
+							criteria: { ...routeOptions },
 						},
 					},
 				},

@@ -14,19 +14,25 @@ export {
 	DEFAULT_MINSYNC_EMBEDDER_DIMENSION,
 	DEFAULT_MINSYNC_EMBEDDER_ID,
 	DEFAULT_MINSYNC_SPARSE_ID,
+	defaultNativeEmbedderDimension,
 	isBm25Enabled,
 	isBm25OnlyConfig,
+	isMultimodalEmbedder,
+	isNativeEmbedderId,
 	isSparseDisabled,
 	isSparseOnlyEmbedder,
 	MINSYNC_CONFIG_DIR,
 	MINSYNC_CONFIG_FILE,
 	type MinSyncEmbeddingIdentity,
+	MULTIMODAL_EMBEDDINGGEMMA2_DIMENSION,
+	MULTIMODAL_EMBEDDINGGEMMA2_ID,
 	minSyncConfigPath,
 	minSyncEmbeddingIdentityPath,
 	NONE_SPARSE_ID,
 	rewriteEmbedderConfig,
 	SPARSE_ONLY_EMBEDDER_ID,
 	SUPPORTED_MINSYNC_BM25_LANGUAGES,
+	stripNativeEmbedderPrefix,
 } from "./embedder-config.ts";
 export { MinSyncRequiredError } from "./errors.ts";
 export {
@@ -70,7 +76,15 @@ export {
 	MinSyncVectorMethod,
 	type MinSyncVectorMethodOptions,
 } from "./method.ts";
-export { MINSYNC_FILES_SUBDIR, MINSYNC_SUBDIR, minSyncDocumentPath, minSyncWorkspaceRoot } from "./paths.ts";
+export {
+	MINSYNC_FILES_SUBDIR,
+	MINSYNC_SUBDIR,
+	MINSYNC_VISUAL_SUFFIX,
+	minSyncDocumentPath,
+	minSyncImageDocumentPath,
+	minSyncVisualDocumentPath,
+	minSyncWorkspaceRoot,
+} from "./paths.ts";
 export type {
 	MinSyncBm25Config,
 	MinSyncChunkerConfig,
