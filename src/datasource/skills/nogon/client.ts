@@ -7,6 +7,7 @@
  */
 
 import { createHash } from "node:crypto";
+import { removeQueryStopwords } from "../../../retrieval/stopwords.ts";
 import { asArray, asNumber, asRecord, asString } from "../../http.ts";
 
 /** Nogon `document.DocType`: 0 web page, 1 watched local file, 2 remote file snapshot. */
@@ -253,7 +254,10 @@ export class NogonClient {
  *
  * Nogon ANDs bare terms, so a natural-language question would match almost nothing. Plain words become one
  * alternation group `(a|b|c)`, while uppercase `AND`/`OR`/`NOT` tokens in natural-language questions are stripped by
- * {@link normalizeTerm} so Nogon 0.21+'s boolean operator parser never rejects casual English phrasing. Nogon's own
+ * {@link normalizeTerm} so Nogon 0.21+'s boolean operator parser never rejects casual English phrasing. Stopwords
+ * (`the`, `where`, `의`, `について`, ... in every language AutoRAG supports) are dropped first, see
+ * {@link removeQueryStopwords}: nogon ranks with TF-IDF and weights a title match twelve times a body match, so a
+ * function word in a page title would otherwise outrank the rare word in the body. Nogon's own
  * syntax (quoted phrases, `field:value`, wildcards, negation) passes through untouched, and a query using any of it is
  * sent with its plain words ANDed, exactly as written. A `sort:` directive is hoisted out of the group because Nogon
  * only honours it at the top level.
@@ -268,7 +272,10 @@ export function buildWebQuery(question: string, domain?: string): string | undef
 	}
 	const terms = words.map(normalizeTerm).filter((term): term is NormalizedTerm => term !== undefined);
 	const structured = terms.some((term) => term.operator);
-	const flat = terms.flatMap((term) => term.parts).slice(0, MAX_TERMS);
+	const termWords = terms.flatMap((term) => term.parts);
+	// Function words match nearly every page and outrank the one rare term, so a plain-word question loses them first
+	// and only then hits the term limit. A query written in Nogon syntax is sent as written, stopwords included.
+	const flat = (structured ? termWords : removeQueryStopwords(termWords)).slice(0, MAX_TERMS);
 	let group: string;
 	if (structured) group = flat.join(" ");
 	else group = flat.join("|");
