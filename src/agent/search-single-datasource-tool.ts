@@ -3,6 +3,7 @@ import { Type } from "typebox";
 import { formatAttachmentRoots } from "../datasource/attachments.ts";
 import { datasourceSearchToolName } from "../datasource/tool-naming.ts";
 import type { DatasourceAttachmentRoot, SearchFilterSpec } from "../datasource/types.ts";
+import { resultContextSuffix } from "../retrieval/chunk-location.ts";
 import type { RetrievalDiagnostic, RetrievalResult, RetrievalWindowReport } from "../retrieval/types.ts";
 import { EvidenceLedger } from "./evidence-ledger.ts";
 import { type RecordCutToolOptions, registerAndRender } from "./result-render.ts";
@@ -238,7 +239,7 @@ function createTool(
 				`search_datasource_${spec.datasourceId}`,
 				query,
 				results,
-				(result) => `${result.source} score=${result.score.toFixed(4)}`,
+				(result) => `${result.source} score=${result.score.toFixed(4)}${resultContextSuffix(result.metadata)}`,
 				options.recordCut,
 			);
 			return {
@@ -293,7 +294,7 @@ export function formatDatasourceResults(
 ): string {
 	const rows = results.map((result, index) => {
 		const line = result.content.replace(/\s+/gu, " ");
-		return `[${evidenceIds[index]}] ${result.source} score=${result.score.toFixed(4)}\n${line}`;
+		return `[${evidenceIds[index]}] ${result.source} score=${result.score.toFixed(4)}${resultContextSuffix(result.metadata)}\n${line}`;
 	});
 	return datasourceResultsText(rows.join("\n\n"), results.length, diagnostics);
 }

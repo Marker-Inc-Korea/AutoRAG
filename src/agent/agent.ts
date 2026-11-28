@@ -123,7 +123,7 @@ import {
 } from "../mirror/sync.ts";
 import { AutoRAGRunLogger } from "../observability/run-log.ts";
 import { type DefaultParserRegistryOptions, resolveParserOptions } from "../parser/index.ts";
-import { locationSuffix } from "../retrieval/chunk-location.ts";
+import { resultContextSuffix } from "../retrieval/chunk-location.ts";
 import { RetrievalEngine } from "../retrieval/engine.ts";
 import { ParallelRetriever, ResultMerger } from "../retrieval/merger.ts";
 import { type RecordCut, type RecordCutOptions, recordCutFromOptions } from "../retrieval/record-cut.ts";
@@ -3990,7 +3990,7 @@ export class AutoRAGAgent {
 				`MinSync semantic initial candidates:\n${shownMinSync
 					.map(
 						(result) =>
-							`[${idFor(result)}] ${result.source}${locationSuffix(result.metadata)}\n${result.content.replace(/\s+/gu, " ")}`,
+							`[${idFor(result)}] ${result.source}${resultContextSuffix(result.metadata)}\n${result.content.replace(/\s+/gu, " ")}`,
 					)
 					.join("\n")}`,
 			);
@@ -3998,7 +3998,10 @@ export class AutoRAGAgent {
 		if (shownDatasource.length > 0) {
 			sections.push(
 				`Datasource initial candidates:\n${shownDatasource
-					.map((result) => `[${idFor(result)}] ${result.source}\n${result.content.replace(/\s+/gu, " ")}`)
+					.map(
+						(result) =>
+							`[${idFor(result)}] ${result.source}${resultContextSuffix(result.metadata)}\n${result.content.replace(/\s+/gu, " ")}`,
+					)
 					.join("\n")}`,
 			);
 		}
@@ -5721,7 +5724,7 @@ function interleave<T>(lists: readonly (readonly T[])[]): T[] {
 function formatRerankedBaseline(results: readonly RetrievalResult[], evidenceIds: readonly string[]): string {
 	const lines = results.map(
 		(result, index) =>
-			`[${evidenceIds[index]}] ${result.source}${locationSuffix(result.metadata)}\n${result.content.replace(/\s+/gu, " ")}`,
+			`[${evidenceIds[index]}] ${result.source}${resultContextSuffix(result.metadata)}\n${result.content.replace(/\s+/gu, " ")}`,
 	);
 	return `Reranked initial candidates (ordered by relevance to the query; cite evidence by its [eN] id):\n${lines.join("\n")}`;
 }
