@@ -17,10 +17,18 @@ import type {
 import { isMinSyncBinaryMissing, resolveMinSyncBinary } from "./binary.ts";
 import type { MinSyncQueryMode } from "./client.ts";
 import { MinSyncClient } from "./client.ts";
-import { isSparseOnlyEmbedder } from "./embedder-config.ts";
+import { isBm25Enabled, isBm25OnlyConfig, isSparseDisabled, isSparseOnlyEmbedder } from "./embedder-config.ts";
+import { resolveMinSyncRetrieverPlan } from "./hardware.ts";
 import type { EnsureMinSyncBinaryOptions } from "./installer.ts";
 import { minSyncWorkspaceRoot } from "./paths.ts";
-import type { MinSyncEmbedderConfig, MinSyncQueryHit, MinSyncSyncProgress, MinSyncSyncResult } from "./types.ts";
+import type {
+	MinSyncBm25Config,
+	MinSyncEmbedderConfig,
+	MinSyncQueryHit,
+	MinSyncSparseConfig,
+	MinSyncSyncProgress,
+	MinSyncSyncResult,
+} from "./types.ts";
 import { buildMinSyncPathMap, syncMinSyncWorkspace } from "./workspace.ts";
 import { beginFirstBuild, type FirstBuildSession, runWorkspaceQuery, runWorkspaceSync } from "./workspace-lock.ts";
 
@@ -32,6 +40,8 @@ export interface MinSyncVectorMethodOptions {
 	readonly installer?: Omit<EnsureMinSyncBinaryOptions, "root">;
 	readonly autoInstall?: boolean;
 	readonly embedder?: MinSyncEmbedderConfig;
+	readonly sparse?: MinSyncSparseConfig;
+	readonly bm25?: MinSyncBm25Config;
 	readonly maxChunkSize?: number;
 	readonly mode?: MinSyncQueryMode;
 	/** Default `topK` used when the caller omits one. Default 50. */
@@ -59,6 +69,8 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 	private readonly installer: Omit<EnsureMinSyncBinaryOptions, "root"> | undefined;
 	private readonly autoInstall: boolean;
 	private readonly embedder: MinSyncEmbedderConfig | undefined;
+	private readonly sparse: MinSyncSparseConfig | undefined;
+	private readonly bm25: MinSyncBm25Config | undefined;
 	private readonly maxChunkSize: number | undefined;
 	private readonly mode: MinSyncQueryMode;
 	private readonly defaultTopK: number;
@@ -71,13 +83,28 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 		this.workspacePath = options.workspacePath ?? minSyncWorkspaceRoot(options.root);
 		this.installer = options.installer;
 		this.autoInstall = options.autoInstall ?? true;
-		this.embedder = options.embedder;
+		const resolved = resolveMinSyncRetrieverPlan({
+			...(options.embedder === undefined ? {} : { embedder: options.embedder }),
+			...(options.sparse === undefined ? {} : { sparse: options.sparse }),
+			...(options.bm25 === undefined ? {} : { bm25: options.bm25 }),
+		});
+		this.embedder = resolved.embedder;
+		this.sparse = resolved.sparse;
+		this.bm25 = options.bm25 === undefined ? undefined : resolved.bm25;
 		this.maxChunkSize = options.maxChunkSize;
 		this.defaultTopK = options.defaultTopK ?? 50;
 		this.scopedTopK = options.scopedTopK ?? 100;
 		this.recordCut = options.recordCut;
-		// A sparse-only index has no dense vectors, so MinSync answers only `--mode sparse` for it.
-		this.mode = isSparseOnlyEmbedder(options.embedder) ? "sparse" : (options.mode ?? "vector");
+		// Pick the safest active query mode when dense and/or SPLADE are disabled.
+		if (isBm25OnlyConfig(this.embedder, this.sparse)) {
+			this.mode = "bm25";
+		} else if (isSparseOnlyEmbedder(this.embedder)) {
+			this.mode = options.mode === "bm25" ? "bm25" : "sparse";
+		} else if (options.mode === "hybrid" && isSparseDisabled(this.sparse)) {
+			this.mode = isBm25Enabled(this.bm25) ? "bm25" : "vector";
+		} else {
+			this.mode = options.mode ?? "vector";
+		}
 	}
 
 	describe(): RetrievalMethodDescriptor {
@@ -85,14 +112,20 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 			name: "minsync",
 			type: this.mode,
 			description:
-				this.mode === "sparse"
-					? "MinSync-backed SPLADE sparse retrieval over parsed markdown mirrors"
-					: this.mode === "hybrid"
-						? "MinSync-backed hybrid retrieval over parsed markdown mirrors"
-						: "MinSync-backed semantic vector retrieval over parsed markdown mirrors",
+				this.mode === "bm25"
+					? "MinSync-backed multilingual Okapi BM25 retrieval over parsed markdown mirrors"
+					: this.mode === "sparse"
+						? "MinSync-backed SPLADE sparse retrieval over parsed markdown mirrors"
+						: this.mode === "hybrid"
+							? "MinSync-backed hybrid retrieval over parsed markdown mirrors"
+							: "MinSync-backed semantic vector retrieval over parsed markdown mirrors",
 			status: "active",
 			capabilities: [
-				...(this.mode === "sparse" ? ["lexical"] : this.mode === "hybrid" ? ["semantic", "lexical"] : ["semantic"]),
+				...(this.mode === "sparse" || this.mode === "bm25"
+					? ["lexical"]
+					: this.mode === "hybrid"
+						? ["semantic", "lexical"]
+						: ["semantic"]),
 				"incremental",
 				"parsed-mirrors",
 				"virtual-paths",
@@ -140,6 +173,8 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 			binaryPath,
 			workspacePath: this.workspacePath,
 			embedder: this.embedder,
+			sparse: this.sparse,
+			bm25: this.bm25,
 			maxChunkSize: this.maxChunkSize,
 		});
 		return withStaging(await client.sync(force, signal, onProgress));
@@ -187,6 +222,8 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 			binaryPath,
 			workspacePath: this.workspacePath,
 			embedder: this.embedder,
+			sparse: this.sparse,
+			bm25: this.bm25,
 			maxChunkSize: this.maxChunkSize,
 		});
 		let hits: readonly MinSyncQueryHit[];
@@ -194,12 +231,13 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 			hits = await client.query(query, queryK, this.mode, options.signal);
 		} catch (error) {
 			if (this.mode !== "hybrid" || options.signal?.aborted) throw error;
-			hits = await client.query(query, queryK, "sparse", options.signal);
+			const fallbackMode: MinSyncQueryMode = isSparseDisabled(this.sparse) ? "bm25" : "sparse";
+			hits = await client.query(query, queryK, fallbackMode, options.signal);
 			// Hybrid is the only MinSync method searched, so a semantic half that is down (embedder
 			// unreachable, stale index) would vanish from the result unless the pipeline is told.
 			options.onFallback?.({
 				method: this.describe().name,
-				fallback: "sparse",
+				fallback: fallbackMode,
 				reason: describeRetrievalError(error),
 			});
 		}
@@ -283,15 +321,31 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 
 export class MinSyncHybridMethod extends MinSyncVectorMethod {
 	private readonly sparseOnly: boolean;
+	private readonly bm25Only: boolean;
 
 	constructor(options: MinSyncHybridMethodOptions) {
 		super({ ...options, mode: "hybrid" });
-		this.sparseOnly = isSparseOnlyEmbedder(options.embedder);
+		const resolved = resolveMinSyncRetrieverPlan({
+			...(options.embedder === undefined ? {} : { embedder: options.embedder }),
+			...(options.sparse === undefined ? {} : { sparse: options.sparse }),
+			...(options.bm25 === undefined ? {} : { bm25: options.bm25 }),
+		});
+		this.bm25Only = isBm25OnlyConfig(resolved.embedder, resolved.sparse);
+		this.sparseOnly = isSparseOnlyEmbedder(resolved.embedder) && !this.bm25Only;
 	}
 
 	override describe(): RetrievalMethodDescriptor {
-		// The registered name stays `hybrid` so tools and the skip report keep one MinSync surface; a sparse-only
-		// index ranks by SPLADE alone and says so.
+		// The registered name stays `hybrid` so tools and the skip report keep one MinSync surface; a BM25-only or
+		// sparse-only index reports its true lexical type.
+		if (this.bm25Only) {
+			return {
+				name: "hybrid",
+				type: "bm25",
+				description: "MinSync-backed multilingual Okapi BM25 retrieval over shared CDC chunks (BM25-only index)",
+				status: "active",
+				capabilities: ["lexical", "incremental", "parsed-mirrors", "virtual-paths"],
+			};
+		}
 		return this.sparseOnly
 			? {
 					name: "hybrid",

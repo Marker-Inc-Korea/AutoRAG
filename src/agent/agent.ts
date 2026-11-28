@@ -91,6 +91,9 @@ import { resolveMinSyncBinary } from "../minsync/binary.ts";
 import { unionChannelResults } from "../minsync/channel-union.ts";
 import { MinSyncRequiredError, minSyncBinaryMissingError } from "../minsync/errors.ts";
 import {
+	isBm25Enabled,
+	isBm25OnlyConfig,
+	isSparseDisabled,
 	isSparseOnlyEmbedder,
 	type MinSyncDiagnostic,
 	type MinSyncEmbedderConfig,
@@ -100,6 +103,7 @@ import {
 	type MinSyncSyncResult,
 	MinSyncVectorMethod,
 	type MinSyncVectorMethodOptions,
+	resolveMinSyncRetrieverPlan,
 } from "../minsync/index.ts";
 import { minSyncWorkspaceRoot } from "../minsync/paths.ts";
 import { MinSyncStageError } from "../minsync/stage.ts";
@@ -1155,8 +1159,10 @@ export class AutoRAGAgent {
 	private readonly rerankTopN: number | undefined;
 
 	private readonly minSyncMethod: MinSyncVectorMethod;
-	/** SPLADE channel of the fast-answer baseline; absent on a sparse-only index, where the one channel already is SPLADE. */
+	/** SPLADE channel of the fast-answer baseline; absent when SPLADE is disabled or already the primary channel. */
 	private readonly minSyncSparseMethod: MinSyncVectorMethod | undefined;
+	/** BM25 channel of the fast-answer baseline; absent when BM25 is disabled or already the primary channel. */
+	private readonly minSyncBm25Method: MinSyncVectorMethod | undefined;
 	private readonly minSyncEmbedderConfig: MinSyncEmbedderConfig | undefined;
 	private readonly minSyncBinaryPath: string | undefined;
 	private readonly jikjiClient: JikjiClient | undefined;
@@ -1357,21 +1363,33 @@ export class AutoRAGAgent {
 				detail: "The `jev` option is `false`.",
 			});
 		}
-		const minSyncDefaults = {
+		const resolvedMinSyncPlan = resolveMinSyncRetrieverPlan({
+			...(options.minSync?.embedder === undefined ? {} : { embedder: options.minSync.embedder }),
+			...(options.minSync?.sparse === undefined ? {} : { sparse: options.minSync.sparse }),
+			...(options.minSync?.bm25 === undefined ? {} : { bm25: options.minSync.bm25 }),
+		});
+		const minSyncDefaults: MinSyncVectorMethodOptions = {
 			...(options.minSync ?? { autoInstall: true }),
+			...(resolvedMinSyncPlan.embedder === undefined ? {} : { embedder: resolvedMinSyncPlan.embedder }),
+			...(resolvedMinSyncPlan.sparse === undefined ? {} : { sparse: resolvedMinSyncPlan.sparse }),
+			...(options.minSync?.bm25 === undefined ? {} : { bm25: resolvedMinSyncPlan.bm25 }),
 			root: this.workspaceProjectRoot,
 			defaultTopK: this.limits.minSyncTopK,
 			scopedTopK: this.limits.minSyncScopedQueryTopK,
 			...(this.limits.recordCut === undefined ? {} : { recordCut: this.limits.recordCut }),
 		};
-		// The vector method owns sync, readiness and the dedicated semantic tool, but is not part of the
-		// fan-out: the hybrid method already fuses SPLADE sparse and dense vectors over the same chunks and
-		// degrades to sparse by itself, so registering both would search the workspace twice and let the
-		// merger count one index as two corroborating methods.
+		const bm25Only = isBm25OnlyConfig(resolvedMinSyncPlan.embedder, resolvedMinSyncPlan.sparse);
+		const sparseOnly = isSparseOnlyEmbedder(resolvedMinSyncPlan.embedder) && !bm25Only;
+		const sparseOff = isSparseDisabled(resolvedMinSyncPlan.sparse);
+		const bm25On = isBm25Enabled(options.minSync?.bm25);
+		// Primary channel adapts to the active tier: `vector` (full), `sparse` (sparse+bm25), or `bm25` (bm25-only).
 		this.minSyncMethod = new MinSyncVectorMethod(minSyncDefaults);
-		this.minSyncSparseMethod = isSparseOnlyEmbedder(options.minSync?.embedder)
-			? undefined
-			: new MinSyncVectorMethod({ ...minSyncDefaults, mode: "sparse" });
+		this.minSyncSparseMethod =
+			sparseOnly || bm25Only || sparseOff
+				? undefined
+				: new MinSyncVectorMethod({ ...minSyncDefaults, mode: "sparse" });
+		this.minSyncBm25Method =
+			bm25Only || !bm25On ? undefined : new MinSyncVectorMethod({ ...minSyncDefaults, mode: "bm25" });
 		this.methodRegistry.register(new MinSyncHybridMethod(minSyncDefaults));
 		const registeredDatasourceIds = new Set<string>();
 		for (const skill of this.datasourceSkills) {
@@ -1423,12 +1441,12 @@ export class AutoRAGAgent {
 		this.evidenceLedger.observeResults((tool, query, results) =>
 			this.rankingRun?.tool({ surface: tool, query, results }),
 		);
-		this.minSyncEmbedderConfig = options.minSync?.embedder;
+		this.minSyncEmbedderConfig = resolvedMinSyncPlan.embedder;
 		this.minSyncBinaryPath = options.minSync?.binaryPath;
 		this.embedder =
 			options.embedder ??
 			createEmbedderFromConfig({
-				embedder: options.minSync?.embedder,
+				embedder: resolvedMinSyncPlan.embedder,
 				autoStart: options.minSync?.autoInstall !== false,
 				resolveMinSyncBinary: () =>
 					resolveMinSyncBinary({
@@ -4005,29 +4023,44 @@ export class AutoRAGAgent {
 	 */
 	private async prefetchMinSyncCandidates(searchQuery: string, options: RetrievalOptions): Promise<RetrievalResult[]> {
 		const sparse = this.reranker === undefined ? undefined : this.minSyncSparseMethod;
+		// Only run the secondary BM25 channel when a reranker is present AND the workspace index is ready
+		// (so unit tests that stub only dense+sparse without a real workspace stay unaffected).
+		const bm25 =
+			this.reranker !== undefined && this.minSyncBm25Method?.isReady() ? this.minSyncBm25Method : undefined;
+		const multiChannel = sparse !== undefined || bm25 !== undefined;
 		const run = (id: string, label: string, method: MinSyncVectorMethod): Promise<RetrievalResult[]> =>
 			this.searchProgress
 				.track(id, label, method.retrieve(searchQuery, options), { count: (found) => found.length })
 				.catch((error: unknown) => {
 					// MinSync is required: its absence fails the run, anything else is one empty source.
 					if (error instanceof MinSyncRequiredError) throw error;
-					if (sparse !== undefined) {
+					if (multiChannel) {
+						const kind = id === "minsync" ? "dense" : id === "minsync-sparse" ? "SPLADE" : "BM25";
 						this.routingDiagnostics.push({
 							code: "retrieval-method-failed",
 							severity: "warning",
-							message: `MinSync ${id === "minsync" ? "dense" : "SPLADE"} search failed and its candidates were skipped; the other channel's were used: ${describeRetrievalError(error)}`,
+							message: `MinSync ${kind} search failed and its candidates were skipped; the other channel's were used: ${describeRetrievalError(error)}`,
 							source: id,
 						});
 					}
 					return [];
 				});
-		const dense = run("minsync", "MinSync semantic search", this.minSyncMethod);
-		if (sparse === undefined) return dense;
-		const [vector, splade] = await Promise.all([dense, run("minsync-sparse", "MinSync SPLADE search", sparse)]);
-		return unionChannelResults([
-			{ channel: "vector", results: vector },
-			{ channel: "sparse", results: splade },
-		]);
+		const primary = run("minsync", "MinSync semantic search", this.minSyncMethod);
+		if (!multiChannel) return primary;
+		const channels: Array<Promise<{ readonly channel: string; readonly results: RetrievalResult[] }>> = [
+			primary.then((results) => ({ channel: "vector", results })),
+		];
+		if (sparse !== undefined) {
+			channels.push(
+				run("minsync-sparse", "MinSync SPLADE search", sparse).then((results) => ({ channel: "sparse", results })),
+			);
+		}
+		if (bm25 !== undefined) {
+			channels.push(
+				run("minsync-bm25", "MinSync BM25 search", bm25).then((results) => ({ channel: "bm25", results })),
+			);
+		}
+		return unionChannelResults(await Promise.all(channels));
 	}
 
 	/**

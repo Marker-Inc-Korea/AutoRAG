@@ -15,12 +15,16 @@ import {
 	SPARSE_ONLY_EMBEDDER_ID,
 } from "./embedder-config.ts";
 import { minSyncBinaryMissingError } from "./errors.ts";
+import { resolveMinSyncRetrieverPlan } from "./hardware.ts";
 import { ensureLocalEmbedder } from "./local-embedder.ts";
 import { type ProcessResult, spawnProcess } from "./process.ts";
 import type {
+	MinSyncBm25Config,
 	MinSyncEmbedderConfig,
 	MinSyncFileFailure,
 	MinSyncQueryHit,
+	MinSyncRetrievers,
+	MinSyncSparseConfig,
 	MinSyncSyncProgress,
 	MinSyncSyncResult,
 } from "./types.ts";
@@ -29,14 +33,17 @@ export interface MinSyncClientOptions {
 	readonly binaryPath: string;
 	readonly workspacePath: string;
 	readonly embedder?: MinSyncEmbedderConfig;
+	readonly sparse?: MinSyncSparseConfig;
+	readonly bm25?: MinSyncBm25Config;
 	readonly maxChunkSize?: number;
 }
 
 /**
- * MinSync's native query modes: dense vector, learned-sparse (SPLADE, which replaced BM25 in MinSync 0.6), and
- * their hybrid fusion.
+ * MinSync's native query modes: dense vector, learned-sparse (SPLADE), Okapi BM25
+ * (`bm25-index.inv`), and hybrid fusion. For arbitrary combinations of all three
+ * retrievers, use {@link MinSyncClient.queryWithRetrievers}.
  */
-export type MinSyncQueryMode = "vector" | "sparse" | "hybrid";
+export type MinSyncQueryMode = "vector" | "sparse" | "bm25" | "hybrid";
 
 const API_KEY_ENV_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
@@ -71,12 +78,21 @@ export class MinSyncClient {
 	private readonly binaryPath: string;
 	private readonly workspacePath: string;
 	private readonly embedder: MinSyncEmbedderConfig | undefined;
+	private readonly sparse: MinSyncSparseConfig | undefined;
+	private readonly bm25: MinSyncBm25Config | undefined;
 	private readonly maxChunkSize: number | undefined;
 
 	constructor(options: MinSyncClientOptions) {
 		this.binaryPath = options.binaryPath;
 		this.workspacePath = options.workspacePath;
-		this.embedder = options.embedder;
+		const resolved = resolveMinSyncRetrieverPlan({
+			...(options.embedder === undefined ? {} : { embedder: options.embedder }),
+			...(options.sparse === undefined ? {} : { sparse: options.sparse }),
+			...(options.bm25 === undefined ? {} : { bm25: options.bm25 }),
+		});
+		this.embedder = resolved.embedder;
+		this.sparse = resolved.sparse;
+		this.bm25 = options.bm25 === undefined ? undefined : resolved.bm25;
 		this.maxChunkSize = options.maxChunkSize;
 	}
 
@@ -195,6 +211,15 @@ export class MinSyncClient {
 			if (this.embedder?.id) {
 				initArgs.push("--embedder", this.embedder.id);
 			}
+			if (this.sparse?.id) {
+				initArgs.push("--sparse", this.sparse.id);
+			}
+			if (this.bm25?.enabled === false) {
+				initArgs.push("--no-bm25");
+			}
+			if (this.bm25?.language) {
+				initArgs.push("--language", this.bm25.language);
+			}
 			const init = await this.spawn(initArgs, spawnOptions);
 			if (!init.ok || !existsSync(minSyncConfigPath(this.workspacePath))) {
 				return {
@@ -217,7 +242,11 @@ export class MinSyncClient {
 			embedder.dimension !== undefined && configuredVectorDimension(this.workspacePath) !== embedder.dimension;
 		const configPath = minSyncConfigPath(this.workspacePath);
 		const originalConfig = readConfigSnapshot(configPath);
-		const configRewritten = rewriteEmbedderConfig(this.workspacePath, embedder, { maxChunkSize: this.maxChunkSize });
+		const configRewritten = rewriteEmbedderConfig(this.workspacePath, embedder, {
+			...(this.maxChunkSize === undefined ? {} : { maxChunkSize: this.maxChunkSize }),
+			...(this.sparse === undefined ? {} : { sparse: this.sparse }),
+			...(this.bm25 === undefined ? {} : { bm25: this.bm25 }),
+		});
 		const restoreConfig = () => {
 			if (configRewritten && originalConfig !== undefined) writeFileSync(configPath, originalConfig);
 		};
@@ -364,6 +393,29 @@ export class MinSyncClient {
 		return parseQueryHits(result.stdout);
 	}
 
+	/**
+	 * Query MinSync using independent retriever on/off switches (`--vector`, `--sparse`, `--bm25`),
+	 * enabling arbitrary multi-retriever combinations (including all three for LTR feature capture).
+	 */
+	async queryWithRetrievers(
+		text: string,
+		topK: number,
+		retrievers: MinSyncRetrievers,
+		signal?: AbortSignal,
+	): Promise<readonly MinSyncQueryHit[]> {
+		if (!existsSync(this.binaryPath)) throw minSyncBinaryMissingError();
+		const args = ["query", "--format", "json", "-k", String(topK)];
+		if (retrievers.vector !== undefined) args.push(retrievers.vector ? "--vector" : "--vector=false");
+		if (retrievers.sparse !== undefined) args.push(retrievers.sparse ? "--sparse" : "--sparse=false");
+		if (retrievers.bm25 !== undefined) args.push(retrievers.bm25 ? "--bm25" : "--bm25=false");
+		args.push(text);
+		const result = await this.spawn(args, {
+			...(signal === undefined ? {} : { signal }),
+		});
+		if (!result.ok) throw new MinSyncQueryError(result.code, result.stderr);
+		return parseQueryHits(result.stdout);
+	}
+
 	private async spawn(
 		args: readonly string[],
 		options: {
@@ -467,14 +519,21 @@ function parseQueryHits(stdout: string): readonly MinSyncQueryHit[] {
 	const candidates = Array.isArray(parsed) ? parsed : isRecord(parsed) ? parsed.results : [];
 	if (!Array.isArray(candidates)) return [];
 	return candidates.filter(isMinSyncQueryHit).map((hit) => {
-		const docId = isRecord(hit) ? hit.doc_id : undefined;
-		const headingPath = isRecord(hit) ? hit.heading_path : undefined;
+		const record: Record<string, unknown> = isRecord(hit) ? hit : {};
+		const docId = record.doc_id;
+		const headingPath = record.heading_path;
 		return {
 			path: hit.path,
 			score: hit.score,
 			text: hit.text,
 			...(typeof headingPath === "string" && headingPath.length > 0 ? { headingPath } : {}),
 			...(typeof docId === "string" && docId.length > 0 ? { docId } : {}),
+			...(typeof record.vector_rank === "number" ? { vectorRank: record.vector_rank } : {}),
+			...(typeof record.sparse_rank === "number" ? { sparseRank: record.sparse_rank } : {}),
+			...(typeof record.bm25_rank === "number" ? { bm25Rank: record.bm25_rank } : {}),
+			...(typeof record.vector_score === "number" ? { vectorScore: record.vector_score } : {}),
+			...(typeof record.sparse_score === "number" ? { sparseScore: record.sparse_score } : {}),
+			...(typeof record.bm25_score === "number" ? { bm25Score: record.bm25_score } : {}),
 		};
 	});
 }

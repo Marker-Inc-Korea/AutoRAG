@@ -3,7 +3,9 @@ import { basename, extname, join } from "node:path";
 import { resolveMinSyncBinary } from "../../../minsync/binary.ts";
 import type { MinSyncQueryMode } from "../../../minsync/client.ts";
 import { MinSyncClient } from "../../../minsync/client.ts";
+import { isBm25OnlyConfig } from "../../../minsync/embedder-config.ts";
 import { MinSyncRequiredError } from "../../../minsync/errors.ts";
+import { resolveMinSyncRetrieverPlan } from "../../../minsync/hardware.ts";
 import type { MinSyncVectorMethodOptions } from "../../../minsync/method.ts";
 import { runWorkspaceQuery, runWorkspaceSync } from "../../../minsync/workspace-lock.ts";
 import type { RetrievalResult } from "../../../retrieval/types.ts";
@@ -18,10 +20,10 @@ import {
 } from "./paths.ts";
 import { listVaultNotes, loadStagingState, stageNotes, VaultUnavailableError } from "./staging.ts";
 
-/** The MinSync settings a vault shares with the rest of the install: binary, embedder, chunking. */
+/** The MinSync settings a vault shares with the rest of the install: binary, embedder, sparse, bm25, chunking. */
 export type ObsidianMinSyncOptions = Pick<
 	MinSyncVectorMethodOptions,
-	"binaryPath" | "autoInstall" | "installer" | "embedder" | "maxChunkSize"
+	"binaryPath" | "autoInstall" | "installer" | "embedder" | "sparse" | "bm25" | "maxChunkSize"
 >;
 
 export interface ObsidianVaultIndexOptions {
@@ -115,6 +117,8 @@ export class ObsidianVaultIndex {
 				binaryPath,
 				workspacePath: workspace,
 				embedder: this.minSync.embedder,
+				sparse: this.minSync.sparse,
+				bm25: this.minSync.bm25,
 				maxChunkSize: this.minSync.maxChunkSize,
 			});
 			const result = await client.sync(false, signal);
@@ -205,8 +209,15 @@ export class ObsidianVaultIndex {
 		const topK = options.topK ?? DEFAULT_TOP_K;
 		const scope = options.scope?.normalize("NFC");
 		let fetch = scope === undefined ? topK : Math.max(topK * 5, MIN_SCOPED_FETCH);
+		const resolved = resolveMinSyncRetrieverPlan({
+			...(this.minSync.embedder === undefined ? {} : { embedder: this.minSync.embedder }),
+			...(this.minSync.sparse === undefined ? {} : { sparse: this.minSync.sparse }),
+			...(this.minSync.bm25 === undefined ? {} : { bm25: this.minSync.bm25 }),
+		});
+		const effectiveQueryMode: MinSyncQueryMode =
+			mode === "sparse" && isBm25OnlyConfig(resolved.embedder, resolved.sparse) ? "bm25" : QUERY_MODES[mode];
 		for (;;) {
-			const hits = await client.query(query, fetch, QUERY_MODES[mode], options.signal);
+			const hits = await client.query(query, fetch, effectiveQueryMode, options.signal);
 			const results: RetrievalResult[] = [];
 			for (const hit of hits) {
 				const relativePath = hit.path.startsWith("files/")

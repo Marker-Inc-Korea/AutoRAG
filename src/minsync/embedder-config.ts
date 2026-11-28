@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parse, stringify } from "smol-toml";
-import type { MinSyncEmbedderConfig } from "./types.ts";
+import type { MinSyncBm25Config, MinSyncEmbedderConfig, MinSyncSparseConfig } from "./types.ts";
 
 export interface MinSyncEmbeddingIdentity {
 	readonly provider: string;
@@ -23,14 +23,77 @@ export const DEFAULT_MINSYNC_EMBEDDER_CONFIG: MinSyncEmbedderConfig = {
 };
 
 /**
- * `minSync.embedder.id` for a sparse-only index: MinSync builds SPLADE sparse vectors and no dense ones, so nothing
- * downloads or runs a dense embedding model. Every MinSync search is then a sparse search.
+ * `minSync.embedder.id` for a workspace without dense vectors (SPLADE + BM25, or BM25-only when
+ * `minSync.sparse.id` is also `"none"`).
  */
 export const SPARSE_ONLY_EMBEDDER_ID = "none";
 
-/** True when the configured embedder asks for a sparse-only MinSync index. */
+/** Reserved id for hardware-probed automatic retriever selection (`embedder.id` or `sparse.id`). */
+export const AUTO_RETRIEVER_ID = "auto";
+
+/** Reserved `minSync.sparse.id` that disables SPLADE encoding (zero-ML BM25-only when combined with `embedder.id: "none"`). */
+export const NONE_SPARSE_ID = "none";
+
+/** Default SPLADE model used by MinSync when sparse retrieval is enabled. */
+export const DEFAULT_MINSYNC_SPARSE_ID = "native:nlpai-lab/KURE-Sparse-nano";
+
+/** Default BM25 tokenizer language preset. */
+export const DEFAULT_MINSYNC_BM25_LANGUAGE = "multilingual";
+
+export const SUPPORTED_MINSYNC_BM25_LANGUAGES = ["multilingual", "simple", "ko", "ja", "zh", "ar"] as const;
+
+/** True when the configured embedder disables dense vectors (`embedder.id === "none"`). */
 export function isSparseOnlyEmbedder(embedder: MinSyncEmbedderConfig | undefined): boolean {
 	return embedder?.id === SPARSE_ONLY_EMBEDDER_ID;
+}
+
+/** True when SPLADE sparse encoding is explicitly disabled (`sparse.id === "none"`). */
+export function isSparseDisabled(sparse: MinSyncSparseConfig | undefined): boolean {
+	return sparse?.id === NONE_SPARSE_ID;
+}
+
+/** True when both dense and SPLADE are disabled: zero-ML BM25-only workspace. */
+export function isBm25OnlyConfig(
+	embedder: MinSyncEmbedderConfig | undefined,
+	sparse: MinSyncSparseConfig | undefined,
+): boolean {
+	return isSparseOnlyEmbedder(embedder) && isSparseDisabled(sparse);
+}
+
+/** True when BM25 is enabled (defaults to true when omitted). */
+export function isBm25Enabled(bm25: MinSyncBm25Config | undefined): boolean {
+	return bm25?.enabled !== false;
+}
+
+/** The `[sparse].id` an initialized workspace was built with, or undefined when absent. */
+export function configuredSparseId(workspacePath: string): string | undefined {
+	let raw: string;
+	try {
+		raw = readFileSync(minSyncConfigPath(workspacePath), "utf8");
+	} catch {
+		return undefined;
+	}
+	const sparse = (parse(raw) as Record<string, unknown>).sparse;
+	if (typeof sparse !== "object" || sparse === null || Array.isArray(sparse)) return undefined;
+	const id = (sparse as Record<string, unknown>).id;
+	return typeof id === "string" ? id : undefined;
+}
+
+/** The `[bm25]` section an initialized workspace was built with, or undefined when absent. */
+export function configuredBm25Config(workspacePath: string): MinSyncBm25Config | undefined {
+	let raw: string;
+	try {
+		raw = readFileSync(minSyncConfigPath(workspacePath), "utf8");
+	} catch {
+		return undefined;
+	}
+	const bm25 = (parse(raw) as Record<string, unknown>).bm25;
+	if (typeof bm25 !== "object" || bm25 === null || Array.isArray(bm25)) return undefined;
+	const record = bm25 as Record<string, unknown>;
+	return {
+		...(typeof record.enabled === "boolean" ? { enabled: record.enabled } : {}),
+		...(typeof record.language === "string" ? { language: record.language } : {}),
+	};
 }
 
 /** The `[embedder].id` an initialized workspace was built with, or undefined when there is no config. */
@@ -112,7 +175,11 @@ export function configuredVectorDimension(workspacePath: string): number | undef
 export function rewriteEmbedderConfig(
 	workspacePath: string,
 	embedder: MinSyncEmbedderConfig,
-	managed: { readonly maxChunkSize?: number } = {},
+	managed: {
+		readonly maxChunkSize?: number;
+		readonly sparse?: MinSyncSparseConfig;
+		readonly bm25?: MinSyncBm25Config;
+	} = {},
 ): boolean {
 	const configPath = minSyncConfigPath(workspacePath);
 	let raw: string;
@@ -160,6 +227,23 @@ export function rewriteEmbedderConfig(
 	}
 	if (embedder.dimension !== undefined) options.dimension = embedder.dimension;
 	if (managed.maxChunkSize !== undefined) chunkerOptions.max_chunk_size = managed.maxChunkSize;
+	if (managed.sparse !== undefined) {
+		parsed.sparse ??= {};
+		const sparseSection = parsed.sparse as Record<string, unknown>;
+		if (managed.sparse.id !== undefined) sparseSection.id = managed.sparse.id;
+		if (managed.sparse.baseUrl !== undefined) sparseSection.base_url = managed.sparse.baseUrl;
+		if (managed.sparse.batchSize !== undefined) sparseSection.batch_size = managed.sparse.batchSize;
+		if (managed.sparse.maxRetries !== undefined) sparseSection.max_retries = managed.sparse.maxRetries;
+		if (managed.sparse.timeoutMs !== undefined) {
+			sparseSection.timeout_seconds = Math.ceil(managed.sparse.timeoutMs / 1000);
+		}
+	}
+	if (managed.bm25 !== undefined) {
+		parsed.bm25 ??= {};
+		const bm25Section = parsed.bm25 as Record<string, unknown>;
+		if (managed.bm25.enabled !== undefined) bm25Section.enabled = managed.bm25.enabled;
+		if (managed.bm25.language !== undefined) bm25Section.language = managed.bm25.language;
+	}
 	delete parsed.lexical;
 
 	writeFileSync(configPath, stringify(parsed));
