@@ -94,7 +94,7 @@ AutoRAG's connector-backed datasources run an external CLI that owns its own cre
 
 | Variable | Read where | Effect |
 |---|---|---|
-| `HISTER_CONFIG` | `src/datasource/skills/hister/setup.ts` | Path to Hister's `config.yml` when it is not at a standard location |
+| `NOGON_CONFIG` | `src/datasource/skills/nogon/setup.ts` | Path to Nogon's `config.yml` when it is not at a standard location. The legacy `HISTER_CONFIG` is read when `NOGON_CONFIG` is unset |
 | `MAILCRAWL_DATA_DIR` | `src/datasource/skills/mailcrawl/client.ts` | mailcrawl archive/data directory |
 | `WOMBAT_DATA_DIR` | `src/datasource/skills/wombat/agents.ts`, `client.ts` | wombat data directory (`~/.wombat` by default) |
 | `WOMBAT_EMBEDDER` | `src/datasource/skills/wombat/client.ts` | Embedder selector passed to wombat |
@@ -103,7 +103,7 @@ AutoRAG's connector-backed datasources run an external CLI that owns its own cre
 | `CLAWGALLERY_CONFIG_DIR` | `src/datasource/skills/clawgallery/client.ts` | ClawGallery config directory |
 | `KATOK_EMBED_API_KEY` | `src/datasource/embedding-env.ts` | Embedder key for the lazykatok child when it embeds for itself |
 
-Each crawler CLI also reads its own `SLACRAWL_*`, `MAILCRAWL_*`, `WOMBAT_*`, `CLAWGALLERY_*`, `HISTER_*`, and `KATOK_*` variables for authentication and transport; see the datasource pages for the connector-specific names.
+Each crawler CLI also reads its own `SLACRAWL_*`, `MAILCRAWL_*`, `WOMBAT_*`, `CLAWGALLERY_*`, `NOGON_*` (and the legacy `HISTER_*`), and `KATOK_*` variables for authentication and transport; see the datasource pages for the connector-specific names.
 
 ::: tip **Embedder key for external CLIs**
 When mailcrawl or lazykatok embeds for itself, AutoRAG points it at the same backend as the rest of AutoRAG by setting that CLI's documented `*_EMBED_*` / `KATOK_EMBED_*` variables in the child environment. The remote key travels as the value of the variable named by `minSync.embedder.apiKeyEnv`; you only need to set that one variable yourself.
@@ -118,8 +118,8 @@ AutoRAG also reads conventional variables for platform and home discovery — th
 | `HOME`, `USERPROFILE` | `src/config/home.ts`, `src/embedding/daemon.ts` | Base for `~/.autorag` and im-not-llm's daemon state root `~/.cache/im-not-llm/serve`; an absolute `HOME`/`USERPROFILE` wins, else `os.homedir()` |
 | `PATH` | binary resolution in `src/minsync`, `src/jikji`, `src/cli/setup.ts`, `src/automation/service.ts` | Locates `minsync`, `jikji`, crawler CLIs, and the automation service |
 | `CARGO_HOME` | `src/datasource/skills/wombat/binary.ts`, jikji installer | cargo install location when auto-installing a Rust tool |
-| `XDG_DATA_HOME`, `XDG_CONFIG_HOME` | `src/cli/setup.ts`, `src/automation/service.ts`, `src/datasource/skills/hister/setup.ts` | XDG paths for tools and the automation service on Linux |
-| `LOCALAPPDATA`, `APPDATA` | `src/embedding/daemon.ts`, `src/datasource/skills/hister/setup.ts` | Windows per-user data locations |
+| `XDG_DATA_HOME`, `XDG_CONFIG_HOME` | `src/cli/setup.ts`, `src/automation/service.ts`, `src/datasource/skills/nogon/setup.ts` | XDG paths for tools and the automation service on Linux |
+| `LOCALAPPDATA`, `APPDATA` | `src/embedding/daemon.ts`, `src/datasource/skills/nogon/setup.ts` | Windows per-user data locations |
 | `NODE_ENV` | installers in `src/convert`, `src/minsync` | Installer behavior in non-production runs |
 
 Variables that exist only for the repository's QA and live-E2E scripts (for example `AUTORAG_EMBED_ENDPOINT`, `AUTORAG_CALC_QA_*`, `E2E_*`, `MINSYNC_BINARY`, `AUTORAG_OPENAI_API_KEY`) are not read by the shipped CLI and are intentionally omitted here.

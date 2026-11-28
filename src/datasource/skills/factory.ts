@@ -19,6 +19,7 @@ import { DescribedDatasourceSkill } from "../described-skill.ts";
 import type { EmbeddingEndpointSource } from "../embedding-env.ts";
 import { resolveSidecarOptions } from "../sidecar/config.ts";
 import { CRAWLER_DESCRIPTORS, type CrawlerDescriptor } from "../sidecar/descriptors.ts";
+import { canonicalDatasourceTemplate } from "../template-aliases.ts";
 import type { DatasourceSkill } from "../types.ts";
 import { ClawGalleryClient, type ClawGalleryOptions, ClawGallerySkill } from "./clawgallery/index.ts";
 import {
@@ -32,10 +33,10 @@ import {
 import { resolveDiscrawlSidecarOptions } from "./discrawl/sidecar.ts";
 import { type GitHubConnectorOptions, GitHubSkill } from "./github/index.ts";
 import { type GitHubGistConnectorOptions, GitHubGistSkill } from "./github-gist/index.ts";
-import { HisterSkill } from "./hister/index.ts";
 import { LarkSkill } from "./lark/index.ts";
 import { LazykatokClient, type LazykatokOptions, LazykatokSkill } from "./lazykatok/index.ts";
 import { type MailcrawlOptions, MailcrawlSkill } from "./mailcrawl/index.ts";
+import { NogonSkill } from "./nogon/index.ts";
 import { type NotcrawlOptions, NotionSkill } from "./notion/index.ts";
 import { type ObsidianMinSyncOptions, ObsidianSkill } from "./obsidian/index.ts";
 import { type RssConnectorOptions, RssSkill } from "./rss/index.ts";
@@ -62,6 +63,8 @@ export interface DatasourceSkillConfig {
 		readonly names?: readonly string[];
 	};
 }
+
+export { canonicalDatasourceTemplate } from "../template-aliases.ts";
 
 /** The trusted `datasources` config section: skill name → config. */
 export type DatasourcesConfig = Readonly<Record<string, DatasourceSkillConfig | boolean>>;
@@ -131,7 +134,7 @@ function chatCrawlerArgs(
 	};
 }
 
-function histerConnectorOptions(connector: Record<string, unknown> | undefined): {
+function nogonConnectorOptions(connector: Record<string, unknown> | undefined): {
 	readonly baseUrl?: string;
 	readonly tokenEnv?: string;
 	readonly timeoutMs?: number;
@@ -304,12 +307,12 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 			...(config.channels?.ids !== undefined ? { chatIds: config.channels.ids } : {}),
 			...larkConnectorOptions(config.connector),
 		}),
-	hister: (config, _workspaceRoot, registrationName) =>
-		new HisterSkill({
+	nogon: (config, _workspaceRoot, registrationName) =>
+		new NogonSkill({
 			datasourceId: registrationName,
 			...(config.instanceId !== undefined ? { instanceId: config.instanceId } : {}),
 			...(config.tags !== undefined ? { tags: config.tags } : {}),
-			...histerConnectorOptions(config.connector),
+			...nogonConnectorOptions(config.connector),
 		}),
 	kakao: (config, workspaceRoot, registrationName, embedding) => {
 		const connector = (config.connector ?? {}) as LazykatokOptions;
@@ -499,7 +502,9 @@ export function buildDatasourceSkills(
 		}
 		const entry: DatasourceSkillConfig = raw === true ? {} : raw;
 		if (entry.enabled === false) continue;
-		const templateName = entry.type ?? name;
+		// A renamed template (`hister` -> `nogon`) still builds; the operator's connection id is kept as written.
+		const requestedTemplate = entry.type ?? name;
+		const templateName = canonicalDatasourceTemplate(requestedTemplate);
 		if (Object.hasOwn(RETIRED_TEMPLATES, templateName)) {
 			retired.push(name);
 			continue;
@@ -525,7 +530,7 @@ export function buildDatasourceSkills(
 		const hasChannelFilter =
 			!larkOwnsChannels && ((entry.channels?.ids?.length ?? 0) > 0 || (entry.channels?.names?.length ?? 0) > 0);
 		let aliased: DatasourceSkill = skill;
-		if (name !== templateName || hasChannelFilter) {
+		if (name !== requestedTemplate || hasChannelFilter) {
 			aliased = new AliasedDatasourceSkill(skill, {
 				alias: name,
 				...(!larkOwnsChannels && entry.channels?.ids !== undefined ? { channelIds: entry.channels.ids } : {}),

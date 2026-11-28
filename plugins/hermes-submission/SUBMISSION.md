@@ -92,7 +92,7 @@ Discord staying keyword-only because discrawl's own config has embeddings off.
 >   `$HERMES_HOME/plugin-data/autorag/runtime` (no lifecycle scripts) and then runs `autorag lite find` with `node`.
 > - Network: retrieval is local, but chunks a search returns are read by the user's Hermes model. First start downloads the pinned package from npm via `npx`. The first refresh downloads
 >   `minsync` (cargo or sha256-verified GitHub release asset), `jikji` (cargo), and two local embedding
->   models from Hugging Face (about 1.5 GB). Search itself needs no network for local files and local crawler archives; Notion, GitHub, RSS and Hister connectors do.
+>   models from Hugging Face (about 1.5 GB). Search itself needs no network for local files and local crawler archives; Notion, GitHub, RSS and Nogon connectors do.
 > - Reads outside plugin data: the folders in the user's AutoRAG config and local crawler archives the
 >   user configures. Writes only AutoRAG's own index and report state. Never edits user documents.
 > - Writes beyond that, only on request: `~/.autorag/automations.json` (backed up first) and

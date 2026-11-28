@@ -95,7 +95,7 @@ export function formatStamp(ms) {
 // What a source is called in the pane. The config alias (`mailcrawl`, `nomadamas`) names an install, not a kind of
 // source; the type says what it is. Types with no friendlier name keep their own, and an unknown source falls back
 // to its alias.
-const SOURCE_NAMES = { mailcrawl: 'mail', hister: 'browser' }
+const SOURCE_NAMES = { mailcrawl: 'mail', nogon: 'browser', hister: 'browser' }
 
 export function sourceName(group) {
   const id = group?.datasourceId ?? String(group?.key ?? 'search').replace(/^source:/, '')

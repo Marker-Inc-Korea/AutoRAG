@@ -24,7 +24,7 @@ export async function runSetupCommand(ctx: CommandContext): Promise<number> {
 		const report = await runSetup({
 			configPath: resolved.configPath,
 			workspacePath: resolvedConfig.workspacePath,
-			syncHister: ctx.flags["sync-hister"] === true,
+			syncNogon: ctx.flags["sync-nogon"] === true,
 		});
 		ctx.stdout(ctx.json || ctx.flags.format === "json" ? JSON.stringify(report, null, 2) : renderSetup(report));
 		return report.ok ? 0 : 1;
@@ -34,16 +34,16 @@ export async function runSetupCommand(ctx: CommandContext): Promise<number> {
 	}
 }
 
-function renderHister(report: SetupReport): string[] {
-	const reports = report.histers ?? (report.hister === undefined ? [] : [report.hister]);
-	return reports.flatMap((hister) => {
+function renderNogon(report: SetupReport): string[] {
+	const reports = report.nogons ?? (report.nogon === undefined ? [] : [report.nogon]);
+	return reports.flatMap((nogon) => {
 		const lines: string[] = [];
-		const head = `hister ${hister.datasource}:`;
-		if (!hister.installed) lines.push(`${head} not installed`);
-		else if (hister.running === false) lines.push(`${head} not running`);
+		const head = `nogon ${nogon.datasource}:`;
+		if (!nogon.installed) lines.push(`${head} not installed`);
+		else if (nogon.running === false) lines.push(`${head} not running`);
 		else lines.push(`${head} running`);
-		if (hister.reason) lines.push(`  ${hister.reason}`);
-		const embedding = hister.embedding;
+		if (nogon.reason) lines.push(`  ${nogon.reason}`);
+		const embedding = nogon.embedding;
 		if (embedding !== undefined) {
 			if (embedding.applied) {
 				lines.push(`  embedding: now shares the model (updated ${embedding.differs.join(", ")})`);
@@ -56,7 +56,7 @@ function renderHister(report: SetupReport): string[] {
 			}
 			if (embedding.reason) lines.push(`  embedding: ${embedding.reason}`);
 		}
-		if (hister.remediation) lines.push(`  next: ${hister.remediation}`);
+		if (nogon.remediation) lines.push(`  next: ${nogon.remediation}`);
 		return lines;
 	});
 }
@@ -78,7 +78,7 @@ export function renderSetup(report: SetupReport): string {
 			: [
 					`filee-cli: ${report.filee.state}${report.filee.path ? ` (${report.filee.path})` : ""}${report.filee.reason ? ` — ${report.filee.reason}` : ""}`,
 				]),
-		...renderHister(report),
+		...renderNogon(report),
 		...(report.remediation ? [`remediation: ${report.remediation}`] : []),
 	].join("\n");
 }

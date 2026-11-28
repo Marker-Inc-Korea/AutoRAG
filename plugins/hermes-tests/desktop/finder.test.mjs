@@ -557,7 +557,8 @@ describe('source names', () => {
   it('names a source by what it is, not by its config alias', () => {
     assert.equal(sourceName(g('mailcrawl', 'mailcrawl')), 'mail')
     assert.equal(sourceName(g('nomadamas', 'discord')), 'discord')
-    assert.equal(sourceName(g('browser', 'hister')), 'browser')
+    assert.equal(sourceName(g('browser', 'nogon')), 'browser')
+    assert.equal(sourceName(g('browser', 'hister')), 'browser') // a config written before the Hister -> Nogon rename
     assert.equal(sourceName(g('kakao', 'kakao')), 'kakao')
     assert.equal(sourceName(g('slack', 'slack')), 'slack')
   })

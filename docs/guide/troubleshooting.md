@@ -168,7 +168,7 @@ For continuous freshness install an hourly `autorag watch --once` job (cron, lau
 - `unknown-datasource-skill`: the config key is not a builtin template and has no `"type"`. It is skipped, not fatal — fix the name or add `"type"`.
 - A configured datasource that returns nothing is a native store, connector, or query problem — every configured connection is searchable. Run its native check from the table above.
 - A missing MinSync binary is not a diagnostic: `autorag search`, `autorag refresh`, and the MCP tools fail with `MinSync is required ...` and a non-zero exit. Install it (`cargo install minsync`) or leave `minSync.autoInstall` on, then retry.
-- For browser history, `autorag setup --format json` reports `installed`, `running`, and `embedding` for Hister with a `remediation` per problem; `autorag setup --sync-hister` shares AutoRAG's embedding model with Hister (and refuses a remote or in-process backend).
+- For browser history, `autorag setup --format json` reports `installed`, `running`, and `embedding` for Nogon with a `remediation` per problem; `autorag setup --sync-nogon` shares AutoRAG's embedding model with Nogon (and refuses a remote or in-process backend).
 
 If the CLI itself is missing or no config exists, run the [installation](installation.md) and [quickstart](quickstart.md) flow first — repair assumes an existing install.
 

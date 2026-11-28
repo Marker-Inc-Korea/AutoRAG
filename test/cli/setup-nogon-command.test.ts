@@ -12,57 +12,57 @@ const BASE: SetupReport = {
 	changed: false,
 };
 
-describe("autorag setup --sync-hister", () => {
+describe("autorag setup --sync-nogon", () => {
 	it("is a boolean flag, so it never swallows the next argument", () => {
-		const parsed = parseArgs(["setup", "--sync-hister", "--json"]);
+		const parsed = parseArgs(["setup", "--sync-nogon", "--json"]);
 		expect("error" in parsed).toBe(false);
 		if ("error" in parsed) return;
-		expect(parsed.flags["sync-hister"]).toBe(true);
+		expect(parsed.flags["sync-nogon"]).toBe(true);
 		expect(parsed.flags.json).toBe(true);
 	});
 
 	it("is documented in `autorag setup --help`", () => {
-		expect(commandUsage("setup")).toContain("--sync-hister");
+		expect(commandUsage("setup")).toContain("--sync-nogon");
 	});
 });
 
-describe("renderSetup: Hister", () => {
-	it("prints nothing about Hister when none is configured", () => {
-		expect(renderSetup(BASE)).not.toMatch(/hister/i);
+describe("renderSetup: Nogon", () => {
+	it("prints nothing about Nogon when none is configured", () => {
+		expect(renderSetup(BASE)).not.toMatch(/nogon/i);
 	});
 
 	it("names each problem and the exact command that fixes it", () => {
 		const text = renderSetup({
 			...BASE,
-			hister: {
+			nogon: {
 				datasource: "browser",
 				installed: true,
 				running: false,
 				reason: "connect ECONNREFUSED 127.0.0.1:4433",
-				remediation: "Start it: brew services start hister",
+				remediation: "Start it: brew services start nogon",
 			},
 		});
-		expect(text).toContain("hister browser: not running");
+		expect(text).toContain("nogon browser: not running");
 		expect(text).toContain("ECONNREFUSED");
-		expect(text).toContain("brew services start hister");
+		expect(text).toContain("brew services start nogon");
 	});
 
 	it("shows which semantic_search keys disagree, and whether they were applied", () => {
 		const pending = renderSetup({
 			...BASE,
-			hister: {
+			nogon: {
 				datasource: "browser",
 				installed: true,
 				running: true,
 				embedding: { inSync: false, differs: ["dimensions", "embedding_model"], applied: false },
-				remediation: "Make Hister embed with the shared model: autorag setup --sync-hister",
+				remediation: "Make Nogon embed with the shared model: autorag setup --sync-nogon",
 			},
 		});
 		expect(pending).toContain("embedding: differs from the shared model (dimensions, embedding_model)");
-		expect(pending).toContain("--sync-hister");
+		expect(pending).toContain("--sync-nogon");
 		const done = renderSetup({
 			...BASE,
-			hister: {
+			nogon: {
 				datasource: "browser",
 				installed: true,
 				running: true,
@@ -78,7 +78,7 @@ describe("renderSetup: Hister", () => {
 		expect(done).toContain("embedding: now shares the model (updated dimensions)");
 		const inSync = renderSetup({
 			...BASE,
-			hister: {
+			nogon: {
 				datasource: "browser",
 				installed: true,
 				running: true,

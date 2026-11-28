@@ -9,6 +9,9 @@ import type { CommandContext } from "./commands/types.ts";
 import { renderError } from "./output.ts";
 import { readPackageVersion } from "./version.ts";
 
+/** Flags that were renamed: the old spelling is still accepted and sets the new flag. */
+const DEPRECATED_FLAG_ALIASES: Readonly<Record<string, string>> = { "sync-hister": "sync-nogon" };
+
 const BOOLEAN_FLAGS = new Set([
 	"json",
 	"debug",
@@ -28,6 +31,8 @@ const BOOLEAN_FLAGS = new Set([
 	"whatsapp",
 	"telegram",
 	"discord",
+	"sync-nogon",
+	/** Deprecated spelling of `sync-nogon` (Nogon was Hister until v0.22.0). */
 	"sync-hister",
 ]);
 const VALUE_FLAGS = new Set([
@@ -199,7 +204,7 @@ export function parseArgs(argv: readonly string[]): ParsedArgs | { error: string
 			return { error: `Unknown flag: --${key}` };
 		}
 		if (eq === -1 && BOOLEAN_FLAGS.has(key)) {
-			flags[key] = true;
+			flags[DEPRECATED_FLAG_ALIASES[key] ?? key] = true;
 			continue;
 		}
 		const value = eq === -1 ? argv[++i] : body.slice(eq + 1);

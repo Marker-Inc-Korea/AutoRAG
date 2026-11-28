@@ -54,12 +54,12 @@ export function generateNotice(input: {
 		"licenses/es-MIT.txt",
 		"",
 		"Separate programs AutoRAG talks to (not bundled, not distributed, not linked):",
-		"Hister (https://github.com/asciimoo/hister, asciimoo and Hister contributors)",
+		"Nogon, formerly Hister (https://github.com/asciimoo/nogon, asciimoo and Nogon contributors)",
 		"License: AGPL-3.0-or-later",
-		"AutoRAG ships no Hister code. Users install the unmodified Hister release themselves and AutoRAG only sends",
+		"AutoRAG ships no Nogon code. Users install the unmodified Nogon release themselves and AutoRAG only sends",
 		"search requests to its public HTTP API (GET /search, GET /api/config), as a separate program over a network",
-		"socket. AutoRAG does not modify Hister and never hides that Hister is the backend of the `hister` datasource.",
-		"licenses/hister-AGPL-3.0-notice.txt",
+		"socket. AutoRAG does not modify Nogon and never hides that Nogon is the backend of the `nogon` datasource.",
+		"licenses/nogon-AGPL-3.0-notice.txt",
 		"",
 	].join("\n");
 }

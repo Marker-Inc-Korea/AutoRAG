@@ -76,7 +76,7 @@ A warm run compares the persisted fingerprint (runner schema, corpus version and
 
 ### Datasource lanes
 
-With no override, the runner executes the `local` lane, the self-contained `obsidian` vault lane, and every native CLI lane (lazykatok, discrawl, wacrawl, telecrawl, slacrawl, lark, notcrawl, mailcrawl, wombat, hister). `E2E_DATASOURCES` only narrows this default:
+With no override, the runner executes the `local` lane, the self-contained `obsidian` vault lane, and every native CLI lane (lazykatok, discrawl, wacrawl, telecrawl, slacrawl, lark, notcrawl, mailcrawl, wombat, nogon). `E2E_DATASOURCES` only narrows this default:
 
 ```bash
 E2E_DATASOURCES=local make e2e-live-docker E2E_ROOT="$AUTORAG_LIVE_E2E_ROOT"
@@ -164,11 +164,11 @@ Each harness uses its CLI's native launch surface; AutoRAG supplies only explici
 | `bun scripts/manual-qa/run-qa-wombat-live.ts` | Real `wombat` + `minsync` in an isolated home: sparse, semantic, and hybrid search, session labels, incremental append, delete, and mirror isolation |
 | `WOMBAT_QA_DATA_DIR=<dir> bun scripts/manual-qa/run-qa-wombat-real-sessions.ts [--jev]` | The operator's real coding-agent sessions, indexed into an isolated data dir and searched through the agent |
 | `WOMBAT_QA_DATA_DIR=<dir copy> bun scripts/manual-qa/run-qa-wombat-agent-filter.ts` | The per-search `agents` filter against a copy of a real wombat data dir: the ids the tool offers match the index, one and several agents return only theirs, an unknown id is refused with the real ids, and a connector's agent list is never widened |
-| `bun scripts/manual-qa/run-qa-hister-live.ts` | The Hister browser-history datasource against a real Hister install |
+| `bun scripts/manual-qa/run-qa-nogon-live.ts` | The Nogon browser-history datasource against a real Nogon install |
 | `bun scripts/manual-qa/run-qa-datasource-aliases.ts` | Universal alias registration plus all-channel and channel-allowlisted chat retrieval |
 | `bun scripts/manual-qa/run-qa-cloud-mount-live.ts`, `run-qa-network-mount-live.ts` | Opt-in cloud-mount and network-mount lanes (macOS mounts a throwaway folder; Windows uses a synthetic provider) |
 | `bunx vitest run test/datasource/embedding-env.test.ts` | The real child-process boundary for mailcrawl and lazykatok on the shared embedder: provider/URL/model/dimension env, remote key hand-over and egress opt-in |
-| `bunx vitest run test/datasource/skills/wacrawl.test.ts` (also `telecrawl`, `slacrawl`, `notcrawl`, `lark`, `obsidian`, `mailcrawl`, `github-gist`, `hister`, `wombat`) | Real child-process boundaries with deterministic fake executables: argv, JSON parsing, env isolation, missing binary, malformed output, indexing, retrieval |
+| `bunx vitest run test/datasource/skills/wacrawl.test.ts` (also `telecrawl`, `slacrawl`, `notcrawl`, `lark`, `obsidian`, `mailcrawl`, `github-gist`, `nogon`, `wombat`) | Real child-process boundaries with deterministic fake executables: argv, JSON parsing, env isolation, missing binary, malformed output, indexing, retrieval |
 
 WhatsApp, Telegram, Slack, and Notion are verified against deterministic fake crawler executables that exercise the actual spawn/stdout/stderr contract without private data. For a live check, install the crawler, grant its documented access, configure `datasources.<name>`, then run `autorag refresh --method datasources`. Set `datasources.slack.connector.configPath` / `datasources.notion.connector.configPath` for the slacrawl and notcrawl configs.
 

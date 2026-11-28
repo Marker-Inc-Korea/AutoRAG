@@ -53,7 +53,7 @@ describe("NOTICE and CycloneDX tokens", () => {
 		expect(notice).toContain("xlsx@0.18.5");
 	});
 
-	it("declares Hister as a separate AGPL program that is not bundled", () => {
+	it("declares Nogon as a separate AGPL program that is not bundled", () => {
 		const notice = generateNotice({
 			projectName: "AutoRAG",
 			year: "2025",
@@ -62,12 +62,13 @@ describe("NOTICE and CycloneDX tokens", () => {
 			legacyLicense: "Apache-2.0",
 			components,
 		});
-		expect(notice).toContain("Hister");
+		expect(notice).toContain("Nogon");
+		expect(notice).toContain("formerly Hister");
 		expect(notice).toContain("AGPL-3.0-or-later");
-		expect(notice).toContain("https://github.com/asciimoo/hister");
+		expect(notice).toContain("https://github.com/asciimoo/nogon");
 		expect(notice).toMatch(/not (bundled|distributed)/i);
 		expect(notice).toMatch(/unmodified/i);
-		expect(notice).toContain("licenses/hister-AGPL-3.0-notice.txt");
+		expect(notice).toContain("licenses/nogon-AGPL-3.0-notice.txt");
 	});
 
 	it("emits CycloneDX JSON with named components", () => {

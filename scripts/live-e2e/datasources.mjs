@@ -17,7 +17,7 @@ const NATIVE_LANES = Object.freeze([
 	{ name: "obsidian", binary: "minsync", command: "scripts/manual-qa/run-qa-obsidian-live.ts", identityPattern: /\/obsidian\/[^/\s]+\/[^\s]+\.md/u },
 	{ name: "mailcrawl", binary: "mailcrawl", command: "scripts/manual-qa/run-qa-mailcrawl-live.ts", identityPattern: /\/mailcrawl\/[^\s]+/u },
 	{ name: "wombat", binary: "wombat", command: "scripts/manual-qa/run-qa-wombat-live.ts", identityPattern: /\/wombat\/[^/\s]+\/chunks\/[^/\s]+/u },
-	{ name: "hister", binary: "hister", command: "scripts/manual-qa/run-qa-hister-live.ts", identityPattern: /\/browser\/[^\s]+\/pages\/[^\s]+/u },
+	{ name: "nogon", binary: "nogon", command: "scripts/manual-qa/run-qa-nogon-live.ts", identityPattern: /\/browser\/[^\s]+\/pages\/[^\s]+/u },
 	// Opt-in. macOS writes into the user's real cloud mounts (AUTORAG_E2E_CLOUD_DIRS names the parent folders);
 	// Windows registers its own synthetic Cloud Files provider in a temp folder (AUTORAG_E2E_CLOUD_SYNTHETIC=1).
 	// Its identity is an OS-absolute source under the throwaway `autorag-e2e-<hex>` folder the harness creates.
