@@ -102,7 +102,7 @@ So before building the alternation AutoRAG drops stopwords (`src/retrieval/stopw
 - A script that identifies its language (Hangul, kana, Han, Cyrillic, Arabic, Devanagari, Thai) is filtered word by word.
 - Latin script is filtered only after the query shows its language: at least two unambiguous stopwords of one language. German `die`/`war` and French `son` are ordinary English words, so `war in ukraine` is left alone.
 - A query that is all stopwords, or a single word, is left as it is.
-- A query written in Nogon syntax (`"phrases"`, `field:`, `-term`) is sent as written, stopwords included. Semantic search always gets the whole question.
+- A query written in Nogon syntax (`"phrases"`, `field:`, `-term`) is sent as written, stopwords included. Semantic search always gets the whole question, with only the characters Nogon's query parser would misread removed (`( ) | "`, a leading `-`, a bare `AND`/`OR`/`NOT`; a `field:` prefix is escaped). Nogon reads a semantic query with the same parser, so an unclosed `(` or `"` used to fail with HTTP 400 and `title: x` used to become a title filter.
 
 Measured on a real 1,608-page index with a word that occurs in exactly one page: Korean questions went to rank 1 every time; English questions went from ranks between 2 and beyond 100 to ranks between 2 and 19, so they are much better but not always first, because a content word such as `read` that appears in a title still outweighs a rare word in a body. Use a short keyword query, or semantic search, for the rest.
 

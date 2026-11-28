@@ -1,4 +1,5 @@
 export {
+	buildSemanticQuery,
 	buildWebQuery,
 	NogonClient,
 	type NogonClientOptions,

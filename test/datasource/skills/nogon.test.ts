@@ -385,6 +385,56 @@ describe("NogonSkill semantic retrieval", () => {
 	});
 });
 
+describe("NogonSkill semantic query text", () => {
+	async function semanticTextSent(question: string, domain?: string): Promise<unknown[]> {
+		const { baseUrl, calls } = await fakeNogon((_request, response) =>
+			json(response, { total: 0, semantic_enabled: true, documents: [], semantic_hits: [] }),
+		);
+		const client = new NogonClient({ baseUrl });
+		await client.searchSemantic(question, domain === undefined ? {} : { domain });
+		return calls.map((call) => call.query?.text);
+	}
+
+	it("sends an ordinary question exactly as written, punctuation included", async () => {
+		expect(await semanticTextSent("what is C++? 인증서를 어디서 읽었지")).toEqual([
+			"what is C++? 인증서를 어디서 읽었지",
+		]);
+		expect(await semanticTextSent("where did I read about the inverted index")).toEqual([
+			"where did I read about the inverted index",
+		]);
+	});
+
+	it("neutralises what Nogon's query parser would reject: unclosed groups and quotes, bare operators", async () => {
+		expect(await semanticTextSent("how does (full text search work")).toEqual(["how does full text search work"]);
+		expect(await semanticTextSent('say "hello world')).toEqual(["say hello world"]);
+		expect(await semanticTextSent("AND foo")).toEqual(["foo"]);
+		expect(await semanticTextSent("foo OR")).toEqual(["foo"]);
+		expect(await semanticTextSent("a | b")).toEqual(["a b"]);
+		expect(await semanticTextSent("(a OR b) AND c")).toEqual(["a b c"]);
+	});
+
+	it("does not let a question turn into a field filter or a negation", async () => {
+		// `title:` would filter on the title and `-draft` would exclude a word; the model should just read the words.
+		expect(await semanticTextSent("title: what is x")).toEqual(["title\\: what is x"]);
+		expect(await semanticTextSent("-draft notes")).toEqual(["draft notes"]);
+		expect(await semanticTextSent("see https://example.com/a?b=1 for details")).toEqual([
+			"see https\\://example.com/a?b=1 for details",
+		]);
+	});
+
+	it("keeps a literal domain scope after the sanitised question", async () => {
+		expect(await semanticTextSent("how does (search work", "example.com")).toEqual([
+			"how does search work domain:example.com",
+		]);
+	});
+
+	it("does not call Nogon when nothing but syntax is left", async () => {
+		expect(await semanticTextSent(")")).toEqual([]);
+		expect(await semanticTextSent('" ( | )')).toEqual([]);
+		expect(await semanticTextSent("AND OR NOT")).toEqual([]);
+	});
+});
+
 describe("NogonSkill index probe", () => {
 	function probeServer(
 		overrides: { nonWeb?: number; configStatus?: number } = {},

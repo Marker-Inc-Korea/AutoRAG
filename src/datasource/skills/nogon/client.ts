@@ -109,9 +109,9 @@ export class NogonClient {
 	 * AutoRAG sends only the question text. `semantic_hits` carry the matched chunk and similarity.
 	 */
 	async searchSemantic(query: string, options: NogonSearchOptions = {}): Promise<NogonResult<readonly NogonHit[]>> {
-		const trimmed = query.trim();
-		if (trimmed.length === 0) return { ok: true, value: [] };
-		const text = options.domain === undefined ? trimmed : `${trimmed} domain:${options.domain}`;
+		const question = buildSemanticQuery(query);
+		if (question === undefined) return { ok: true, value: [] };
+		const text = options.domain === undefined ? question : `${question} domain:${options.domain}`;
 		const response = await this.search(
 			{ text, highlight: "HTML", limit: options.topK ?? DEFAULT_TOP_K, semantic_enabled: true },
 			options.signal,
@@ -286,6 +286,25 @@ export function buildWebQuery(question: string, domain?: string): string | undef
 	parts.push(WEB_ONLY);
 	if (sort !== undefined) parts.push(sort);
 	return parts.join(" ");
+}
+
+/**
+ * The text of a semantic search: the question as a plain sentence.
+ *
+ * Nogon reads even a semantic query with its keyword query parser before it embeds what is left, so a question is not
+ * free text to it. An unclosed `(` or `"`, a leading `AND` or a trailing `OR` is rejected with HTTP 400, and the
+ * questions that are accepted can still change meaning: `title: what is x` becomes a filter on the title and
+ * `-draft notes` excludes a word. A model embeds words, so the syntax characters are removed (`( ) | " \\`, a leading
+ * `-`, a bare `AND`/`OR`/`NOT`) and a `field:` prefix has its colon escaped, which is also what keeps `https://...` whole.
+ * Everything else, punctuation included, reaches the model as written. Returns undefined when no words are left.
+ */
+export function buildSemanticQuery(question: string): string | undefined {
+	const words = question
+		.replace(/[()|"\\]+/gu, " ")
+		.split(/\s+/u)
+		.map((word) => word.replace(/^-+/u, "").replace(/^([A-Za-z_.]+):/u, "$1\\:"))
+		.filter((word) => word.length > 0 && !/^(?:AND|OR|NOT)$/u.test(word));
+	return words.length === 0 ? undefined : words.join(" ");
 }
 
 /**
