@@ -48,7 +48,15 @@ export {
 	MinSyncVectorMethod,
 	type MinSyncVectorMethodOptions,
 } from "./method.ts";
-export { MINSYNC_FILES_SUBDIR, MINSYNC_SUBDIR, minSyncDocumentPath, minSyncWorkspaceRoot } from "./paths.ts";
+export {
+	MINSYNC_FILES_SUBDIR,
+	MINSYNC_SUBDIR,
+	MINSYNC_VISUAL_SUFFIX,
+	minSyncDocumentPath,
+	minSyncImageDocumentPath,
+	minSyncVisualDocumentPath,
+	minSyncWorkspaceRoot,
+} from "./paths.ts";
 export type {
 	MinSyncChunkerConfig,
 	MinSyncDiagnostic,

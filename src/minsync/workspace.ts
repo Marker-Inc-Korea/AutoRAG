@@ -119,32 +119,45 @@ export function syncMinSyncWorkspace(
 		const mirrorEntry = index.entries[entry.virtualPath];
 		if (mirrorEntry === undefined) continue;
 		const previousEntry = previousState?.entries[entry.virtualPath];
-		let unchanged: boolean;
-		try {
-			unchanged =
-				previousEntry?.outputPath === mirrorEntry.outputPath &&
-				previousEntry.updatedAt === mirrorEntry.updatedAt &&
-				isRegularFile(entry.minSyncPath);
-		} catch (error) {
-			if (!isPerDocumentStagingError(error)) throw error;
-			stagingFailed.push(entry.virtualPath);
-			continue;
-		}
-		if (!unchanged) {
+
+		const visualOutputPath = parsedVisualOutputPath(root, entry.virtualPath);
+		const visualStamp = fileStamp(visualOutputPath);
+		const imageStamp =
+			options.stageRawImages === true && isStandaloneImagePath(entry.virtualPath)
+				? fileStamp(entry.sourcePath)
+				: undefined;
+		// When a standalone image is tracked via ImageMetadataParser and has either direct multimodal pixel
+		// staging (`imageStamp`) or a Stage-2 OCR/VLM mirror (`visualStamp`), omit the boilerplate metadata `.md`
+		// stub from MinSync so boilerplate tokens ("Format: PNG, Dimensions: ...") never pollute dense or SPLADE RRF.
+		const skipMetadataStub =
+			mirrorEntry.parserName === "image-metadata" && (imageStamp !== undefined || visualStamp !== undefined);
+
+		if (!skipMetadataStub) {
+			let unchanged: boolean;
 			try {
-				ensureManagedDirectory(filesRoot, dirname(entry.minSyncPath));
-				copyFileAtomically(entry.parsedOutputPath, entry.minSyncPath);
+				unchanged =
+					previousEntry?.outputPath === mirrorEntry.outputPath &&
+					previousEntry.updatedAt === mirrorEntry.updatedAt &&
+					isRegularFile(entry.minSyncPath);
 			} catch (error) {
 				if (!isPerDocumentStagingError(error)) throw error;
 				stagingFailed.push(entry.virtualPath);
 				continue;
 			}
+			if (!unchanged) {
+				try {
+					ensureManagedDirectory(filesRoot, dirname(entry.minSyncPath));
+					copyFileAtomically(entry.parsedOutputPath, entry.minSyncPath);
+				} catch (error) {
+					if (!isPerDocumentStagingError(error)) throw error;
+					stagingFailed.push(entry.virtualPath);
+					continue;
+				}
+			}
+			stagedEntries.push(entry);
+			desiredPaths.add(entry.minSyncPath);
 		}
-		stagedEntries.push(entry);
-		desiredPaths.add(entry.minSyncPath);
 
-		const visualOutputPath = parsedVisualOutputPath(root, entry.virtualPath);
-		const visualStamp = fileStamp(visualOutputPath);
 		let visualStaged = false;
 		if (visualStamp !== undefined) {
 			const visualMinSyncPath = minSyncVisualDocumentPath(workspacePath, entry.virtualPath);
@@ -174,10 +187,6 @@ export function syncMinSyncWorkspace(
 		}
 
 		let imageStaged = false;
-		const imageStamp =
-			options.stageRawImages === true && isStandaloneImagePath(entry.virtualPath)
-				? fileStamp(entry.sourcePath)
-				: undefined;
 		if (imageStamp !== undefined) {
 			const imageMinSyncPath = minSyncImageDocumentPath(workspacePath, entry.virtualPath);
 			try {

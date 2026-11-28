@@ -4103,15 +4103,34 @@ export class AutoRAGAgent {
 	): Promise<RetrievalResult[] | undefined> {
 		const reranker = this.reranker;
 		if (reranker === undefined) return undefined;
-		const candidates: RetrievalResult[] = minSyncResults.slice(0, this.limits.prefetch.minSyncTopK);
-		candidates.push(...datasourceResults.slice(0, this.limits.prefetch.sectionLimit));
-		candidates.push(...webResults.slice(0, this.limits.prefetch.sectionLimit));
-		if (candidates.length === 0) return undefined;
+		const rawCandidates: RetrievalResult[] = minSyncResults.slice(0, this.limits.prefetch.minSyncTopK);
+		rawCandidates.push(...datasourceResults.slice(0, this.limits.prefetch.sectionLimit));
+		rawCandidates.push(...webResults.slice(0, this.limits.prefetch.sectionLimit));
+		if (rawCandidates.length === 0) return undefined;
+		// Direct multimodal pixel hits without an OCR/VLM text mirror carry no prose for a text-only reranker
+		// to score; preserve the top direct image matches alongside the text-reranked pool so they are not dropped.
+		const directImageOnly: RetrievalResult[] = [];
+		const textCandidates: RetrievalResult[] = [];
+		for (const candidate of rawCandidates) {
+			if (candidate.metadata?.mirrorKind === "image" && candidate.metadata?.hasVisualComplement !== true) {
+				directImageOnly.push(candidate);
+			} else {
+				textCandidates.push(candidate);
+			}
+		}
+		if (textCandidates.length === 0) {
+			return directImageOnly.slice(0, this.rerankTopN ?? directImageOnly.length);
+		}
 		const descriptor = reranker.describe();
 		if (!descriptor.available) throw new Error(`reranker is unavailable: ${descriptor.reason ?? "unknown reason"}`);
-		const reranked = await reranker.rerank(query, candidates, { topN: this.rerankTopN, signal });
-		if (reranked.length === 0) throw new Error("reranker returned no results for a non-empty candidate pool");
-		return reranked;
+		const topN = this.rerankTopN;
+		const keptImages = directImageOnly.slice(0, Math.min(5, topN ?? 5));
+		const textTopN = topN === undefined ? undefined : Math.max(1, topN - keptImages.length);
+		const reranked = await reranker.rerank(query, textCandidates, { topN: textTopN, signal });
+		if (reranked.length === 0 && keptImages.length === 0) {
+			throw new Error("reranker returned no results for a non-empty candidate pool");
+		}
+		return keptImages.length === 0 ? reranked : [...reranked, ...keptImages];
 	}
 
 	/**

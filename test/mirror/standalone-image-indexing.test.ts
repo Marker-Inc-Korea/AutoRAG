@@ -177,16 +177,15 @@ describe("standalone image indexing & multimodal embedder support", () => {
 		const mountainVisual = readFileSync(parsedVisualOutputPath(root, "/docs/mountain-sunset.jpg"), "utf8");
 		expect(mountainVisual).toContain("Snow-capped mountain peak");
 
-		// Stage MinSync workspace with multimodal raw image staging enabled.
+		// Stage MinSync workspace with multimodal raw image staging enabled:
+		// boilerplate image-metadata `.md` stubs are omitted so only raw pixels + visual OCR/VLM mirrors are indexed.
 		const staged = syncMinSyncWorkspace(root, { stageRawImages: true });
 		const stagedKinds = staged.entries.map((e) => `${e.virtualPath}:${e.mirrorKind}`).sort();
 		expect(stagedKinds).toEqual([
 			"/docs/mountain-sunset.jpg:image",
-			"/docs/mountain-sunset.jpg:text",
 			"/docs/mountain-sunset.jpg:visual",
 			"/docs/notes.txt:text",
 			"/docs/screenshot.png:image",
-			"/docs/screenshot.png:text",
 			"/docs/screenshot.png:visual",
 		]);
 		for (const entry of staged.entries) {
@@ -237,5 +236,11 @@ describe("standalone image indexing & multimodal embedder support", () => {
 		expect(merged[0]?.score).toBe(0.91);
 		expect(merged[0]?.content).toContain("Golden hour sunset behind Mount Fuji");
 		expect(merged[0]?.metadata?.hasVisualComplement).toBe(true);
+
+		// When lightweight metadata mirror outranks raw image hit in RRF, upgrading to mirrorKind:"image" keeps direct visual protection.
+		const mergedMetaFirst = coalesceCrossMirrorPageHits([textMetaHit, imageHit]);
+		expect(mergedMetaFirst).toHaveLength(1);
+		expect(mergedMetaFirst[0]?.metadata?.mirrorKind).toBe("image");
+		expect(mergedMetaFirst[0]?.content).toContain("direct multimodal visual embedding match");
 	});
 });

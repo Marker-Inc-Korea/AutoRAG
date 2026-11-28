@@ -232,7 +232,7 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 				? undefined
 				: locateChunkInMirror(mirrorTexts, entry, withoutHeading(hit.text, hit.headingPath ?? hit.path));
 			const content = isImageHit
-				? `Image file: ${basename(entry.sourcePath)} (direct multimodal visual embedding match)`
+				? `Image file: ${basename(entry.sourcePath)} (direct multimodal visual embedding match — use \`read\` on this path to inspect the image directly)`
 				: hit.text;
 			results.push({
 				id: chunkId,
@@ -347,14 +347,22 @@ export function coalesceCrossMirrorPageHits(results: readonly RetrievalResult[])
 			const existingImgIdx = byStandaloneImage.get(result.source);
 			if (existingImgIdx !== undefined) {
 				const existing = out[existingImgIdx]!;
-				const existingIsRichest = existing.metadata?.mirrorKind === "visual";
+				const existingKind = existing.metadata?.mirrorKind;
+				const existingIsRichest = existingKind === "visual";
+				const nextKind =
+					existingIsRichest || isVisual ? "visual" : isImage || existingKind === "image" ? "image" : existingKind;
 				const nextContent =
-					!existingIsRichest && isVisual && result.content.trim().length > 0 ? result.content : existing.content;
+					!existingIsRichest && isVisual && result.content.trim().length > 0
+						? result.content
+						: !existingIsRichest && existingKind === undefined && isImage
+							? result.content
+							: existing.content;
 				out[existingImgIdx] = {
 					...existing,
 					content: nextContent,
 					metadata: {
 						...existing.metadata,
+						...(nextKind !== undefined ? { mirrorKind: nextKind } : {}),
 						...(isVisual || existingIsRichest ? { hasVisualComplement: true } : {}),
 					},
 				};
