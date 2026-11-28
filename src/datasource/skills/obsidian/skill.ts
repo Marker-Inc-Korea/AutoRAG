@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import { isSparseOnlyEmbedder } from "../../../minsync/embedder-config.ts";
+import { resolveMinSyncRetrieverPlan } from "../../../minsync/hardware.ts";
 import type { RetrievalMethod } from "../../../retrieval/types.ts";
 import { grepDirectoryWithRipgrep } from "../../grep.ts";
 import { matchesDatasourceScope } from "../../scope.ts";
@@ -68,7 +69,12 @@ export class ObsidianSkill implements DatasourceSkill {
 			options.instances !== undefined && options.instances.length > 0 ? options.instances : [this.instanceId];
 		this.pollingIntervalMs = options.pollingIntervalMs ?? DEFAULT_POLLING_INTERVAL_MS;
 		this.tags = options.tags ?? DEFAULT_OBSIDIAN_TAGS;
-		this.sparseOnly = isSparseOnlyEmbedder(options.minSync?.embedder);
+		const resolvedMinSync = resolveMinSyncRetrieverPlan({
+			...(options.minSync?.embedder === undefined ? {} : { embedder: options.minSync.embedder }),
+			...(options.minSync?.sparse === undefined ? {} : { sparse: options.minSync.sparse }),
+			...(options.minSync?.bm25 === undefined ? {} : { bm25: options.minSync.bm25 }),
+		});
+		this.sparseOnly = isSparseOnlyEmbedder(resolvedMinSync.embedder);
 		this.workspaceRoot = options.workspaceRoot;
 		this.lastIndexedAt = options.lastIndexedAt;
 		this.vaultIndex = new ObsidianVaultIndex({

@@ -90,12 +90,24 @@ export async function runInit(ctx: CommandContext): Promise<number> {
 	// timeout, batch size. All optional; only set fields the user provided.
 	try {
 		const embedder = parseEmbedderFlags(flags);
-		if (embedder !== undefined) {
+		const sparseId = typeof flags["sparse-id"] === "string" ? flags["sparse-id"] : undefined;
+		const bm25Language = typeof flags["bm25-language"] === "string" ? flags["bm25-language"] : undefined;
+		const noBm25 = flags["no-bm25"] === true;
+		if (embedder !== undefined || sparseId !== undefined || bm25Language !== undefined || noBm25) {
 			partial.minSync = {
 				...(partial.minSync ?? {}),
 				enabled: true,
 				autoInstall: true,
-				embedder,
+				...(embedder === undefined ? {} : { embedder }),
+				...(sparseId === undefined ? {} : { sparse: { id: sparseId } }),
+				...(bm25Language !== undefined || noBm25
+					? {
+							bm25: {
+								...(noBm25 ? { enabled: false } : {}),
+								...(bm25Language === undefined ? {} : { language: bm25Language }),
+							},
+						}
+					: {}),
 			};
 		}
 	} catch (error) {

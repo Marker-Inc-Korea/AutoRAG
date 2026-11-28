@@ -27,7 +27,7 @@ import {
  * - The split is by whole run in time order, newest to validation.
  */
 
-const LOCAL_CHANNELS = ["dense", "sparse", "hybrid"] as const;
+const LOCAL_CHANNELS = ["dense", "sparse", "bm25", "hybrid"] as const;
 type LocalChannel = (typeof LOCAL_CHANNELS)[number];
 
 const LOCAL_CHANNEL_FEATURES = LOCAL_CHANNELS.flatMap((channel) => [
@@ -148,6 +148,8 @@ function localChannelOf(observation: RankingObservation): LocalChannel | undefin
 			return "dense";
 		case "minsync-sparse":
 			return "sparse";
+		case "minsync-bm25":
+			return "bm25";
 		case "minsync-hybrid":
 			return "hybrid";
 		default:
@@ -236,7 +238,7 @@ function candidateFeatures(
 		return range > 0 ? (observation.score - bounds.min) / range : 1;
 	});
 
-	const byLocal: Record<LocalChannel, RankingObservation[]> = { dense: [], sparse: [], hybrid: [] };
+	const byLocal: Record<LocalChannel, RankingObservation[]> = { dense: [], sparse: [], bm25: [], hybrid: [] };
 	for (const observation of observations) {
 		const channel = localChannelOf(observation);
 		if (channel !== undefined) byLocal[channel].push(observation);

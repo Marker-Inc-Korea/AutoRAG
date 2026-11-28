@@ -14,6 +14,31 @@ export interface MinSyncEmbedderConfig {
 	readonly maxConcurrent?: number;
 }
 
+/** SPLADE sparse encoder settings forwarded to MinSync's `[sparse]` section. */
+export interface MinSyncSparseConfig {
+	/** `native:nlpai-lab/KURE-Sparse-nano`, `tei:...`, `"none"` to disable SPLADE, or `"auto"` for hardware-based selection. */
+	readonly id?: string;
+	readonly baseUrl?: string;
+	readonly batchSize?: number;
+	readonly timeoutMs?: number;
+	readonly maxRetries?: number;
+}
+
+/** BM25 lexical index settings forwarded to MinSync's `[bm25]` section. */
+export interface MinSyncBm25Config {
+	/** Whether MinSync builds and maintains `bm25-index.inv`. Default true. */
+	readonly enabled?: boolean;
+	/** Tokenizer language preset: `multilingual` (default: EN/KO/JA/ZH/AR), `simple`, `ko`, `ja`, `zh`, `ar`. */
+	readonly language?: string;
+}
+
+/** Independent on/off retriever selection for `minsync query`. */
+export interface MinSyncRetrievers {
+	readonly vector?: boolean;
+	readonly sparse?: boolean;
+	readonly bm25?: boolean;
+}
+
 /** MinSync chunker settings exposed by AutoRAG's public configuration. */
 export interface MinSyncChunkerConfig {
 	readonly maxChunkSize?: number;
@@ -25,6 +50,8 @@ export interface MinSyncOptions {
 	readonly workspacePath?: string;
 	readonly autoInstall?: boolean;
 	readonly embedder?: MinSyncEmbedderConfig;
+	readonly sparse?: MinSyncSparseConfig;
+	readonly bm25?: MinSyncBm25Config;
 	readonly maxChunkSize?: number;
 }
 
@@ -91,4 +118,10 @@ export interface MinSyncQueryHit {
 	 * Optional because older MinSync builds omit it.
 	 */
 	readonly docId?: string;
+	readonly vectorRank?: number;
+	readonly sparseRank?: number;
+	readonly bm25Rank?: number;
+	readonly vectorScore?: number;
+	readonly sparseScore?: number;
+	readonly bm25Score?: number;
 }
